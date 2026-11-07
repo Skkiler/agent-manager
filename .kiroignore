@@ -1,0 +1,26 @@
+# Excluir do contexto do agente (não substitui .gitignore / ACL do SO)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.kdbx
+secrets/
+private/
+/data/
+/logs/
+/models/
+/backups/
+/cache/
+/referencias-visuais-privadas/
+*.sqlite
+*.sqlite3
+*.db
+*.har
+*.pcap
+*.dump
+*.private.*
+node_modules/
+.venv/

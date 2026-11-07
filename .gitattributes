@@ -1,0 +1,7 @@
+# Normaliza finais de linha: evita ruido CRLF/LF entre Windows e Linux.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.gif binary
+*.webp binary
+*.sqlite3 binary

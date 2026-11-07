@@ -1,0 +1,75 @@
+# Segredos e credenciais
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+id_rsa*
+id_ed25519*
+*.kdbx
+credentials.json
+secrets.json
+secrets.yaml
+secrets/
+private/
+
+# Dados e contexto não distribuíveis
+/data/
+/logs/
+/models/
+/cache/
+/backups/
+/sessions/
+/referencias-visuais-privadas/
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-wal
+*.db-shm
+*.log
+*.har
+*.pcap
+*.dump
+*.bak
+
+# Kiro: configuração versionável SIM; estado local NÃO
+.kiro/workflow-output/
+.kiro/reports/
+.kiro/session*/
+.kiro/local/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# JS/TS
+node_modules/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# SO e IDE
+.DS_Store
+Thumbs.db
+.vscode/settings.json
+.idea/
+
+# Arquivos privados adicionados por desenvolvedores
+*.private.*
+*.local.json
+*.local.yaml
+*.local.yml

@@ -1,0 +1,16 @@
+{
+  "name": "implementador",
+  "description": "Implementa mudanças delimitadas com testes e evidências, sob política de aprovação.",
+  "tools": ["read", "write", "shell"],
+  "includeMcpJson": false,
+  "includePowers": false,
+  "resources": ["file://./AGENTS.md", "skill://.kiro/skills/**/SKILL.md"],
+  "permissions": {
+    "rules": [
+      {"capability": "fs_read", "match": ["**/.env", "**/.env.local", "**/*.pem", "**/*.key", "**/secrets/**", "**/private/**", "**/data/**"], "effect": "deny"},
+      {"capability": "fs_write", "match": ["**/.env", "**/.env.local", "**/*.pem", "**/*.key", "**/secrets/**", "**/private/**", "**/data/**"], "effect": "deny"},
+      {"capability": "shell", "match": ["*"], "effect": "ask"}
+    ]
+  },
+  "prompt": "Você implementa tarefas com escopo definido. Antes de editar, leia AGENTS.md e requisitos pertinentes, valide dependências e recursos. Faça alterações pequenas, testes reais e informe evidências. Não execute deploy, publicação, alteração de produção ou instalação de sistema sem aprovação. Nunca grave ou leia segredos. Não declare concluído o que só estiver simulado."
+}

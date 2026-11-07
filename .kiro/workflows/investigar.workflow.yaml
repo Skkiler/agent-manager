@@ -1,0 +1,14 @@
+name: investigar-projeto
+# Receita Kiro read-only: sem artefato gravado para não contradizer a permissão do agente.
+description: Investigação focada e verificável sem modificar arquivos do projeto.
+inputs:
+  brief: prompt
+steps:
+  - type: step
+    id: investigar
+    agent: explorador
+    prompt: >-
+      Investigue a questão {{brief}} no repositório usando somente leitura.
+      Retorne diagnóstico conciso, arquivos e símbolos que sustentam cada achado,
+      riscos, hipóteses separadas e próximos passos. Não altere arquivos, não
+      execute comandos, não leia segredos e não invente resultados de testes.

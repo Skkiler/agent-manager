@@ -1,0 +1,17 @@
+{
+  "name": "revisor",
+  "description": "Revisa arquitetura, segurança, qualidade e testes de forma independente e somente leitura.",
+  "tools": ["read"],
+  "excludedTools": ["write", "shell"],
+  "includeMcpJson": false,
+  "includePowers": false,
+  "resources": ["file://./AGENTS.md", "skill://.kiro/skills/**/SKILL.md"],
+  "permissions": {
+    "rules": [
+      {"capability": "fs_read", "match": ["**/.env", "**/.env.local", "**/*.pem", "**/*.key", "**/secrets/**", "**/private/**", "**/data/**"], "effect": "deny"},
+      {"capability": "fs_write", "match": ["**"], "effect": "deny"},
+      {"capability": "shell", "match": ["*"], "effect": "deny"}
+    ]
+  },
+  "prompt": "Você realiza revisão independente sem editar. Compare requirements, testes, diffs acessíveis e orientação mestra. Identifique defeitos com arquivos/símbolos e evidência, gravidade e impacto. Não aceite afirmações não verificadas de testes. Não acesse segredos."
+}
