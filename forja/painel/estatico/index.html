@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forja — painel tecnico (Fase 1)</title>
+  <link rel="stylesheet" href="/estatico/app.css" />
+</head>
+<body>
+  <header>
+    <h1>Forja <small>painel tecnico — Fase 1 (nucleo deterministico)</small></h1>
+    <div id="conexao" role="status" aria-live="polite" class="pill">desconectado</div>
+  </header>
+
+  <section aria-labelledby="h-token">
+    <h2 id="h-token">Acesso</h2>
+    <p class="aviso">Servidor local-first. Informe o token da API (arquivo <code>data/api_token.txt</code>).
+       Nao compartilhe o token; ele nao e versionado.</p>
+    <label>Token <input id="token" type="password" autocomplete="off" aria-label="Token da API" /></label>
+    <button id="salvar-token" type="button">Usar token</button>
+  </section>
+
+  <section aria-labelledby="h-criar">
+    <h2 id="h-criar">Criar tarefa de exemplo (dados sinteticos)</h2>
+    <p class="aviso">Usa o agente <strong>mock</strong>. Evidencias produzidas sao SIMULADAS e nao comprovam
+      funcionalidade real.</p>
+    <label>Cenario
+      <select id="cenario">
+        <option value="sucesso">sucesso</option>
+        <option value="falha">falha</option>
+        <option value="bloqueio">bloqueio</option>
+      </select>
+    </label>
+    <button id="criar-demo" type="button">Criar projeto + objetivo + tarefa e preparar</button>
+    <output id="criar-saida" aria-live="polite"></output>
+  </section>
+
+  <section aria-labelledby="h-tarefas">
+    <h2 id="h-tarefas">Tarefas <button id="atualizar" type="button">atualizar</button></h2>
+    <table>
+      <caption class="sr-only">Lista de tarefas e seus estados</caption>
+      <thead><tr><th>ID</th><th>Titulo</th><th>Estado</th><th>v</th><th>Acoes</th></tr></thead>
+      <tbody id="tarefas"></tbody>
+    </table>
+  </section>
+
+  <section aria-labelledby="h-eventos">
+    <h2 id="h-eventos">Eventos (SSE, com replay por Last-Event-ID)</h2>
+    <ul id="eventos" aria-live="polite"></ul>
+  </section>
+
+  <script src="/estatico/app.js" type="module"></script>
+</body>
+</html>
