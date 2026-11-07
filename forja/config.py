@@ -27,6 +27,13 @@ class Configuracoes(BaseSettings):
     app_max_active_llm_sessions: int = 1
     app_max_parallel_cpu_tools: int = 2
     app_kiro_acp_enabled: bool = False
+    # Caminho/nome do executavel (sem shell). Vazio = procurar 'kiro-cli' no PATH e no local padrao do Windows.
+    app_kiro_cli_path: str = ""
+    # Workspace entregue ao Kiro: por padrao um diretorio VAZIO e isolado (nao o repositorio).
+    app_kiro_workspace: Path | None = None
+    app_kiro_agent: str = ""  # nome de agente Kiro opcional (vazio = padrao)
+    app_kiro_model: str = ""  # id de modelo opcional (vazio = padrao da conta/politica)
+    app_kiro_prompt_timeout_seconds: int = 300
     app_require_auth: bool = True
     app_allow_lan_bind: bool = False
     # Opcional: token fixo vindo do ambiente/secret store. Se ausente, gera-se um em data/.
@@ -43,8 +50,8 @@ class Configuracoes(BaseSettings):
             raise ValueError("Bind fora de loopback exige APP_REQUIRE_AUTH=true.")
         if self.app_enable_local_llm:
             raise ValueError("LLM local nao e suportado na Fase 1 (APP_ENABLE_LOCAL_LLM deve ser false).")
-        if self.app_kiro_acp_enabled:
-            raise ValueError("Adaptador Kiro ACP ainda nao implementado (Fase 2).")
+        if self.app_kiro_prompt_timeout_seconds < 10:
+            raise ValueError("APP_KIRO_PROMPT_TIMEOUT_SECONDS deve ser >= 10.")
         if self.app_resource_profile not in {"auto", "essencial", "equilibrado", "ampliado"}:
             raise ValueError("APP_RESOURCE_PROFILE invalido.")
         if self.app_max_parallel_cpu_tools < 1:
@@ -54,6 +61,10 @@ class Configuracoes(BaseSettings):
     @property
     def db_path(self) -> Path:
         return self.app_data_dir / "forja.sqlite3"
+
+    @property
+    def kiro_workspace_dir(self) -> Path:
+        return self.app_kiro_workspace or (self.app_data_dir / "kiro-workspace")
 
     @property
     def artefatos_dir(self) -> Path:

@@ -68,3 +68,23 @@ Fora de escopo: adaptador Kiro ACP, memoria/grafos, multiagentes, UI pixel art (
 
 ## Rastreabilidade
 Cada REQ aponta para teste automatizado real. O estado verificado fica em `docs/STATUS_IMPLEMENTACAO.md`.
+
+## Fase 2 — Adaptador Kiro ACP (ver ADR-004)
+
+### REQ-014 — Cliente ACP V3 seguro
+- O cliente deve negociar `initialize` (protocolVersion 1), anunciar capacidades minimas (sem fs/terminal), responder a
+  TODO pedido do agente e negar permissoes de ferramenta por padrao; nunca usar `--trust-all-tools`.
+- Aceite: `test_handshake_e_sessao`, `test_protocolo_incompativel_rejeitado`,
+  `test_permissao_negada_e_metodo_nao_anunciado_responde_erro`, `test_comando_nunca_confia_em_tudo`.
+
+### REQ-015 — Falhas tipadas e degradacao
+- CLI ausente, falta de login, timeout, desconexao, ruido em stdout e protocolo incompativel devem produzir erros tipados
+  e estados recuperaveis (`bloqueada` + pendencia) ou `falhou`, sem travar o orquestrador.
+- Aceite: `test_cli_ausente`, `test_autenticacao_necessaria_tipada`, `test_timeout_no_handshake`,
+  `test_ruido_em_stdout_nao_derruba_cliente`, `test_desconexao_falha_pendentes`,
+  `test_orquestrador_auth_deixa_tarefa_bloqueada_e_retomavel`.
+
+### REQ-016 — Provedor Kiro somente leitura e honesto
+- O provedor aceita apenas modos analise/documentacao, redige segredos na resposta, suporta cancelamento cooperativo e
+  timeout, e nunca estima consumo de tokens.
+- Aceite: `test_provedor_*`, `test_orquestrador_com_provedor_acp`; handshake real: `test_handshake_real_com_kiro_cli`.

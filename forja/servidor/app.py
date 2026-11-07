@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from forja.adapters.agentes_mock.mock import AgenteMock
+from forja.adapters.kiro_acp.provedor import ProvedorKiroAcp, montar_comando, resolver_cli
 from forja.adapters.sqlite.banco import criar_engines, migrar
 from forja.adapters.sqlite.repositorio import RepositorioSqlite
 from forja.agentes.base import ProvedorAgente
@@ -28,12 +29,22 @@ log = logging.getLogger("forja.app")
 ESTATICO = __import__("pathlib").Path(__file__).resolve().parent.parent / "painel" / "estatico"
 
 
+def criar_provedor_kiro(cfg: Configuracoes) -> ProvedorKiroAcp:
+    cli = resolver_cli(cfg.app_kiro_cli_path)
+    comando = montar_comando(cli, cfg.app_kiro_agent, cfg.app_kiro_model) if cli else None
+    if comando is None:
+        log.warning("Kiro CLI nao encontrado; execucoes ficarao bloqueadas (kiro_cli_ausente)")
+    return ProvedorKiroAcp(comando, cfg.kiro_workspace_dir, float(cfg.app_kiro_prompt_timeout_seconds))
+
+
 def criar_servico(cfg: Configuracoes, provedor: ProvedorAgente | None = None) -> Servico:
     migrar(cfg.db_path)
     cfg.artefatos_dir.mkdir(parents=True, exist_ok=True)
     engine_w, engine_r = criar_engines(cfg.db_path)
     repo = RepositorioSqlite(engine_w, engine_r)
     perfil_workers = 1 if cfg.app_resource_profile == "essencial" else cfg.app_max_parallel_cpu_tools
+    if provedor is None and cfg.app_kiro_acp_enabled:
+        provedor = criar_provedor_kiro(cfg)
     return Servico(repo, provedor or AgenteMock(), cfg.artefatos_dir, max_workers=perfil_workers,
                    lock_lease_seconds=cfg.app_lock_lease_seconds)
 

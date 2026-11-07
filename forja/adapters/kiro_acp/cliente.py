@@ -1,0 +1,297 @@
+"""Cliente ACP (Agent Client Protocol) sobre stdio: JSON-RPC 2.0 delimitado por linhas.
+
+- stdout do processo = protocolo; stderr e lido a parte (nunca misturado) e sanitizado.
+- Sem shell: o comando e uma lista de argumentos.
+- Capacidades de cliente anunciadas sao MINIMAS (sem fs/terminal): pedidos fs/* e terminal/* retornam
+  'method not found'. Permissoes de ferramenta sao negadas por padrao.
+- Nenhuma credencial e lida, armazenada ou registrada aqui; a autenticacao pertence ao proprio kiro-cli.
+"""
+
+from __future__ import annotations
+
+import itertools
+import json
+import logging
+import os
+import subprocess
+import threading
+from collections import deque
+from collections.abc import Callable
+from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FuturoTimeout
+from typing import Any
+
+from forja.observabilidade.sanitizar import sanitizar_texto
+
+log = logging.getLogger("forja.acp")
+PROTOCOLO = 1
+MAX_LINHA = 4 * 1024 * 1024
+
+
+class AcpErro(Exception):
+    def __init__(self, mensagem: str, codigo: int | None = None) -> None:
+        super().__init__(mensagem)
+        self.mensagem = mensagem
+        self.codigo = codigo
+
+
+class AcpCliAusente(AcpErro):
+    pass
+
+
+class AcpAutenticacaoNecessaria(AcpErro):
+    pass
+
+
+class AcpDesconectado(AcpErro):
+    pass
+
+
+class AcpTimeout(AcpErro):
+    pass
+
+
+class AcpProtocoloNaoSuportado(AcpErro):
+    pass
+
+
+class AcpMetodoNaoSuportado(AcpErro):
+    pass
+
+
+Atualizacao = Callable[[str, dict[str, Any]], None]  # (session_id, update)
+DecisorPermissao = Callable[[dict[str, Any]], str | None]  # request -> optionId | None (cancelar)
+
+
+def decisor_negar_tudo(pedido: dict[str, Any]) -> str | None:
+    """Politica padrao: escolhe uma opcao de rejeicao; sem opcao de rejeicao, cancela o pedido."""
+    for op in pedido.get("options", []):
+        if str(op.get("kind", "")).startswith("reject"):
+            return str(op.get("optionId"))
+    return None
+
+
+def _traduz_erro(err: dict[str, Any]) -> AcpErro:
+    codigo = err.get("code")
+    msg = sanitizar_texto(str(err.get("message", "erro desconhecido")))
+    baixa = msg.lower()
+    if "authentication required" in baixa or "not logged in" in baixa:
+        return AcpAutenticacaoNecessaria(msg, codigo)
+    if codigo == -32601:
+        return AcpMetodoNaoSuportado(msg, codigo)
+    return AcpErro(msg, codigo)
+
+
+class ClienteAcp:
+    def __init__(
+        self,
+        comando: list[str],
+        cwd: str | None = None,
+        decisor_permissao: DecisorPermissao = decisor_negar_tudo,
+        on_update: Atualizacao | None = None,
+        env_extra: dict[str, str] | None = None,
+    ) -> None:
+        self.comando = comando
+        self.cwd = cwd
+        self._decisor = decisor_permissao
+        self._on_update = on_update
+        self._env_extra = env_extra or {}
+        self._proc: subprocess.Popen[str] | None = None
+        self._ids = itertools.count(1)
+        self._pend: dict[int, Future] = {}
+        self._mu = threading.Lock()
+        self._escrita = threading.Lock()
+        self._stderr: deque[str] = deque(maxlen=50)
+        self.agent_info: dict[str, Any] = {}
+        self.capacidades: dict[str, Any] = {}
+        self.auth_methods: list[dict[str, Any]] = []
+        self.permissoes_negadas = 0
+        self.permissoes_vistas: list[dict[str, Any]] = []
+        self._fechado = False
+
+    # ---------------------------------------------------------------- ciclo de vida
+    def iniciar(self) -> None:
+        env = {**os.environ, **self._env_extra}
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            self._proc = subprocess.Popen(  # noqa: S603 - lista de args, sem shell
+                self.comando, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding="utf-8", errors="replace", bufsize=1, cwd=self.cwd, env=env,
+                creationflags=flags,
+            )
+        except FileNotFoundError as e:
+            raise AcpCliAusente("Executavel do Kiro CLI nao encontrado.") from e
+        except OSError as e:
+            raise AcpErro(f"Falha ao iniciar o processo ACP: {sanitizar_texto(str(e))}") from e
+        threading.Thread(target=self._ler_stdout, name="acp-stdout", daemon=True).start()
+        threading.Thread(target=self._ler_stderr, name="acp-stderr", daemon=True).start()
+
+    def encerrar(self) -> None:
+        self._fechado = True
+        p = self._proc
+        if p is None:
+            return
+        try:
+            if p.stdin:
+                p.stdin.close()
+        except OSError:
+            pass
+        try:
+            p.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            p.terminate()
+            try:
+                p.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                p.kill()
+        self._falhar_pendentes(AcpDesconectado("Cliente encerrado."))
+
+    def stderr_recente(self) -> str:
+        return sanitizar_texto("\n".join(self._stderr))
+
+    # ---------------------------------------------------------------- leitura
+    def _ler_stdout(self) -> None:
+        assert self._proc and self._proc.stdout
+        try:
+            for linha in self._proc.stdout:
+                linha = linha.strip()
+                if not linha or len(linha) > MAX_LINHA:
+                    continue
+                try:
+                    msg = json.loads(linha)
+                except json.JSONDecodeError:
+                    log.debug("linha nao-JSON ignorada em stdout")  # ruido nao deve derrubar o cliente
+                    continue
+                if isinstance(msg, dict):
+                    self._despachar(msg)
+        except (OSError, ValueError):
+            pass
+        finally:
+            self._falhar_pendentes(AcpDesconectado("Processo ACP encerrou a conexao."))
+
+    def _ler_stderr(self) -> None:
+        assert self._proc and self._proc.stderr
+        try:
+            for linha in self._proc.stderr:
+                self._stderr.append(linha.rstrip()[:500])
+        except (OSError, ValueError):
+            pass
+
+    def _falhar_pendentes(self, exc: Exception) -> None:
+        with self._mu:
+            pend, self._pend = self._pend, {}
+        for f in pend.values():
+            if not f.done():
+                f.set_exception(exc)
+
+    def _despachar(self, msg: dict[str, Any]) -> None:
+        if "method" in msg and "id" in msg:
+            self._atender_pedido(msg)
+        elif "method" in msg:
+            if msg["method"] == "session/update" and self._on_update:
+                p = msg.get("params") or {}
+                try:
+                    self._on_update(str(p.get("sessionId", "")), p.get("update") or {})
+                except Exception:  # noqa: BLE001 - callback nao pode derrubar o leitor
+                    log.exception("falha em on_update")
+        elif "id" in msg:
+            with self._mu:
+                f = self._pend.pop(msg["id"], None) if isinstance(msg["id"], int) else None
+            if f is None or f.done():
+                return
+            if "error" in msg:
+                f.set_exception(_traduz_erro(msg["error"] or {}))
+            else:
+                f.set_result(msg.get("result") or {})
+
+    def _atender_pedido(self, msg: dict[str, Any]) -> None:
+        """Pedidos do agente ao cliente. TODA requisicao recebe resposta (nenhuma fica pendente)."""
+        metodo, rid, params = msg["method"], msg["id"], msg.get("params") or {}
+        if metodo == "session/request_permission":
+            titulo = str((params.get("toolCall") or {}).get("title", ""))
+            self.permissoes_vistas.append({"titulo": sanitizar_texto(titulo)})
+            try:
+                escolhida = self._decisor(params)
+            except Exception:  # noqa: BLE001
+                log.exception("decisor de permissao falhou; negando")
+                escolhida = None
+            if escolhida is None:
+                self.permissoes_negadas += 1
+                self._responder(rid, {"outcome": {"outcome": "cancelled"}})
+            else:
+                self._responder(rid, {"outcome": {"outcome": "selected", "optionId": escolhida}})
+        else:  # fs/*, terminal/*, extensoes: capacidades nao anunciadas
+            self._enviar({"jsonrpc": "2.0", "id": rid,
+                          "error": {"code": -32601, "message": f"Metodo nao suportado pelo cliente: {metodo}"}})
+
+    # ---------------------------------------------------------------- escrita
+    def _enviar(self, obj: dict[str, Any]) -> None:
+        p = self._proc
+        if p is None or p.stdin is None or p.poll() is not None:
+            raise AcpDesconectado("Processo ACP nao esta ativo.")
+        dados = json.dumps(obj, ensure_ascii=False) + "\n"
+        with self._escrita:
+            try:
+                p.stdin.write(dados)
+                p.stdin.flush()
+            except (OSError, ValueError) as e:
+                raise AcpDesconectado("Falha ao escrever no processo ACP.") from e
+
+    def _responder(self, rid: Any, resultado: dict[str, Any]) -> None:
+        try:
+            self._enviar({"jsonrpc": "2.0", "id": rid, "result": resultado})
+        except AcpDesconectado:
+            pass
+
+    def requisitar(self, metodo: str, params: dict[str, Any], timeout: float = 30.0) -> Future:
+        rid = next(self._ids)
+        f: Future = Future()
+        with self._mu:
+            self._pend[rid] = f
+        try:
+            self._enviar({"jsonrpc": "2.0", "id": rid, "method": metodo, "params": params})
+        except AcpDesconectado:
+            with self._mu:
+                self._pend.pop(rid, None)
+            raise
+        return f
+
+    def chamar(self, metodo: str, params: dict[str, Any], timeout: float = 30.0) -> dict[str, Any]:
+        f = self.requisitar(metodo, params)
+        try:
+            return f.result(timeout=timeout)
+        except FuturoTimeout as e:
+            raise AcpTimeout(f"Timeout aguardando {metodo} ({timeout:.0f}s).") from e
+
+    def notificar(self, metodo: str, params: dict[str, Any]) -> None:
+        self._enviar({"jsonrpc": "2.0", "method": metodo, "params": params})
+
+    # ---------------------------------------------------------------- API de alto nivel
+    def inicializar(self, timeout: float = 20.0) -> dict[str, Any]:
+        res = self.chamar("initialize", {
+            "protocolVersion": PROTOCOLO,
+            "clientCapabilities": {"fs": {"readTextFile": False, "writeTextFile": False}, "terminal": False},
+            "clientInfo": {"name": "forja", "title": "Forja", "version": "0.2.0"},
+        }, timeout)
+        versao = res.get("protocolVersion")
+        if versao != PROTOCOLO:
+            raise AcpProtocoloNaoSuportado(f"Versao de protocolo ACP nao suportada: {versao!r}.")
+        self.agent_info = res.get("agentInfo") or {}
+        self.capacidades = res.get("agentCapabilities") or {}
+        self.auth_methods = [
+            {"id": m.get("id"), "name": m.get("name")} for m in (res.get("authMethods") or []) if isinstance(m, dict)
+        ]
+        return res
+
+    def nova_sessao(self, cwd: str, timeout: float = 30.0) -> str:
+        res = self.chamar("session/new", {"cwd": cwd, "mcpServers": []}, timeout)
+        sid = res.get("sessionId")
+        if not isinstance(sid, str) or not sid:
+            raise AcpErro("Resposta de session/new sem sessionId.")
+        return sid
+
+    def cancelar(self, session_id: str) -> None:
+        try:
+            self.notificar("session/cancel", {"sessionId": session_id})
+        except AcpDesconectado:
+            pass

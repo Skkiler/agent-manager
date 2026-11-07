@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Requ
 from fastapi.responses import StreamingResponse
 
 from forja import __version__
+from forja.adapters.kiro_acp.diagnostico import diagnosticar
 from forja.adapters.sqlite import tabelas as T
 from forja.dominio.contratos import DecisaoAprovacaoIn, ObjetivoIn, ProjetoIn, TarefaIn, TransicaoIn
 from forja.dominio.estados import EstadoTarefa
@@ -59,6 +60,14 @@ def recursos(request: Request) -> dict[str, Any]:
     cfg = request.app.state.config
     m = recursos_mod.coletar(cfg.app_data_dir)
     return {"metricas": m, **recursos_mod.decidir_perfil(m, cfg.app_reserve_free_ram_gb, cfg.app_resource_profile)}
+
+
+@r.get("/kiro/status")
+def kiro_status(request: Request) -> dict[str, Any]:
+    """Diagnostico sob demanda (versao, login sim/nao, handshake ACP). Nao inicia sessao nem consome creditos."""
+    cfg = request.app.state.config
+    d = diagnosticar(cfg.app_kiro_cli_path, cfg.app_kiro_agent, cfg.app_kiro_model)
+    return {**d, "acp_habilitado": cfg.app_kiro_acp_enabled}
 
 
 @r.get("/agentes")

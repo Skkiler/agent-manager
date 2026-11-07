@@ -24,6 +24,17 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 1.11 Testes unitarios/integracao (35) + smoke HTTP ponta a ponta + Ruff limpo. (todos os REQ)
 - [x] 1.12 Documentacao de execucao Windows (README) e STATUS atualizado.
 
+## Fase 2 — Adaptador Kiro ACP
+- [x] 2.1 Verificar Kiro CLI real (3.1.0) e handshake ACP; mapear erro de auth. (REQ-014)
+- [x] 2.2 `ClienteAcp` (JSON-RPC stdio, permissoes negadas, capacidades minimas, erros tipados). (REQ-014, REQ-015)
+- [x] 2.3 `ProvedorKiroAcp` (analise/documentacao, cancelamento, timeout, redacao, workspace isolado). (REQ-016)
+- [x] 2.4 Diagnostico (`/api/v1/kiro/status`, `scripts/diagnostico_kiro.py`) sem consumir creditos. (REQ-015)
+- [x] 2.5 Fiacao em `criar_servico` por `APP_KIRO_ACP_ENABLED`; config e `.env.example`; ADR-004.
+- [x] 2.6 Testes com agente ACP falso (subprocesso real) + handshake real + execucao real sem login (bloqueio correto).
+- [ ] 2.7 Prompt real autenticado (depende de `kiro-cli login` pelo usuario e de politica empresarial).
+- [ ] 2.8 Agentes/skills/Specs-templates Kiro e primeiro Workflow de producao (Workflows nao confirmado na conta).
+- [ ] 2.9 Pool/reuso de processo ACP e `session/load` (so se o agente anunciar `loadSession`; hoje `false`).
+
 ## Gate Fase 1
 Atingido: tarefa simulada percorre rascunho -> ... -> concluida com estado consistente, evidencia (simulada),
 artefato integro, eventos via SSE e logs — verificado por testes e pelo smoke contra servidor real.

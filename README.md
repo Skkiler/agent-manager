@@ -55,6 +55,19 @@ ssh -N -L 8787:127.0.0.1:8787 usuario@IP_PRIVADO_DESKTOP
 Depois abra `http://127.0.0.1:8787` no notebook. Bind direto em LAN exige aprovacao explicita
 (`APP_ALLOW_LAN_BIND=true` + `APP_REQUIRE_AUTH=true`) e, de preferencia, HTTPS/reverse proxy autenticado.
 
+### Kiro real via ACP (Fase 2, opcional)
+Desligado por padrao (usa o mock). Para usar o Kiro CLI:
+
+```powershell
+python scripts\diagnostico_kiro.py     # versao, login sim/nao, handshake ACP (sem consumir creditos)
+kiro-cli login                         # acao sua (SSO); a Forja nunca le nem guarda o token
+$env:APP_KIRO_ACP_ENABLED = "true"     # ou no .env (nunca commitado)
+python -m forja
+```
+O Kiro recebe um workspace vazio e isolado (`data\kiro-workspace`), permissoes de ferramenta sao negadas por padrao
+e apenas tarefas de `analise`/`documentacao` sao aceitas. Sem login, a tarefa fica `bloqueada` com
+`reautenticacao_necessaria` e pode ser retomada. Detalhes em `docs/adr/0004-kiro-acp-adaptador.md`.
+
 ### Limites desta fase
 O agente e um **mock** deterministico: as evidencias que ele produz sao **simuladas** e nao comprovam
 funcionalidade real. Integracao Kiro (ACP), memoria/grafos, multiagentes e o painel pixel art chegam nas Fases 2+.
