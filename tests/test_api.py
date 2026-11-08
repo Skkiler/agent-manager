@@ -102,6 +102,15 @@ def test_sse_replay_e_last_event_id(client: TestClient):
     assert f"id: {ult}\n" not in corpo
 
 
+def test_sse_nao_nomeia_eventos_para_chegar_ao_onmessage(client: TestClient):
+    """Regressao: com 'event: <tipo>' o EventSource.onmessage do navegador NAO recebe o evento."""
+    _criar_tarefa_pronta(client, "sucesso")
+    with client.stream("GET", "/api/v1/eventos/stream?after_id=0&follow=false") as resp:
+        corpo = "".join(resp.iter_text())
+    assert "data: " in corpo and "\nevent:" not in "\n" + corpo
+    assert '"tipo": "tarefa.preparada"' in corpo
+
+
 def test_stream_exige_token(client: TestClient):
     semauth = TestClient(client.app)
     with semauth.stream("GET", "/api/v1/eventos/stream?follow=false") as resp:

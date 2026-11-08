@@ -73,3 +73,13 @@ Thumbs.db
 *.local.json
 *.local.yaml
 *.local.yml
+
+# Segundo cerebro / memoria privada: NUNCA versionar (somente motor, schemas e exemplos sinteticos sao publicos)
+/knowledge/privado/
+/knowledge/pessoal/
+/knowledge/empresa/
+/knowledge/terceiros/
+/memoria-local/
+/segundo-cerebro/
+*.brain
+*.memoria.json

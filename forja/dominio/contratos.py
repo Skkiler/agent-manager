@@ -97,8 +97,22 @@ class TransicaoIn(_Estrito):
 
 
 class DecisaoAprovacaoIn(_Estrito):
+    """Decisao sobre UM grupo de acoes. `itens_aprovados=None` + aprovada = aprova todos os itens do grupo."""
+
     decisao: Literal["aprovada", "negada"]
     justificativa: TextoLongo = ""
+    itens_aprovados: list[Annotated[str, Field(max_length=200)]] | None = Field(default=None, max_length=50)
+    adendo: TextoLongo = ""  # orientacao livre do operador, registrada e entregue ao agente
+    lembrar_na_execucao: bool = False  # reaproveita a aprovacao para acoes identicas ate o fim desta execucao
+
+
+class DecisaoLoteIn(_Estrito):
+    """Uma unica decisao aplicada a varios pedidos de aprovacao de uma vez."""
+
+    ids: list[Annotated[str, Field(pattern=_ID_RE.pattern)]] = Field(min_length=1, max_length=20)
+    decisao: Literal["aprovada", "negada"]
+    adendo: TextoLongo = ""
+    lembrar_na_execucao: bool = False
 
 
 # ---- Contrato de resultado/handoff (secao 6.4) ----

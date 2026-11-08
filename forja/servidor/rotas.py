@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from forja import __version__
 from forja.adapters.kiro_acp.diagnostico import diagnosticar
 from forja.adapters.sqlite import tabelas as T
-from forja.dominio.contratos import DecisaoAprovacaoIn, ObjetivoIn, ProjetoIn, TarefaIn, TransicaoIn
+from forja.dominio.contratos import DecisaoAprovacaoIn, DecisaoLoteIn, ObjetivoIn, ProjetoIn, TarefaIn, TransicaoIn
 from forja.dominio.estados import EstadoTarefa
 from forja.observabilidade import recursos as recursos_mod
 from forja.orquestracao.servico import Servico
@@ -168,6 +168,12 @@ def listar_aprovacoes(
     s: Svc, estado: str | None = Query(default=None, pattern="^(pendente|aprovada|negada)$")
 ) -> list[dict]:
     return s.listar(T.Aprovacao, estado=estado)
+
+
+@r.post("/aprovacoes/decidir-lote")
+def decidir_lote(d: DecisaoLoteIn, s: Svc) -> dict:
+    """Uma decisao (e um adendo) para varios pedidos de uma vez."""
+    return s.decidir_lote(d, ATOR)
 
 
 @r.post("/aprovacoes/{id_}/decidir")

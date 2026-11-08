@@ -46,6 +46,7 @@ def criar_servico(cfg: Configuracoes, provedor: ProvedorAgente | None = None) ->
     if provedor is None and cfg.app_kiro_acp_enabled:
         provedor = criar_provedor_kiro(cfg)
     return Servico(repo, provedor or AgenteMock(), cfg.artefatos_dir, max_workers=perfil_workers,
+                   espera_aprovacao_s=float(cfg.app_approval_timeout_seconds),
                    lock_lease_seconds=cfg.app_lock_lease_seconds)
 
 

@@ -35,9 +35,11 @@ def db_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def repo(db_path: Path) -> RepositorioSqlite:
+def repo(db_path: Path) -> Iterator[RepositorioSqlite]:
     w, r = criar_engines(db_path)
-    return RepositorioSqlite(w, r)
+    rp = RepositorioSqlite(w, r)
+    yield rp
+    rp.fechar()
 
 
 @pytest.fixture

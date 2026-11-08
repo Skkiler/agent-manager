@@ -268,8 +268,10 @@ def test_handshake_real_com_kiro_cli():
     c = ClienteAcp(montar_comando(resolver_cli() or "kiro-cli"))
     c.iniciar()
     try:
-        c.inicializar(timeout=30)
-        assert c.agent_info.get("name")
-        assert c.capacidades is not None
+        res = c.inicializar(timeout=30)
+        # agentInfo e opcional no ACP: sessao autenticada real nao o envia; so o protocolo e as capacidades sao garantidos.
+        assert res["protocolVersion"] == 1
+        assert isinstance(c.capacidades, dict) and "promptCapabilities" in c.capacidades
+        assert c.auth_methods, "o agente deve anunciar ao menos um metodo de autenticacao"
     finally:
         c.encerrar()

@@ -125,6 +125,11 @@ class Aprovacao(Base):
     decidido_por: Mapped[str | None] = mapped_column(String(100), nullable=True)
     decidido_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
     criado_em: Mapped[str] = mapped_column(String(40))
+    # Aprovacao por ACAO (grupo): varios itens, uma decisao, adendo livre do operador.
+    origem: Mapped[str] = mapped_column(String(32), default="pre_execucao", server_default="pre_execucao")
+    itens: Mapped[Any] = mapped_column(JSON, nullable=True)  # [{id, descricao, categoria, risco, alvos, ...}]
+    escopo: Mapped[Any] = mapped_column(JSON, nullable=True)  # {"aprovados": [ids], "lembrar": bool}
+    adendo: Mapped[str] = mapped_column(Text, default="", server_default="")
 
 
 class RecursoLock(Base):

@@ -88,3 +88,22 @@ Cada REQ aponta para teste automatizado real. O estado verificado fica em `docs/
 - O provedor aceita apenas modos analise/documentacao, redige segredos na resposta, suporta cancelamento cooperativo e
   timeout, e nunca estima consumo de tokens.
 - Aceite: `test_provedor_*`, `test_orquestrador_com_provedor_acp`; handshake real: `test_handshake_real_com_kiro_cli`.
+
+## Fase 2b — Aprovação por ação (ver ADR-006)
+
+### REQ-017 — Pergunta por ação, em linguagem natural
+- O sistema deve traduzir chamadas de ferramenta em ações ("Posso excluir forçadamente `build`?"), com categoria e risco,
+  correlacionando o pedido de permissão ao `tool_call` anterior (formato real do Kiro CLI).
+- Aceite: `tests/test_acoes.py` (25 testes, incl. o exemplo `rm -rf` e a regressão de alvo duplicado/absoluto).
+
+### REQ-018 — Um pedido por grupo, com adendo e decisão parcial
+- Pedidos simultâneos devem virar UM pedido; o operador aprova todos, alguns ou nenhum, com adendo e "lembrar na execução";
+  decisão em lote para vários pedidos.
+- Aceite: `test_grupo_uma_pergunta_*`, `test_aprovacao_parcial_*`, `test_negar_grupo_*`, `test_lembrar_*`,
+  `test_decisao_em_lote_*`, `test_decisao_dupla_conflita`, `test_concorrencia_de_decisoes_so_uma_vence`.
+
+### REQ-019 — Segurança da aprovação
+- Ações com segredos são negadas sem perguntar; timeout/cancelamento/expiração/reinício negam (nunca aprovam por omissão);
+  nada permanece pendente sem worker; nunca usar `allow_always` do Kiro.
+- Aceite: `test_timeout_nega_*`, `test_cancelar_enquanto_aguarda_aprovacao`, `test_recuperacao_de_pedido_orfao_*`,
+  `test_segredos_sao_sensiveis_e_criticos`, `test_comando_que_toca_segredo_e_sensivel`; migração 0002 sem divergência de modelo.

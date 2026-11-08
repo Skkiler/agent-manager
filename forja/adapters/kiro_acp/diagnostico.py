@@ -40,8 +40,9 @@ def diagnosticar(cli_configurado: str = "", agente: str = "", modelo: str = "") 
         cliente.inicializar(timeout=20)
         handshake = {
             "acp_handshake": True,
-            "agente": cliente.agent_info.get("name"),
+            "agente": cliente.agent_info.get("name"),  # opcional no ACP (ausente em sessao autenticada)
             "agente_versao": cliente.agent_info.get("version"),
+            "load_session": bool(cliente.capacidades.get("loadSession")),
             "metodos_autenticacao": [m.get("id") for m in cliente.auth_methods],
             "capacidades_prompt": (cliente.capacidades.get("promptCapabilities") or {}),
         }

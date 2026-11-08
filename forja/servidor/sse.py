@@ -16,7 +16,8 @@ RECENTES_PADRAO = 50
 def formatar(e: dict[str, Any]) -> str:
     dados = {k: e[k] for k in ("seq", "event_id", "tipo", "ts", "projeto_id", "tarefa_id", "execucao_id",
                                "correlation_id", "payload")}
-    return f"id: {e['seq']}\nevent: {e['tipo']}\ndata: {json.dumps(dados, ensure_ascii=False)}\n\n"
+    # Sem linha 'event:': assim TODO evento chega ao EventSource.onmessage; o tipo vai no JSON (campo 'tipo').
+    return f"id: {e['seq']}\ndata: {json.dumps(dados, ensure_ascii=False)}\n\n"
 
 
 def gerar(

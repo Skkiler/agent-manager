@@ -105,7 +105,10 @@ class ClienteAcp:
         self.agent_info: dict[str, Any] = {}
         self.capacidades: dict[str, Any] = {}
         self.auth_methods: list[dict[str, Any]] = []
+        self._leitores: list[threading.Thread] = []
         self.permissoes_negadas = 0
+        self.permissoes_aprovadas = 0
+        self._tool_calls: dict[str, dict[str, Any]] = {}
         self.permissoes_vistas: list[dict[str, Any]] = []
         self._fechado = False
 
@@ -123,8 +126,12 @@ class ClienteAcp:
             raise AcpCliAusente("Executavel do Kiro CLI nao encontrado.") from e
         except OSError as e:
             raise AcpErro(f"Falha ao iniciar o processo ACP: {sanitizar_texto(str(e))}") from e
-        threading.Thread(target=self._ler_stdout, name="acp-stdout", daemon=True).start()
-        threading.Thread(target=self._ler_stderr, name="acp-stderr", daemon=True).start()
+        self._leitores = [
+            threading.Thread(target=self._ler_stdout, name="acp-stdout", daemon=True),
+            threading.Thread(target=self._ler_stderr, name="acp-stderr", daemon=True),
+        ]
+        for th in self._leitores:
+            th.start()
 
     def encerrar(self) -> None:
         self._fechado = True
@@ -144,6 +151,15 @@ class ClienteAcp:
                 p.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 p.kill()
+                p.wait(timeout=3)
+        for th in self._leitores:  # processo encerrado => pipes em EOF => leitores terminam
+            th.join(timeout=2)
+        for fluxo in (p.stdout, p.stderr):  # sem isto cada execucao vaza descritores de arquivo
+            try:
+                if fluxo:
+                    fluxo.close()
+            except OSError:
+                pass
         self._falhar_pendentes(AcpDesconectado("Cliente encerrado."))
 
     def stderr_recente(self) -> str:
@@ -186,14 +202,18 @@ class ClienteAcp:
 
     def _despachar(self, msg: dict[str, Any]) -> None:
         if "method" in msg and "id" in msg:
-            self._atender_pedido(msg)
+            # Em thread propria: uma permissao pode esperar decisao humana e nao pode bloquear o leitor do protocolo.
+            threading.Thread(target=self._atender_pedido, args=(msg,), name="acp-pedido", daemon=True).start()
         elif "method" in msg:
-            if msg["method"] == "session/update" and self._on_update:
+            if msg["method"] == "session/update":
                 p = msg.get("params") or {}
-                try:
-                    self._on_update(str(p.get("sessionId", "")), p.get("update") or {})
-                except Exception:  # noqa: BLE001 - callback nao pode derrubar o leitor
-                    log.exception("falha em on_update")
+                upd = p.get("update") or {}
+                self._memorizar_tool_call(upd)
+                if self._on_update:
+                    try:
+                        self._on_update(str(p.get("sessionId", "")), upd)
+                    except Exception:  # noqa: BLE001 - callback nao pode derrubar o leitor
+                        log.exception("falha em on_update")
         elif "id" in msg:
             with self._mu:
                 f = self._pend.pop(msg["id"], None) if isinstance(msg["id"], int) else None
@@ -204,10 +224,30 @@ class ClienteAcp:
             else:
                 f.set_result(msg.get("result") or {})
 
+    def _memorizar_tool_call(self, upd: dict[str, Any]) -> None:
+        """O pedido de permissao real traz so title/status/toolCallId; kind, rawInput e locations vem no tool_call."""
+        if upd.get("sessionUpdate") not in ("tool_call", "tool_call_update"):
+            return
+        tid = upd.get("toolCallId")
+        if not isinstance(tid, str):
+            return
+        with self._mu:
+            atual = self._tool_calls.setdefault(tid, {})
+            atual.update({k: v for k, v in upd.items() if v is not None and k != "sessionUpdate"})
+            while len(self._tool_calls) > 200:
+                self._tool_calls.pop(next(iter(self._tool_calls)))
+
+    def _enriquecer(self, params: dict[str, Any]) -> dict[str, Any]:
+        tc = dict(params.get("toolCall") or {})
+        with self._mu:
+            conhecido = dict(self._tool_calls.get(str(tc.get("toolCallId")), {}))
+        return {**params, "toolCall": {**conhecido, **{k: v for k, v in tc.items() if v is not None}}}
+
     def _atender_pedido(self, msg: dict[str, Any]) -> None:
         """Pedidos do agente ao cliente. TODA requisicao recebe resposta (nenhuma fica pendente)."""
         metodo, rid, params = msg["method"], msg["id"], msg.get("params") or {}
         if metodo == "session/request_permission":
+            params = self._enriquecer(params)
             titulo = str((params.get("toolCall") or {}).get("title", ""))
             self.permissoes_vistas.append({"titulo": sanitizar_texto(titulo)})
             try:
@@ -215,8 +255,13 @@ class ClienteAcp:
             except Exception:  # noqa: BLE001
                 log.exception("decisor de permissao falhou; negando")
                 escolhida = None
-            if escolhida is None:
+            opcoes = params.get("options", [])
+            tipo = next((str(o.get("kind", "")) for o in opcoes if o.get("optionId") == escolhida), "")
+            if escolhida is None or tipo.startswith("reject"):
                 self.permissoes_negadas += 1
+            else:
+                self.permissoes_aprovadas += 1
+            if escolhida is None:
                 self._responder(rid, {"outcome": {"outcome": "cancelled"}})
             else:
                 self._responder(rid, {"outcome": {"outcome": "selected", "optionId": escolhida}})

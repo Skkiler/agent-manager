@@ -78,6 +78,53 @@ while True:
                 if n.get("method") == "session/cancel":
                     enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "cancelled"}})
                     break
+        elif cenario in ("multiplas", "repetida"):
+            n_prompt = globals().get("n_prompt", 0) + 1
+            globals()["n_prompt"] = n_prompt
+            if n_prompt > 1:  # turno de acompanhamento com adendos do operador
+                txt = ((msg.get("params") or {}).get("prompt") or [{}])[0].get("text", "")
+                chunk(sid, f"acompanhamento recebido: {txt[-120:]!r}")
+                enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
+                continue
+            if cenario == "multiplas":
+                # 3 ferramentas pedidas AO MESMO TEMPO; formato real: o pedido so traz title/status/toolCallId
+                defs = [("910", "Write File", "edit", {"path": "src/a.py", "text": "x"}),
+                        ("911", "Run command", "execute", {"command": "rm -rf build dist"}),
+                        ("912", "Read File", "read", {"path": ".env"})]
+            else:
+                defs = [("920", "Write File", "edit", {"path": "src/a.py", "text": "x"})]
+            for tid, titulo, kind, raw in defs:
+                update(sid, {"sessionUpdate": "tool_call", "toolCallId": tid, "title": titulo, "kind": kind,
+                             "rawInput": raw, "status": "pending"})
+            opcoes = [{"optionId": "accept", "name": "Permitir", "kind": "allow_once"},
+                      {"optionId": "always-accept", "name": "Sempre", "kind": "allow_always"},
+                      {"optionId": "reject", "name": "Negar", "kind": "reject_once"},
+                      {"optionId": "always-reject", "name": "Nunca", "kind": "reject_always"}]
+            for tid, titulo, _k, _r in defs:
+                enviar({"jsonrpc": "2.0", "id": int(tid), "method": "session/request_permission", "params": {
+                    "sessionId": sid, "toolCall": {"toolCallId": tid, "title": titulo, "status": "pending"},
+                    "options": opcoes}})
+            respostas: dict[str, str] = {}
+            while len(respostas) < len(defs):
+                r = ler()
+                if r is None:
+                    sys.exit(0)
+                if "result" in r and r.get("id") in {int(d[0]) for d in defs}:
+                    o = r["result"]["outcome"]
+                    respostas[str(r["id"])] = o.get("optionId", o["outcome"])
+            if cenario == "repetida":  # mesma acao de novo: com 'lembrar', o operador NAO deve ser consultado outra vez
+                update(sid, {"sessionUpdate": "tool_call", "toolCallId": "921", "title": "Write File", "kind": "edit",
+                             "rawInput": {"path": "src/a.py", "text": "y"}, "status": "pending"})
+                enviar({"jsonrpc": "2.0", "id": 921, "method": "session/request_permission", "params": {
+                    "sessionId": sid, "toolCall": {"toolCallId": "921", "title": "Write File", "status": "pending"},
+                    "options": opcoes}})
+                while "921" not in respostas:
+                    r = ler()
+                    if r and "result" in r and r.get("id") == 921:
+                        o = r["result"]["outcome"]
+                        respostas["921"] = o.get("optionId", o["outcome"])
+            chunk(sid, "decisoes=" + json.dumps(respostas, sort_keys=True))
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
         elif cenario == "permissao":
             enviar({"jsonrpc": "2.0", "id": 900, "method": "session/request_permission", "params": {
                 "sessionId": sid, "toolCall": {"toolCallId": "t1", "title": "Escrever arquivo"},

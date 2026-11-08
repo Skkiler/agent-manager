@@ -31,7 +31,8 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 2.4 Diagnostico (`/api/v1/kiro/status`, `scripts/diagnostico_kiro.py`) sem consumir creditos. (REQ-015)
 - [x] 2.5 Fiacao em `criar_servico` por `APP_KIRO_ACP_ENABLED`; config e `.env.example`; ADR-004.
 - [x] 2.6 Testes com agente ACP falso (subprocesso real) + handshake real + execucao real sem login (bloqueio correto).
-- [ ] 2.7 Prompt real autenticado (depende de `kiro-cli login` pelo usuario e de politica empresarial).
+- [x] 2.7 Prompt real autenticado: end_turn em 4,7 s; escrita negada de fato; escrita aprovada de fato (sandbox vazio).
+- [x] 2.10 Aprovacao por acao: descritor, mediador/agrupamento, adendo, parcial, lembrar, lote, timeout/cancel/reinicio, painel, migracao 0002, ADR-006. (REQ-017..019)
 - [ ] 2.8 Agentes/skills/Specs-templates Kiro e primeiro Workflow de producao (Workflows nao confirmado na conta).
 - [ ] 2.9 Pool/reuso de processo ACP e `session/load` (so se o agente anunciar `loadSession`; hoje `false`).
 

@@ -162,8 +162,14 @@ class Tx:
 
 class RepositorioSqlite:
     def __init__(self, engine_escrita: Engine, engine_leitura: Engine) -> None:
+        self._engines = (engine_escrita, engine_leitura)
         self._w = sessionmaker(engine_escrita, expire_on_commit=False)
         self._r = sessionmaker(engine_leitura, expire_on_commit=False)
+
+    def fechar(self) -> None:
+        """Fecha as conexoes do pool. O repositorio segue utilizavel: reconecta sob demanda."""
+        for e in self._engines:
+            e.dispose()
 
     @contextmanager
     def escrita(self) -> Iterator[Tx]:

@@ -107,12 +107,82 @@ $("#criar-demo").addEventListener("click", async () => {
 
 $("#atualizar").addEventListener("click", listarTarefas);
 
+// ---- Aprovacoes por ACAO (grupo): uma pergunta em linguagem natural, itens marcaveis, adendo, lote ----
+function el(tag, props = {}, ...filhos) {
+  const n = document.createElement(tag);
+  Object.assign(n, props);
+  for (const f of filhos) n.append(f);
+  return n;
+}
+
+function cartaoAprovacao(ap) {
+  const itens = ap.itens || [];
+  const checks = itens.map((i) => {
+    const cb = el("input", { type: "checkbox", checked: true, value: i.id });
+    return el("li", {}, el("label", {}, cb, el("span", { textContent: i.descricao }),
+      el("span", { className: `risco ${i.risco}`, textContent: `risco ${i.risco}` })));
+  });
+  const adendo = el("input", { type: "text", maxLength: 500, placeholder: "Adendo opcional (orientação ao agente)" });
+  adendo.setAttribute("aria-label", "Adendo à autorização");
+  const lembrar = el("input", { type: "checkbox" });
+  const decidir = async (decisao) => {
+    const marcados = [...checks.map((li) => li.querySelector("input"))].filter((c) => c.checked).map((c) => c.value);
+    try {
+      await api("POST", `/aprovacoes/${ap.id}/decidir`, {
+        decisao,
+        itens_aprovados: itens.length ? marcados : null,
+        adendo: adendo.value,
+        lembrar_na_execucao: lembrar.checked,
+      });
+      await listarAprovacoes();
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+  const aprovar = el("button", { type: "button", textContent: "Aprovar marcadas" });
+  const negar = el("button", { type: "button", textContent: "Negar" });
+  aprovar.addEventListener("click", () => decidir("aprovada"));
+  negar.addEventListener("click", () => decidir("negada"));
+  const origem = ap.origem === "pre_execucao" ? "Antes de executar" : "Durante a execução";
+  return el("article", { className: "aprov" },
+    el("strong", { textContent: `${origem}: ${ap.justificativa || ap.acao}` }),
+    itens.length ? el("ul", {}, ...checks) : el("p", { textContent: ap.acao }),
+    el("div", { className: "aprov-acoes" }, adendo,
+      el("label", {}, lembrar, " lembrar nesta execução"), aprovar, negar));
+}
+
+async function listarAprovacoes() {
+  try {
+    const pend = await api("GET", "/aprovacoes?estado=pendente");
+    $("#aprov-contagem").textContent = String(pend.length);
+    const caixa = $("#aprovacoes");
+    caixa.replaceChildren(...pend.map(cartaoAprovacao));
+    $("#lote").hidden = pend.length < 2;
+    $("#lote").dataset.ids = JSON.stringify(pend.map((p) => p.id));
+  } catch (e) {
+    $("#aprovacoes").textContent = `Erro: ${e.message}`;
+  }
+}
+
+async function decidirLote(decisao) {
+  const ids = JSON.parse($("#lote").dataset.ids || "[]");
+  try {
+    await api("POST", "/aprovacoes/decidir-lote", { ids, decisao, adendo: $("#lote-adendo").value });
+    await listarAprovacoes();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+$("#lote-aprovar").addEventListener("click", () => decidirLote("aprovada"));
+$("#lote-negar").addEventListener("click", () => decidirLote("negada"));
+
 $("#salvar-token").addEventListener("click", () => {
   token = $("#token").value.trim();
   sessionStorage.setItem("forja_token", token);
   $("#token").value = "";
   conectarSse();
   listarTarefas();
+  listarAprovacoes();
 });
 
 function conectarSse() {
@@ -128,10 +198,7 @@ function conectarSse() {
     conexao.textContent = "reconectando...";
     conexao.classList.remove("ok");
   };
-  fonte.onmessage = registrarEvento;
-  // tipos nomeados tambem chegam via onmessage apenas se 'event:' == 'message'; escutamos genericamente:
-  for (const tipo of ["tarefa.concluida", "execucao.iniciada", "execucao.concluida", "execucao.falhou"])
-    fonte.addEventListener(tipo, registrarEvento);
+  fonte.onmessage = registrarEvento; // o servidor nao nomeia eventos SSE: o tipo vem em d.tipo
 }
 
 const vistos = new Set();
@@ -148,9 +215,11 @@ function registrarEvento(e) {
   li.textContent = `#${d.seq} ${d.tipo} ${d.tarefa_id || ""} ${d.ts}`;
   $("#eventos").prepend(li);
   if (String(d.tipo).startsWith("tarefa.") || String(d.tipo).startsWith("execucao.")) listarTarefas();
+  if (String(d.tipo).startsWith("aprovacao.")) listarAprovacoes();
 }
 
 if (token) {
   conectarSse();
   listarTarefas();
+  listarAprovacoes();
 }

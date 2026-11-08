@@ -34,6 +34,8 @@ class Configuracoes(BaseSettings):
     app_kiro_agent: str = ""  # nome de agente Kiro opcional (vazio = padrao)
     app_kiro_model: str = ""  # id de modelo opcional (vazio = padrao da conta/politica)
     app_kiro_prompt_timeout_seconds: int = 300
+    # Tempo maximo que um pedido de aprovacao aguarda o operador; expirado => negado (nunca aprova por omissao).
+    app_approval_timeout_seconds: int = 900
     app_require_auth: bool = True
     app_allow_lan_bind: bool = False
     # Opcional: token fixo vindo do ambiente/secret store. Se ausente, gera-se um em data/.

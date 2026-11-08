@@ -35,7 +35,12 @@ forja = ["painel/estatico/*", "migrations/*.ini", "migrations/*.py", "migrations
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-filterwarnings = ["error::DeprecationWarning:forja.*"]
+filterwarnings = [
+  "error::DeprecationWarning:forja.*",
+  # vazamento de conexao/arquivo/pipe e falha de teste (regressao de higiene de recursos)
+  "error::ResourceWarning",
+  "error::pytest.PytestUnraisableExceptionWarning",
+]
 
 [tool.ruff]
 line-length = 120

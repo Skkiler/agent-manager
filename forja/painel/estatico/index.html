@@ -35,6 +35,18 @@
     <output id="criar-saida" aria-live="polite"></output>
   </section>
 
+  <section aria-labelledby="h-aprov">
+    <h2 id="h-aprov">Aprovações pendentes <span id="aprov-contagem" class="pill">0</span></h2>
+    <p class="aviso">Cada pedido agrupa ações relacionadas: uma decisão, um adendo opcional. Ações que envolvem
+      segredos nunca chegam aqui (são negadas automaticamente).</p>
+    <div id="aprovacoes" aria-live="polite"></div>
+    <div id="lote" hidden>
+      <label>Adendo para todos <input id="lote-adendo" type="text" maxlength="500" /></label>
+      <button id="lote-aprovar" type="button">Aprovar todos</button>
+      <button id="lote-negar" type="button">Negar todos</button>
+    </div>
+  </section>
+
   <section aria-labelledby="h-tarefas">
     <h2 id="h-tarefas">Tarefas <button id="atualizar" type="button">atualizar</button></h2>
     <table>

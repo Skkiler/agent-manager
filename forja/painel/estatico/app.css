@@ -18,3 +18,11 @@ th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(-
 #eventos li { padding: .15rem 0; border-bottom: 1px dotted var(--b); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .estado { font-weight: 600; }
+.aprov { border: 1px solid var(--b); border-radius: 8px; padding: .6rem .8rem; margin: .6rem 0; }
+.aprov ul { list-style: none; padding: 0; margin: .4rem 0; }
+.aprov li { padding: .25rem 0; }
+.risco { font-size: .75em; border-radius: 4px; padding: .05rem .4rem; margin-left: .4rem; border: 1px solid var(--b); }
+.risco.alto, .risco.critico { background: #d1242f22; border-color: #d1242f; }
+.risco.medio { background: #f9a82622; border-color: #f9a826; }
+.aprov-acoes { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.aprov-acoes input[type="text"] { flex: 1 1 14rem; }

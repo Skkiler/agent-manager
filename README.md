@@ -68,6 +68,14 @@ O Kiro recebe um workspace vazio e isolado (`data\kiro-workspace`), permissoes d
 e apenas tarefas de `analise`/`documentacao` sao aceitas. Sem login, a tarefa fica `bloqueada` com
 `reautenticacao_necessaria` e pode ser retomada. Detalhes em `docs/adr/0004-kiro-acp-adaptador.md`.
 
+### Aprovações por ação (não por comando)
+Quando o Kiro pede para usar ferramentas, a Forja traduz o pedido em uma pergunta de ação
+("Posso excluir forçadamente `build`?"), **agrupa** pedidos simultâneos em uma só decisão e deixa você aprovar
+todos, alguns ou nenhum, com um **adendo** livre e a opção "lembrar nesta execução". O painel tem a seção
+"Aprovações pendentes"; via API: `POST /api/v1/aprovacoes/{id}/decidir` e `POST /api/v1/aprovacoes/decidir-lote`.
+Ações que envolvem segredos (`.env`, chaves, tokens) são negadas automaticamente. Sem resposta no prazo
+(`APP_APPROVAL_TIMEOUT_SECONDS`), o pedido é **negado**. Detalhes em `docs/adr/0006-aprovacao-por-acao-agrupada.md`.
+
 ### Limites desta fase
 O agente e um **mock** deterministico: as evidencias que ele produz sao **simuladas** e nao comprovam
 funcionalidade real. Integracao Kiro (ACP), memoria/grafos, multiagentes e o painel pixel art chegam nas Fases 2+.

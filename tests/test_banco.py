@@ -21,8 +21,9 @@ from forja.adapters.sqlite.repositorio import RepositorioSqlite
 def test_migracao_cria_tabelas(tmp_path: Path):
     db = tmp_path / "f.sqlite3"
     migrar(db)
-    w, _ = criar_engines(db)
+    w, r = criar_engines(db)
     tabelas = set(inspect(w).get_table_names())
+    RepositorioSqlite(w, r).fechar()
     assert {"projeto", "objetivo", "tarefa", "execucao", "evento", "artefato", "idempotencia"} <= tabelas
 
 
@@ -30,8 +31,9 @@ def test_downgrade_remove_tabelas(tmp_path: Path):
     db = tmp_path / "f.sqlite3"
     migrar(db)
     rebaixar(db, "base")
-    w, _ = criar_engines(db)
+    w, r = criar_engines(db)
     assert "tarefa" not in set(inspect(w).get_table_names())
+    RepositorioSqlite(w, r).fechar()
 
 
 def test_backup_restore_preserva_dados(tmp_path: Path):
@@ -50,3 +52,5 @@ def test_backup_restore_preserva_dados(tmp_path: Path):
     repo2 = RepositorioSqlite(w2, r2)
     with repo2.leitura() as tx:
         assert tx.obter(T.Projeto, "P-1")["nome"] == "demo"
+    repo.fechar()
+    repo2.fechar()

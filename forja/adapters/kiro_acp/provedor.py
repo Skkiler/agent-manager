@@ -23,8 +23,8 @@ from forja.adapters.kiro_acp.cliente import (
     AcpTimeout,
     ClienteAcp,
     DecisorPermissao,
-    decisor_negar_tudo,
 )
+from forja.adapters.kiro_acp.mediador import MediadorPermissoes
 from forja.agentes.base import ControleExecucao
 from forja.dominio.contratos import ArtefatoSaida, ConsumoMedicao, EvidenciaSaida, ResultadoAgente
 from forja.observabilidade.sanitizar import sanitizar_texto
@@ -61,15 +61,31 @@ def montar_comando(cli: str, agente: str = "", modelo: str = "", engine: str = "
     return cmd  # nunca inclui --trust-all-tools / --trust-tools
 
 
+def _adendos_texto(adendos: list[str]) -> str:
+    return "\n".join(f"- {sanitizar_texto(a)[:1000]}" for a in adendos[:10])
+
+
 def montar_prompt(tarefa: dict[str, Any]) -> str:
     criterios = "\n".join(f"- {c}" for c in tarefa.get("criterios_aceite", []))
-    return (
+    texto = (
         "Voce e um agente de ANALISE SOMENTE LEITURA executando uma tarefa da plataforma Forja.\n"
         "Nao modifique arquivos, nao execute comandos de escrita, nao acesse segredos ou credenciais.\n"
         "Responda em portugues com: resumo, evidencias, hipoteses (marcadas como tal) e pendencias.\n\n"
         f"Tarefa: {tarefa['titulo']}\n"
         f"Descricao: {tarefa.get('descricao') or '(sem descricao)'}\n"
         f"Criterios de aceite:\n{criterios}\n"
+    )
+    if tarefa.get("adendos_operador"):
+        texto += ("\nOrientacoes adicionais do operador (adendos a autorizacao):\n"
+                  f"{_adendos_texto(tarefa['adendos_operador'])}\n")
+    return texto
+
+
+def montar_acompanhamento(adendos: list[str]) -> str:
+    return (
+        "O operador respondeu as autorizacoes solicitadas e acrescentou as orientacoes abaixo. "
+        "Considere-as e complemente a resposta anterior apenas no que mudar. Nao use ferramentas de escrita.\n"
+        f"{_adendos_texto(adendos)}\n"
     )
 
 
@@ -81,10 +97,12 @@ class ProvedorKiroAcp:
         comando: list[str] | None,
         workspace: Path,
         timeout_prompt: float = 300.0,
-        decisor_permissao: DecisorPermissao = decisor_negar_tudo,
+        decisor_permissao: DecisorPermissao | None = None,
         id_: str = "kiro.acp.v3",
         timeout_handshake: float = 30.0,
+        janela_agrupamento: float = 0.8,
     ) -> None:
+        self.janela_agrupamento = janela_agrupamento
         self.comando = comando
         self.workspace = workspace
         self.timeout_prompt = timeout_prompt
@@ -118,9 +136,11 @@ class ProvedorKiroAcp:
                 ctl.evento("kiro.ferramenta", {"titulo": str(upd.get("title", ""))[:200],
                            "tipo": upd.get("kind"), "status": upd.get("status")})
 
-        cliente = ClienteAcp(self.comando, cwd=str(self.workspace), decisor_permissao=self._decisor,
-                             on_update=on_update)
+        mediador = MediadorPermissoes(ctl, self.workspace, janela=self.janela_agrupamento)
+        cliente = ClienteAcp(self.comando, cwd=str(self.workspace),
+                             decisor_permissao=self._decisor or mediador.decidir, on_update=on_update)
         sid: str | None = None
+        chamadas = 1
         try:
             cliente.iniciar()
             cliente.inicializar(self.timeout_handshake)
@@ -131,11 +151,19 @@ class ProvedorKiroAcp:
             fut = cliente.requisitar("session/prompt", {"sessionId": sid,
                                      "prompt": [{"type": "text", "text": montar_prompt(tarefa)}]})
             parada = self._aguardar(cliente, fut, sid, ctl)
+            if parada == "end_turn" and mediador.adendos and not (ctl.cancelado() or ctl.pausado()):
+                # Adendos dados DURANTE a execucao nao podem ser injetados no meio do turno (ACP): entrega-se em
+                # UM turno de acompanhamento, contado no orcamento de chamadas.
+                partes.append("\n\n---\n### Complemento apos adendos do operador\n")
+                fut2 = cliente.requisitar("session/prompt", {"sessionId": sid, "prompt": [
+                    {"type": "text", "text": montar_acompanhamento(mediador.adendos)}]})
+                chamadas += 1
+                parada = self._aguardar(cliente, fut2, sid, ctl)
             texto = sanitizar_texto("".join(partes)) if partes else ""
             if parada == "interrompido":
                 return self._res("cancelada" if ctl.cancelado() else "pausada",
                                  "Execucao interrompida pelo orquestrador.", t0)
-            return self._concluir(parada, texto, cliente, n_tools, t0)
+            return self._concluir(parada, texto, cliente, n_tools, t0, mediador, chamadas)
         except AcpAutenticacaoNecessaria as e:
             return self._res("bloqueada", "Autenticacao do Kiro necessaria.", t0,
                              pendencias=["reautenticacao_necessaria: execute 'kiro-cli login' no desktop", e.mensagem])
@@ -170,17 +198,19 @@ class ProvedorKiroAcp:
                 raise AcpTimeout(f"session/prompt excedeu {self.timeout_prompt:.0f}s.")
             time.sleep(0.05)
 
-    def _concluir(self, parada: str, texto: str, cliente: ClienteAcp, n_tools: int, t0: float) -> ResultadoAgente:
+    def _concluir(self, parada: str, texto: str, cliente: ClienteAcp, n_tools: int, t0: float,
+                  mediador: MediadorPermissoes, chamadas: int) -> ResultadoAgente:
         if parada == "refusal":
-            return self._res("falhou", "O modelo recusou a solicitacao (refusal).", t0, chamadas=1)
+            return self._res("falhou", "O modelo recusou a solicitacao (refusal).", t0, chamadas=chamadas)
         if not texto.strip():
-            return self._res("falhou", f"Kiro finalizou ({parada}) sem conteudo de resposta.", t0, chamadas=1)
-        r = self._res("concluida", f"Resposta do Kiro recebida (stopReason={parada}).", t0, chamadas=1)
+            return self._res("falhou", f"Kiro finalizou ({parada}) sem conteudo de resposta.", t0, chamadas=chamadas)
+        r = self._res("concluida", f"Resposta do Kiro recebida (stopReason={parada}).", t0, chamadas=chamadas)
         r.artefatos.append(ArtefatoSaida(nome="resposta_kiro.md", tipo="texto", conteudo=texto))
         r.evidencias.append(EvidenciaSaida(
             tipo="kiro_resposta", simulada=False, artefato="resposta_kiro.md",
             resumo=f"Resposta de LLM via ACP (nao verificada deterministicamente). Ferramentas observadas: {n_tools}; "
-                   f"permissoes negadas: {cliente.permissoes_negadas}."))
+                   f"permissoes aprovadas: {cliente.permissoes_aprovadas}, negadas: {cliente.permissoes_negadas}; "
+                   f"consultas ao operador: {mediador.perguntas}."))
         if parada == "max_tokens":
             r.pendencias.append("resposta_truncada: stopReason=max_tokens")
         r.hipoteses.append("Conteudo da resposta e gerado por modelo; requer revisao antes de uso.")
