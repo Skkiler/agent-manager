@@ -91,6 +91,19 @@ O conteúdo da memória fica em `data\forja.sqlite3` (**ignorado pelo Git**); PI
 resultados são sempre *dados não confiáveis* (nunca instruções). Evidências simuladas (mock) não validam memória.
 Detalhes e limites em `docs/adr/0007-memoria-fts5-namespaces-acl.md`.
 
+### Contexto economico e conversa com o desenvolvedor (Fase 4)
+Com `APP_CONTEXT_ENABLED=true`, a Forja anexa ao prompt **so** memorias relevantes (portoes de relevancia, cobertura e
+orcamento de `APP_CONTEXT_BUDGET_TOKENS`) dos namespaces em `APP_CONTEXT_NAMESPACES` (padrao `publico`). O agente responde em
+secoes e agrupa decisoes; voce responde uma vez em `POST /api/v1/tarefas/{id}/conversa` e a execucao retoma com prompt compacto.
+Tokens exibidos sao **estimados**. Ver `docs/adr/0008`, `0009` e `0010`; ferramentas planejadas em `docs/arquitetura/ferramentas-planejadas.md`.
+
+Indexar uma pasta **local** (banco proprio, nunca versionado) e consultar:
+
+```powershell
+python scripts\memoria_ingerir.py --raiz "C:\minha\pasta" --namespace pessoal --repositorio minha-pasta `
+  --db data\segundo-cerebro.sqlite3 --extensoes .py .md --consultar "conexao com banco" --mostrar-trechos
+```
+
 ### Limites desta fase
 O agente e um **mock** deterministico: as evidencias que ele produz sao **simuladas** e nao comprovam
 funcionalidade real. Integracao Kiro (ACP), memoria/grafos, multiagentes e o painel pixel art chegam nas Fases 2+.

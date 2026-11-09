@@ -10,6 +10,7 @@ import json
 import sys
 import time
 
+sys.stdin.reconfigure(encoding="utf-8")
 cenario = sys.argv[1] if len(sys.argv) > 1 else "ok"
 
 
@@ -124,6 +125,29 @@ while True:
                         o = r["result"]["outcome"]
                         respostas["921"] = o.get("optionId", o["outcome"])
             chunk(sid, "decisoes=" + json.dumps(respostas, sort_keys=True))
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
+        elif cenario == "eco":  # devolve o prompt recebido: permite provar o que foi (e o que NAO foi) enviado ao modelo
+            txt = ((msg.get("params") or {}).get("prompt") or [{}])[0].get("text", "")
+            chunk(sid, "## Resposta\n<<PROMPT>>\n" + txt + "\n<<FIM>>")
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
+        elif cenario in ("briefing", "briefing_sem_decisao", "briefing_longo"):
+            n_prompt = globals().get("n_prompt", 0) + 1
+            globals()["n_prompt"] = n_prompt
+            txt = ((msg.get("params") or {}).get("prompt") or [{}])[0].get("text", "")
+            globals().setdefault("prompts_recebidos", []).append(txt)
+            if "Retomada da conversa" in txt:  # 2a rodada: o desenvolvedor ja respondeu
+                chunk(sid, "## Entendimento\nVoce decidiu usar Bearer.\n\n## Resposta\nSeguindo sua decisao, o plano esta fechado "
+                           f"(recebi {len(txt)} caracteres de contexto). Veja [M1].\n\n## Decisões para você\nNenhuma decisão necessária.\n")
+            elif cenario == "briefing_longo":
+                chunk(sid, "## Resposta\n" + ("detalhe tecnico relevante. " * 400))  # > 2000 caracteres: nao pode truncar
+            elif cenario == "briefing_sem_decisao":
+                chunk(sid, "## Entendimento\nPedido claro.\n\n## Resposta\nFeito. Conforme [M1], use integrity_check.\n\n"
+                           "## Premissas\n- Python 3.12\n\n## Decisões para você\nNenhuma.\n\n## Próximos passos\n- Rodar os testes\n")
+            else:
+                chunk(sid, f"## Entendimento\nVoce quer escolher a autenticacao da API (prompt de {len(txt)} caracteres).\n\n"
+                           "## Resposta\nPosso seguir com duas opcoes.\n\n"
+                           "## Decisões para você\n1. Usar token Bearer ou cookie? — Recomendo: Bearer (mais simples). Alternativas: cookie\n"
+                           "2. Publicar agora? — Recomendo: depois da revisao.\n\n## Próximos passos\n- Implementar o servico\n")
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
         elif cenario == "permissao":
             enviar({"jsonrpc": "2.0", "id": 900, "method": "session/request_permission", "params": {

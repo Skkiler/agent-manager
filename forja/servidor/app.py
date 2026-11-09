@@ -19,7 +19,9 @@ from forja.adapters.sqlite.banco import criar_engines, migrar
 from forja.adapters.sqlite.repositorio import RepositorioSqlite
 from forja.agentes.base import ProvedorAgente
 from forja.config import Configuracoes, obter_configuracoes
+from forja.contexto.construtor import ConstrutorContexto
 from forja.dominio.erros import ErroDominio
+from forja.memoria.modelo import Principal
 from forja.observabilidade.logs import configurar_logging, correlation_id_var
 from forja.orquestracao.memoria_servico import ServicoMemoria
 from forja.orquestracao.servico import Servico
@@ -72,6 +74,10 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.state.servico = provedor_servico = criar_servico(cfg, provedor)
     _ = cfg.memoria_namespaces  # falha cedo se APP_MEMORY_ALLOWED_NAMESPACES for invalido
     app.state.memoria = ServicoMemoria(provedor_servico.repo, raizes_ingestao=cfg.memoria_raizes)
+    if cfg.app_context_enabled and cfg.contexto_namespaces:
+        ns = cfg.contexto_namespaces
+        provedor_servico.construtor_contexto = ConstrutorContexto(
+            app.state.memoria, Principal("contexto", frozenset(ns)), ns, orcamento=cfg.app_context_budget_tokens)
     app.state.token = carregar_token(cfg)
     app.state.limitador = LimitadorTaxa(cfg.app_rate_limit_per_minute)
     app.state.encerrando = threading.Event()

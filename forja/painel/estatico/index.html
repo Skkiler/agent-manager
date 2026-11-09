@@ -75,6 +75,20 @@
     </table>
   </section>
 
+  <section aria-labelledby="h-conversa" id="secao-conversa" hidden>
+    <h2 id="h-conversa">Conversa da tarefa <span id="conversa-tarefa" class="pill"></span></h2>
+    <p class="aviso">O agente explica o que entendeu, o que respondeu e <strong>reúne todas as decisões numa só pergunta</strong>,
+      cada uma com recomendação. Responda uma vez, em texto livre.</p>
+    <p id="conversa-contexto" class="aviso" role="status"></p>
+    <div id="conversa-mensagens" aria-live="polite"></div>
+    <form id="conversa-form">
+      <label for="conversa-texto">Sua resposta</label>
+      <textarea id="conversa-texto" rows="4" maxlength="8000" required></textarea>
+      <label><input id="conversa-retomar" type="checkbox" checked /> retomar a execução ao responder</label>
+      <button type="submit">Responder</button>
+    </form>
+  </section>
+
   <section aria-labelledby="h-eventos">
     <h2 id="h-eventos">Eventos (SSE, com replay por Last-Event-ID)</h2>
     <ul id="eventos" aria-live="polite"></ul>

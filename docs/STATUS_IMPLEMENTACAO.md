@@ -1,6 +1,6 @@
 # Estado da implementacao
 
-**Atualizado:** 2026-11-08. **Fases 0, 1, 2 e 3 implementadas e testadas.** Padrao de agente continua sendo o **mock SIMULADO**;
+**Atualizado:** 2026-11-08. **Fases 0 a 3 testadas; Fase 4 (contexto economico, conversa, busca) implementada, itens 4.7-4.9 abertos.** Padrao de agente continua sendo o **mock SIMULADO**;
 o Kiro real so e usado com `APP_KIRO_ACP_ENABLED=true` (validado em sessao autenticada na etapa anterior).
 
 ## Regra de publicacao (repositorio publico)
@@ -15,7 +15,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   Kiro CLI 3.1.0 autenticado (login feito pelo usuario). Terminal da sessao roda como **Administrador** (o CLI recomenda evitar).
 
 ## Resultados reais de teste (2026-11-08)
-- `python -m pytest` -> **265 passed** (~44 s; 3 execucoes seguidas limpas), exit 0, sem warnings; cobertura **91%**. `ResourceWarning` continua tratado como erro.
+- `python -m pytest` -> **396 passed** (~100 s, com cobertura), exit 0, sem warnings; cobertura **92%** (a Fase 3 tinha 265 testes/91%). `ResourceWarning` continua tratado como erro.
 - `python -m ruff check forja tests scripts` -> All checks passed. `node --check` do `app.js` -> ok.
 - **Testes de mutacao nas defesas criticas (9 mutantes, 9 detectados):** ACL do FTS removida; `substr`->`LIKE`; raiz de ingestao nao
   verificada; evidencia simulada aceita; ACL ignorada ao carregar memoria; validacao ignora injection; validacao ignora contradicao;
@@ -49,7 +49,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 | 1 — Nucleo deterministico | testado | testes + smoke | — |
 | 2 — ACP/Kiro | testado (2.8 e 2.9 abertos) | ACP + aprovacao por acao, validado com Kiro real | 2.8 agentes/skills/Workflow; 2.9 pool/`session/load` |
 | 3 — Memoria/grafo | **testado** (3.10–3.12 abertos) | 106 testes de memoria (43 dominio + 44 servico + 19 API) + 59 git-safe + mutacao + dados reais | 3.10 propostas de procedimento |
-| 4 — Contexto/ferramentas | planejado | — | **proxima**: context builder com orcamento, ligar recuperacao ao prompt do Kiro, ferramentas N0, benchmark recall@k/MRR |
+| 4 — Contexto/ferramentas | **testado** (4.7-4.9 abertos) | 396 testes, benchmark, Kiro real, mutacao | 4.7 ferramentas N0 medidas; 4.8 precisao NL em corpus real |
 | 5 — Multiagentes | planejado | — | DAG, scheduler, worktrees; modos de escrita |
 | 6 — Aprendizado | planejado | — | EWMA, roteamento, N1 opcional |
 | 7 — UI/LAN | planejado | — | painel pixel art; tunel/HTTPS |
@@ -63,20 +63,39 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   ingestao incremental, busca hibrida (FTS5 + simbolos, RRF), grafo tipado com escopo.
 - `forja/servidor/rotas_memoria.py` — `/api/v1/memorias*`, `/conhecimento*`; painel com "Memoria e codigo". ADR-007.
 
+## Fase 4 — resultados reais
+- **Busca (benchmark sintetico versionado, k=3):** recall/MRR/nDCG 0,79/0,70/0,72 -> **0,94/0,87/0,89**; categoria "dificil" 0,44 -> 0,78; nenhuma categoria piorou.
+- **Kiro real (tarefa sintetica + memoria validada sintetica):** seguiu o protocolo em secoes; 1 item de contexto (68 tokens estimados) citado como util;
+  1 decisao com recomendacao; retomada concluiu sem novas decisoes. Prompt ~309 tokens estimados (inicial e retomada); retomada ~67% mais barata que reenviar prompt + resposta anterior (886 estimados). Tokens sao **estimados**, nao do provedor.
+- **Indexacao de pasta local grande (apenas agregados; conteudo nunca registrado aqui):** ~2.867 arquivos, ~12,5 mil simbolos distintos. Acerto@3 de definicoes 99,8% (nomes unicos) e 98% (ambiguos).
+  Latencia de busca por simbolo: mediana 135 ms -> 3,7 ms (p95 180 -> 13 ms) apos a migracao 0005; ingestao completa 137,7 s -> 23,7 s; incremental sem mudancas ~6 s.
+- Auto-indexacao da Forja: 200/200 definicoes no top-3, mediana 3,8 ms.
+- Consulta sem sentido (`assunto inexistente zzqxw`) agora reporta cobertura 0,33 (antes 1,00); teste de regressao + mutante morto.
+- Mutacao: busca 4/4 e contexto 10/10 detectados (rodada anterior); cobertura de simbolo 1/1. Nao re-executei a rodada completa apos as ultimas mudancas.
+- Lint: `ruff check` limpo; E501 passou a ser ignorado na config (textos PT longos), `ruff format` aplicado nos arquivos tocados; `node --check app.js` ok.
+- Bugs achados e corrigidos: contadores `tokens_*` redigidos como segredo; resposta do Kiro truncada em 2000 car.; sombreamento de variavel na busca;
+  autogenerate do Alembic propondo DROP das tabelas FTS; regressao de "relaxar termos raros"; mensagem >100k car.; stdin cp1252 no agente falso; cobertura de simbolo fixa em 1,0.
+- Decisao: **sem criptografia em repouso** (ferramenta local, usuario unico); ver ADR-010.
+
+## Limites da Fase 4 (honestos)
+- Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
+- Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
+- `memoria_fts` ainda varre na remocao (aceitavel para poucas memorias).
+- Economia das ferramentas planejadas **nao medida** (`docs/arquitetura/ferramentas-planejadas.md`).
+- `session/load` do ACP e pool de processos continuam abertos (2.9).
 ## Limitacoes e pendencias (honestas)
-- **Sem embeddings/vetores, sem expansao por grafo na busca, sem Tree-sitter (so AST Python), sem OCR/PDF, sem watcher de arquivos**
-  (Fase 4). Busca e lexical: sinonimos e perguntas em linguagem natural longa funcionam mal.
-- **Sem criptografia em repouso:** o banco com a memoria e protegido por ACL, `.gitignore`/`.kiroignore` e permissoes do SO — nao
-  por cifra. Considerar antes de guardar memoria `empresa/*` em disco compartilhado.
+- **Sem embeddings/vetores, sem Tree-sitter (AST so para Python; regex leve para md/js/ts/ps1/sql), sem OCR/PDF.** Watcher existe so no script de ingestao.
+  Busca e lexical com radicais/sinonimos e expansao por grafo (ver Fase 4).
+- **Sem criptografia em repouso (decisao consciente, ADR-010):** protecao por ACL, `.gitignore`/`.kiroignore` e permissoes do SO. Reavaliar se o banco for a disco compartilhado.
 - IDF do bm25 considera o corpus inteiro (sem vazar conteudo, mas com influencia numerica minima entre namespaces).
 - Heuristicas de PII/injection (regex) reduzem risco, **nao** o eliminam; resultados sao sempre tratados como dados nao confiaveis.
 - `confianca` e informada pelo usuario e **nao calibrada**; nao entra no ranking.
-- A memoria ainda **nao e injetada automaticamente** no prompt do Kiro (Fase 4). Hoje o consumo e via API/painel.
+- A memoria e injetada no prompt apenas para namespaces em `APP_CONTEXT_NAMESPACES` (padrao `publico`).
 - Painel (JS) sem teste de navegador: verificado por revisao, `node --check` e testes de API/SSE.
 - Scanner dedicado de segredos (gitleaks) e CI continuam ausentes. Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 265 passed.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 396 passed.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
-3. Proxima tarefa liberada: **Fase 4** — context builder com orcamento (§10.3) ligando memoria+codigo ao prompt do provedor Kiro,
+3. Proxima tarefa liberada: itens 4.7-4.9 (ferramentas N0 medidas, precisao em corpus real, embeddings so se ganharem). Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

@@ -274,7 +274,7 @@ class ClienteAcp:
         p = self._proc
         if p is None or p.stdin is None or p.poll() is not None:
             raise AcpDesconectado("Processo ACP nao esta ativo.")
-        dados = json.dumps(obj, ensure_ascii=False) + "\n"
+        dados = json.dumps(obj, ensure_ascii=True) + "\n"  # escapado: independe do encoding do processo filho
         with self._escrita:
             try:
                 p.stdin.write(dados)

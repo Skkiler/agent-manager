@@ -15,10 +15,13 @@ from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import func, select
+
 from forja.adapters.sqlite import tabelas as T
 from forja.adapters.sqlite.repositorio import RepositorioSqlite, Tx, novo_id
 from forja.agentes.base import ControleExecucao, ProvedorAgente
 from forja.dominio.contratos import (
+    ConversaIn,
     DecisaoAprovacaoIn,
     DecisaoLoteIn,
     ObjetivoIn,
@@ -46,7 +49,7 @@ from forja.dominio.estados import (
     validar_transicao,
 )
 from forja.dominio.tempo import Relogio, RelogioSistema, iso, somar
-from forja.observabilidade.sanitizar import sanitizar
+from forja.observabilidade.sanitizar import redigir_segredos, sanitizar
 
 log = logging.getLogger("forja.servico")
 
@@ -57,6 +60,8 @@ class _Espera:
     def __init__(self) -> None:
         self.evento = threading.Event()
         self.decisao: dict[str, Any] = {"aprovados": [], "adendo": "", "lembrar": False}
+
+
 ET, EE = EstadoTarefa, EstadoExecucao
 _EXEC_ABERTAS = (EE.PENDENTE, EE.EXECUTANDO, EE.PAUSADA, EE.AGUARDANDO_APROVACAO)
 _EXEC_ABERTAS_V = frozenset(x.value for x in _EXEC_ABERTAS)
@@ -74,7 +79,11 @@ class Servico:
         relogio: Relogio | None = None,
         executor: Executor | None = None,
         espera_aprovacao_s: float = 900.0,
+        construtor_contexto: Any | None = None,
     ) -> None:
+        self.construtor_contexto = (
+            construtor_contexto  # ConstrutorContexto (opcional): memoria -> prompt, com orcamento
+        )
         self.espera_aprovacao_s = espera_aprovacao_s
         self._esperas: dict[str, _Espera] = {}
         self.repo = repo
@@ -92,16 +101,30 @@ class Servico:
     def _ts(self) -> str:
         return iso(self.relogio.agora())
 
-    def _ev(self, t: Tx, tipo: str, tarefa: dict | None = None, execucao_id: str | None = None,
-            payload: dict | None = None, dedup: str | None = None, projeto_id: str | None = None) -> None:
+    def _ev(
+        self,
+        t: Tx,
+        tipo: str,
+        tarefa: dict | None = None,
+        execucao_id: str | None = None,
+        payload: dict | None = None,
+        dedup: str | None = None,
+        projeto_id: str | None = None,
+    ) -> None:
         t.emitir_evento(
-            tipo, self._ts(), payload, projeto_id=projeto_id or (tarefa or {}).get("projeto_id"),
-            tarefa_id=(tarefa or {}).get("id"), execucao_id=execucao_id,
-            correlation_id=(tarefa or {}).get("correlation_id"), dedup_key=dedup,
+            tipo,
+            self._ts(),
+            payload,
+            projeto_id=projeto_id or (tarefa or {}).get("projeto_id"),
+            tarefa_id=(tarefa or {}).get("id"),
+            execucao_id=execucao_id,
+            correlation_id=(tarefa or {}).get("correlation_id"),
+            dedup_key=dedup,
         )
 
-    def _emitir_avulso(self, tipo: str, tarefa_id: str | None = None, execucao_id: str | None = None,
-                       payload: dict | None = None) -> None:
+    def _emitir_avulso(
+        self, tipo: str, tarefa_id: str | None = None, execucao_id: str | None = None, payload: dict | None = None
+    ) -> None:
         with self.repo.escrita() as t:
             tarefa = t.obter(T.Tarefa, tarefa_id) if tarefa_id else None
             self._ev(t, tipo, tarefa, execucao_id, payload)
@@ -117,8 +140,9 @@ class Servico:
                     return ex["resposta"], True
             res = fn(t)
             if chave:
-                t.gravar_idempotencia(escopo=escopo, chave=chave, request_hash=h, status_code=201,
-                                      resposta=res, criado_em=self._ts())
+                t.gravar_idempotencia(
+                    escopo=escopo, chave=chave, request_hash=h, status_code=201, resposta=res, criado_em=self._ts()
+                )
             return res, False
 
     # ------------------------------------------------------------------ criacao
@@ -126,21 +150,32 @@ class Servico:
         def fn(t: Tx) -> dict:
             if t.listar(T.Projeto, nome=d.nome):
                 raise Conflito(f"Projeto {d.nome!r} ja existe.")
-            p = t.inserir(T.Projeto, id=novo_id("P"), nome=d.nome, descricao=d.descricao, estado="ativo",
-                          criado_em=self._ts())
+            p = t.inserir(
+                T.Projeto, id=novo_id("P"), nome=d.nome, descricao=d.descricao, estado="ativo", criado_em=self._ts()
+            )
             self._ev(t, "projeto.criado", payload={"nome": d.nome}, projeto_id=p["id"])
             return p
+
         return self._idempotente("projeto", chave, d.model_dump(), fn)
 
     def criar_objetivo(self, d: ObjetivoIn, chave: str | None = None) -> tuple[dict, bool]:
         def fn(t: Tx) -> dict:
             if t.obter(T.Projeto, d.projeto_id) is None:
                 raise NaoEncontrado(f"Projeto {d.projeto_id} nao encontrado.")
-            o = t.inserir(T.Objetivo, id=novo_id("OBJ"), projeto_id=d.projeto_id, titulo=d.titulo,
-                          descricao=d.descricao, prioridade=d.prioridade, criterios_sucesso=d.criterios_sucesso,
-                          orcamento=d.orcamento.model_dump(), criado_em=self._ts())
+            o = t.inserir(
+                T.Objetivo,
+                id=novo_id("OBJ"),
+                projeto_id=d.projeto_id,
+                titulo=d.titulo,
+                descricao=d.descricao,
+                prioridade=d.prioridade,
+                criterios_sucesso=d.criterios_sucesso,
+                orcamento=d.orcamento.model_dump(),
+                criado_em=self._ts(),
+            )
             self._ev(t, "objetivo.criado", payload={"titulo": d.titulo}, projeto_id=d.projeto_id)
             return o
+
         return self._idempotente("objetivo", chave, d.model_dump(), fn)
 
     def criar_tarefa(self, d: TarefaIn, chave: str | None = None) -> tuple[dict, bool]:
@@ -157,17 +192,38 @@ class Servico:
             agora = self._ts()
             corr = novo_id("corr")
             tarefa = t.inserir(
-                T.Tarefa, id=novo_id("T"), objetivo_id=d.objetivo_id, projeto_id=obj["projeto_id"],
-                titulo=d.titulo, descricao=d.descricao, criterios_aceite=d.criterios_aceite,
-                dependencias=sorted(set(d.dependencias)), especialidade=d.especialidade, modo=d.modo,
-                recursos=d.recursos.model_dump(), orcamento=d.orcamento.model_dump(),
-                politicas=d.politicas.model_dump(), entrada=d.entrada, contexto_refs=d.contexto_refs,
-                estado=ET.RASCUNHO.value, versao_estado=1, tentativas=0, motivo_estado="",
-                correlation_id=corr, criado_em=agora, atualizado_em=agora,
+                T.Tarefa,
+                id=novo_id("T"),
+                objetivo_id=d.objetivo_id,
+                projeto_id=obj["projeto_id"],
+                titulo=d.titulo,
+                descricao=d.descricao,
+                criterios_aceite=d.criterios_aceite,
+                dependencias=sorted(set(d.dependencias)),
+                especialidade=d.especialidade,
+                modo=d.modo,
+                recursos=d.recursos.model_dump(),
+                orcamento=d.orcamento.model_dump(),
+                politicas=d.politicas.model_dump(),
+                entrada=d.entrada,
+                contexto_refs=d.contexto_refs,
+                estado=ET.RASCUNHO.value,
+                versao_estado=1,
+                tentativas=0,
+                motivo_estado="",
+                correlation_id=corr,
+                criado_em=agora,
+                atualizado_em=agora,
             )
-            self._ev(t, "tarefa.criada", tarefa, payload={"titulo": d.titulo, "estado": "rascunho"},
-                     dedup=f"tarefa:{tarefa['id']}:v1")
+            self._ev(
+                t,
+                "tarefa.criada",
+                tarefa,
+                payload={"titulo": d.titulo, "estado": "rascunho"},
+                dedup=f"tarefa:{tarefa['id']}:v1",
+            )
             return tarefa
+
         return self._idempotente("tarefa", chave, d.model_dump(), fn)
 
     # ------------------------------------------------------------------ consultas
@@ -190,8 +246,13 @@ class Servico:
             por_estado = t.tarefas_por_estado(objetivo_id)
         total = sum(por_estado.values())
         concl = por_estado.get(ET.CONCLUIDA.value, 0)
-        return {**obj, "tarefas_por_estado": por_estado, "total_tarefas": total,
-                "concluidas_verificadas": concl, "completo": total > 0 and concl == total}
+        return {
+            **obj,
+            "tarefas_por_estado": por_estado,
+            "total_tarefas": total,
+            "concluidas_verificadas": concl,
+            "completo": total > 0 and concl == total,
+        }
 
     def eventos_apos(self, seq: int, limite: int = 500, projeto_id: str | None = None) -> list[dict]:
         with self.repo.leitura() as t:
@@ -218,23 +279,42 @@ class Servico:
         return a
 
     # ------------------------------------------------------------------ maquina de estados
-    def _mudar(self, t: Tx, tarefa: dict, para: EstadoTarefa, motivo: str = "", ator: str = "sistema",
-               esperado: int | None = None, **extra: Any) -> dict:
+    def _mudar(
+        self,
+        t: Tx,
+        tarefa: dict,
+        para: EstadoTarefa,
+        motivo: str = "",
+        ator: str = "sistema",
+        esperado: int | None = None,
+        **extra: Any,
+    ) -> dict:
         atual = EstadoTarefa(tarefa["estado"])
         validar_transicao(atual, para)
         ver = tarefa["versao_estado"] if esperado is None else esperado
         if para == ET.CONCLUIDA and t.contar_evidencias(tarefa["id"]) == 0:
             raise Conflito("Conclusao exige ao menos uma evidencia de aceite.")
-        ok = t.atualizar_tarefa_condicional(tarefa["id"], atual.value, ver, estado=para.value,
-                                            motivo_estado=motivo, atualizado_em=self._ts(), **extra)
+        ok = t.atualizar_tarefa_condicional(
+            tarefa["id"], atual.value, ver, estado=para.value, motivo_estado=motivo, atualizado_em=self._ts(), **extra
+        )
         if not ok:
             raise ConflitoVersao("Versao de estado desatualizada (alteracao concorrente).")
         if eh_terminal(para) or para == ET.PRONTA:
             t.liberar_locks(tarefa["id"])
         nova = t.obter(T.Tarefa, tarefa["id"])
-        self._ev(t, f"tarefa.{para.value}", nova, payload={"de": atual.value, "para": para.value,
-                 "versao": nova["versao_estado"], "motivo": motivo, "ator": ator},
-                 dedup=f"tarefa:{nova['id']}:v{nova['versao_estado']}")
+        self._ev(
+            t,
+            f"tarefa.{para.value}",
+            nova,
+            payload={
+                "de": atual.value,
+                "para": para.value,
+                "versao": nova["versao_estado"],
+                "motivo": motivo,
+                "ator": ator,
+            },
+            dedup=f"tarefa:{nova['id']}:v{nova['versao_estado']}",
+        )
         if para == ET.CONCLUIDA or para in _FALHA_PROPAGA:
             self._reavaliar_dependentes(t, nova)
         return nova
@@ -259,8 +339,9 @@ class Servico:
             if origem["id"] in d["dependencias"]:
                 self._avaliar_dependencias(t, d["id"])
 
-    def transicionar(self, tarefa_id: str, d: TransicaoIn, ator: str = "operador", chave: str | None = None
-                     ) -> tuple[dict, bool]:
+    def transicionar(
+        self, tarefa_id: str, d: TransicaoIn, ator: str = "operador", chave: str | None = None
+    ) -> tuple[dict, bool]:
         if d.para in RESERVADAS_AO_ORQUESTRADOR:
             raise TransicaoReservada(f"Transicao para {d.para.value} e reservada ao orquestrador.")
         if d.para == ET.CANCELADA:
@@ -282,11 +363,13 @@ class Servico:
                 return tarefa  # idempotente: ja cancelada (inclusive pelo cancelamento de execucao acima)
             if tarefa["versao_estado"] != d.expected_version:
                 raise ConflitoVersao(
-                    f"expected_version={d.expected_version} mas a versao atual e {tarefa['versao_estado']}.")
+                    f"expected_version={d.expected_version} mas a versao atual e {tarefa['versao_estado']}."
+                )
             nova = self._mudar(t, tarefa, d.para, d.motivo, ator, esperado=d.expected_version)
             if d.para == ET.PREPARADA:
                 nova = self._avaliar_dependencias(t, tarefa_id)
             return nova
+
         return self._idempotente(f"transicao:{tarefa_id}", chave, d.model_dump(mode="json"), fn)
 
     # ------------------------------------------------------------------ execucoes
@@ -300,9 +383,17 @@ class Servico:
             abertas = [e for e in t.listar(T.Execucao, tarefa_id=tarefa_id) if e["estado"] in _EXEC_ABERTAS_V]
             if abertas:
                 raise Conflito(f"Tarefa ja possui execucao aberta ({abertas[0]['id']}).")
-            ex = t.inserir(T.Execucao, id=novo_id("EX"), tarefa_id=tarefa_id, estado=EE.PENDENTE.value,
-                           agente_id=self.provedor.id, tentativa=0, checkpoint={},
-                           correlation_id=tarefa["correlation_id"], criado_em=self._ts())
+            ex = t.inserir(
+                T.Execucao,
+                id=novo_id("EX"),
+                tarefa_id=tarefa_id,
+                estado=EE.PENDENTE.value,
+                agente_id=self.provedor.id,
+                tentativa=0,
+                checkpoint={},
+                correlation_id=tarefa["correlation_id"],
+                criado_em=self._ts(),
+            )
             self._ev(t, "execucao.criada", tarefa, ex["id"], {"agente": self.provedor.id, "mock": self.provedor.mock})
             return ex
 
@@ -313,8 +404,9 @@ class Servico:
             if e.codigo in {"orcamento_excedido", "recurso_bloqueado"}:
                 with self.repo.leitura() as t:
                     ex = t.obter(T.Execucao, execucao_id)
-                self._emitir_avulso(f"execucao.{e.codigo}", ex["tarefa_id"] if ex else None, execucao_id,
-                                    {"motivo": e.mensagem})
+                self._emitir_avulso(
+                    f"execucao.{e.codigo}", ex["tarefa_id"] if ex else None, execucao_id, {"motivo": e.mensagem}
+                )
             raise
         if resultado["estado"] == EE.EXECUTANDO.value:
             self._submeter(execucao_id)
@@ -334,16 +426,29 @@ class Servico:
                     raise OrcamentoExcedido("max_tentativas excedido.")
                 t.adquirir_locks(tarefa["recursos"]["escrita"], tarefa["id"], iso(agora), iso(somar(agora, self.lease)))
                 tarefa = self._mudar(t, tarefa, ET.ATRIBUIDA, "execucao iniciada", ator)
-                tarefa = self._mudar(t, tarefa, ET.EXECUTANDO, "agente executando", ator,
-                                     tentativas=tarefa["tentativas"] + 1)
-                t.atualizar(T.Execucao, ex["id"], estado=EE.EXECUTANDO.value, tentativa=tarefa["tentativas"],
-                            iniciado_em=iso(agora),
-                            deadline=iso(somar(agora, tarefa["orcamento"]["max_duracao_segundos"])))
+                tarefa = self._mudar(
+                    t, tarefa, ET.EXECUTANDO, "agente executando", ator, tentativas=tarefa["tentativas"] + 1
+                )
+                t.atualizar(
+                    T.Execucao,
+                    ex["id"],
+                    estado=EE.EXECUTANDO.value,
+                    tentativa=tarefa["tentativas"],
+                    iniciado_em=iso(agora),
+                    deadline=iso(somar(agora, tarefa["orcamento"]["max_duracao_segundos"])),
+                )
                 self._ev(t, "execucao.iniciada", tarefa, ex["id"], {"mock": self.provedor.mock})
                 if tarefa["politicas"].get("exige_aprovacao"):
-                    ap = t.inserir(T.Aprovacao, id=novo_id("AP"), tarefa_id=tarefa["id"], execucao_id=ex["id"],
-                                   acao="executar_tarefa", estado="pendente", criado_em=self._ts(),
-                                   justificativa=f"Politica exige aprovacao: {tarefa['titulo']}")
+                    ap = t.inserir(
+                        T.Aprovacao,
+                        id=novo_id("AP"),
+                        tarefa_id=tarefa["id"],
+                        execucao_id=ex["id"],
+                        acao="executar_tarefa",
+                        estado="pendente",
+                        criado_em=self._ts(),
+                        justificativa=f"Politica exige aprovacao: {tarefa['titulo']}",
+                    )
                     self._mudar(t, tarefa, ET.AGUARDANDO_APROVACAO, "aguardando aprovacao", ator)
                     t.atualizar(T.Execucao, ex["id"], estado=EE.AGUARDANDO_APROVACAO.value)
                     self._ev(t, "aprovacao.solicitada", tarefa, ex["id"], {"aprovacao_id": ap["id"]})
@@ -392,15 +497,23 @@ class Servico:
                 ex = t.obter(T.Execucao, execucao_id)
                 tarefa = t.obter(T.Tarefa, ex["tarefa_id"])
                 tarefa["adendos_operador"] = [
-                    a["adendo"] for a in t.listar(T.Aprovacao, execucao_id=execucao_id, estado="aprovada")
+                    a["adendo"]
+                    for a in t.listar(T.Aprovacao, execucao_id=execucao_id, estado="aprovada")
                     if a["origem"] == "pre_execucao" and a["adendo"]
                 ]
+                tarefa["retomada"] = self._dados_de_retomada(t, tarefa, execucao_id)
+            pacote = self._montar_contexto(execucao_id, tarefa)
             self._emitir_exec(execucao_id, "agente.iniciado", {"agente": self.provedor.id, "mock": self.provedor.mock})
             res = self.provedor.executar(tarefa, ex["checkpoint"] or {}, ctl)
+            self._registrar_uteis(execucao_id, pacote, res)
         except Exception:  # noqa: BLE001 - isolamento do provedor
             log.exception("falha no provedor de agente", extra={"execucao_id": execucao_id})
-            res = ResultadoAgente(estado="falhou", resumo="Erro interno no provedor de agente.",
-                                  agente_id=self.provedor.id, mock=self.provedor.mock)
+            res = ResultadoAgente(
+                estado="falhou",
+                resumo="Erro interno no provedor de agente.",
+                agente_id=self.provedor.id,
+                mock=self.provedor.mock,
+            )
         try:
             self._finalizar(execucao_id, ctl, res)
         except Exception:  # noqa: BLE001
@@ -409,6 +522,150 @@ class Servico:
             with self._mu:
                 self._ativos.pop(execucao_id, None)
                 self._expirando.discard(execucao_id)
+
+    # ------------------------------------------------------------------ contexto (memoria -> prompt, com orcamento)
+    def _dados_de_retomada(self, t: Tx, tarefa: dict, execucao_id: str) -> dict[str, Any] | None:
+        """Se esta execucao ja conversou antes, devolve o MINIMO para retomar: entendimento curto, decisoes propostas e
+        as respostas do desenvolvedor. Nao reenvia a resposta anterior inteira (economia de tokens)."""
+        msgs = t.listar(T.Mensagem, ordem=T.Mensagem.ordem, tarefa_id=tarefa["id"], limite=500)
+        if not any(m["execucao_id"] == execucao_id and m["papel"] == "agente" for m in msgs):
+            return None
+        decisoes = next((m for m in reversed(msgs) if m["papel"] == "agente" and m["tipo"] == "decisoes"), None)
+        corte = decisoes["ordem"] if decisoes else 0
+        entend = next(
+            (m["conteudo"] for m in reversed(msgs) if m["papel"] == "agente" and m["tipo"] == "entendimento"), ""
+        )
+        return {
+            "entendimento": " ".join(entend.split())[:420],
+            "decisoes": ((decisoes or {}).get("dados") or {}).get("decisoes", []),
+            "respostas": [m["conteudo"] for m in msgs if m["papel"] == "operador" and m["ordem"] > corte],
+        }
+
+    def _montar_contexto(self, execucao_id: str, tarefa: dict) -> Any | None:
+        """Monta o pacote de contexto e o grava (o que entrou, quanto custou, o que foi omitido). Nunca derruba a execucao."""
+        if self.construtor_contexto is None:
+            return None
+        try:
+            if tarefa.get("retomada") is not None:  # retomada: so o que foi USADO na rodada anterior
+                with self.repo.leitura() as t:
+                    uso = t.listar(T.ContextoUso, execucao_id=execucao_id, limite=1)
+                if uso:
+                    tarefa["contexto_texto"] = self.construtor_contexto.so_uteis(uso[0]["itens"], uso[0]["uteis"] or [])
+                return None
+            pacote = self.construtor_contexto.construir(tarefa)
+            tarefa["contexto_texto"] = pacote.texto
+            with self.repo.escrita() as t:
+                t.inserir(
+                    T.ContextoUso,
+                    id=novo_id("CTX"),
+                    tarefa_id=tarefa["id"],
+                    execucao_id=execucao_id,
+                    itens=[i.como_dict() for i in pacote.itens],
+                    tokens_contexto=pacote.tokens,
+                    tokens_prompt=0,
+                    orcamento=pacote.orcamento,
+                    omitidos=pacote.omitidos,
+                    termos=pacote.termos,
+                    uteis=None,
+                    criado_em=self._ts(),
+                )
+                self._ev(
+                    t,
+                    "contexto.montado",
+                    tarefa,
+                    execucao_id,
+                    {
+                        "itens": len(pacote.itens),
+                        "tokens_estimados": pacote.tokens,
+                        "orcamento": pacote.orcamento,
+                        "omitidos": pacote.omitidos,
+                    },
+                )
+            return pacote
+        except Exception:  # noqa: BLE001 - contexto e otimizacao: falhar aqui nao pode impedir a tarefa
+            log.exception("falha ao montar contexto", extra={"execucao_id": execucao_id})
+            return None
+
+    def _registrar_uteis(self, execucao_id: str, pacote: Any | None, res: ResultadoAgente) -> None:
+        """Marca quais itens de contexto a resposta realmente USOU (citacao [M1] ou id/arquivo) e o tamanho do prompt."""
+        if pacote is None or pacote.vazio:
+            return
+        try:
+            texto = " ".join([a.conteudo for a in res.artefatos] + [m.conteudo for m in res.mensagens])
+            uteis = self.construtor_contexto.marcar_uteis(pacote, texto)
+            with self.repo.escrita() as t:
+                linhas = t.listar(T.ContextoUso, execucao_id=execucao_id, limite=1)
+                if linhas:
+                    t.atualizar(
+                        T.ContextoUso, linhas[0]["id"], uteis=uteis, tokens_prompt=res.consumo.tokens_input or 0
+                    )
+                ex = t.obter(T.Execucao, execucao_id)
+                self._ev(
+                    t,
+                    "contexto.uteis",
+                    t.obter(T.Tarefa, ex["tarefa_id"]),
+                    execucao_id,
+                    {"injetados": len(pacote.itens), "usados": len(uteis)},
+                )
+        except Exception:  # noqa: BLE001
+            log.exception("falha ao registrar utilidade do contexto", extra={"execucao_id": execucao_id})
+
+    def contexto_da_tarefa(self, tarefa_id: str) -> list[dict]:
+        self.obter(T.Tarefa, tarefa_id)
+        with self.repo.leitura() as t:
+            return t.listar(T.ContextoUso, tarefa_id=tarefa_id)
+
+    # ------------------------------------------------------------------ conversa agente <-> desenvolvedor
+    @staticmethod
+    def _proxima_ordem(t: Tx, tarefa_id: str) -> int:
+        return (
+            int(
+                t.s.scalar(
+                    select(func.coalesce(func.max(T.Mensagem.ordem), 0)).where(T.Mensagem.tarefa_id == tarefa_id)
+                )
+                or 0
+            )
+            + 1
+        )
+
+    def conversa(self, tarefa_id: str) -> list[dict]:
+        self.obter(T.Tarefa, tarefa_id)
+        with self.repo.leitura() as t:
+            return t.listar(T.Mensagem, ordem=T.Mensagem.ordem, tarefa_id=tarefa_id, limite=1000)
+
+    def responder(self, tarefa_id: str, d: ConversaIn, ator: str = "operador") -> dict[str, Any]:
+        """Registra a resposta livre do desenvolvedor e, se couber, retoma a execucao que aguardava as decisoes."""
+        texto = redigir_segredos(d.conteudo).strip()
+        with self.repo.escrita() as t:
+            tarefa = t.obter(T.Tarefa, tarefa_id)
+            if tarefa is None:
+                raise NaoEncontrado(f"Tarefa {tarefa_id} nao encontrada.")
+            msg = t.inserir(
+                T.Mensagem,
+                id=novo_id("MSG"),
+                tarefa_id=tarefa_id,
+                ordem=self._proxima_ordem(t, tarefa_id),
+                execucao_id=None,
+                papel="operador",
+                tipo="resposta_operador",
+                conteudo=texto,
+                dados=None,
+                criado_em=self._ts(),
+            )
+            self._ev(t, "conversa.resposta_do_operador", tarefa, None, {"mensagem_id": msg["id"], "ator": ator})
+            pausadas = [e for e in t.listar(T.Execucao, tarefa_id=tarefa_id, estado=EE.PAUSADA.value)]
+        resultado: dict[str, Any] = {"mensagem": msg, "retomada_execucao_id": None, "aviso": None}
+        if not d.retomar:
+            return resultado
+        if not pausadas or tarefa["estado"] != ET.BLOQUEADA.value:
+            resultado["aviso"] = "resposta registrada; nao ha execucao aguardando para retomar."
+            return resultado
+        try:
+            self.iniciar_execucao(pausadas[-1]["id"], ator)
+            resultado["retomada_execucao_id"] = pausadas[-1]["id"]
+        except ErroDominio as e:  # ex.: duplo clique, deadline expirado, orcamento de tentativas
+            resultado["aviso"] = f"resposta registrada, mas a retomada nao ocorreu: {e.mensagem}"
+        return resultado
 
     def _gravar_artefato(self, conteudo: str) -> tuple[str, str, int]:
         dados = conteudo.encode("utf-8")
@@ -440,17 +697,30 @@ class Servico:
                 return
             # nada fica pendente sem worker
             for ap in t.listar(T.Aprovacao, execucao_id=execucao_id, estado="pendente"):
-                t.atualizar(T.Aprovacao, ap["id"], estado="negada", decidido_por="sistema:execucao_encerrada",
-                            decidido_em=self._ts(), escopo={"aprovados": [], "lembrar": False})
+                t.atualizar(
+                    T.Aprovacao,
+                    ap["id"],
+                    estado="negada",
+                    decidido_por="sistema:execucao_encerrada",
+                    decidido_em=self._ts(),
+                    escopo={"aprovados": [], "lembrar": False},
+                )
             tarefa = t.obter(T.Tarefa, tarefa["id"])
             if eh_terminal(EstadoTarefa(tarefa["estado"])):
                 t.atualizar(T.Execucao, execucao_id, estado=EE.CANCELADA.value, finalizado_em=self._ts())
                 return
-            if tarefa["estado"] == ET.AGUARDANDO_APROVACAO.value and not ctl.cancelado() \
-                    and execucao_id not in self._expirando:
+            if (
+                tarefa["estado"] == ET.AGUARDANDO_APROVACAO.value
+                and not ctl.cancelado()
+                and execucao_id not in self._expirando
+            ):
                 tarefa = self._mudar(t, tarefa, ET.EXECUTANDO, "pedido de aprovacao encerrado")
             agora = self._ts()
-            resumo = sanitizar(res.model_dump(exclude={"artefatos"}))
+            resumo = sanitizar(res.model_dump(exclude={"artefatos", "mensagens"}))
+            anteriores = int(((ex.get("resultado") or {}).get("chamadas_acumuladas")) or 0)
+            total_chamadas = anteriores + res.consumo.chamadas_modelo  # orcamento vale para a TAREFA, nao por retomada
+            resumo["chamadas_acumuladas"] = total_chamadas
+            self._persistir_mensagens(t, tarefa, execucao_id, res)
             fim: dict[str, Any] = {"resultado": resumo, "finalizado_em": agora}
             if execucao_id in self._expirando:
                 t.atualizar(T.Execucao, execucao_id, estado=EE.EXPIRADA.value, **fim)
@@ -464,7 +734,7 @@ class Servico:
                 t.atualizar(T.Execucao, execucao_id, estado=EE.PAUSADA.value, resultado=resumo)
                 self._mudar(t, tarefa, ET.BLOQUEADA, res.estado + ": " + res.resumo[:200])
                 self._ev(t, f"execucao.{res.estado}", tarefa, execucao_id, {"pendencias": res.pendencias})
-            elif res.estado == "falhou" or res.consumo.chamadas_modelo > tarefa["orcamento"]["max_chamadas_modelo"]:
+            elif res.estado == "falhou" or total_chamadas > tarefa["orcamento"]["max_chamadas_modelo"]:
                 motivo = res.resumo if res.estado == "falhou" else "max_chamadas_modelo excedido"
                 t.atualizar(T.Execucao, execucao_id, estado=EE.FALHOU.value, **fim)
                 self._mudar(t, tarefa, ET.FALHOU, motivo[:500])
@@ -472,18 +742,65 @@ class Servico:
             else:
                 self._concluir(t, tarefa, execucao_id, res, gravados, fim)
 
-    def _concluir(self, t: Tx, tarefa: dict, execucao_id: str, res: ResultadoAgente,
-                  gravados: dict, fim: dict) -> None:
+    def _persistir_mensagens(self, t: Tx, tarefa: dict, execucao_id: str, res: ResultadoAgente) -> None:
+        if not res.mensagens:
+            return
+        ordem = self._proxima_ordem(t, tarefa["id"])
+        for m in res.mensagens:
+            t.inserir(
+                T.Mensagem,
+                id=novo_id("MSG"),
+                tarefa_id=tarefa["id"],
+                ordem=ordem,
+                execucao_id=execucao_id,
+                papel="agente",
+                tipo=m.tipo,
+                conteudo=redigir_segredos(m.conteudo),
+                dados=sanitizar(m.dados) if m.dados else None,
+                criado_em=self._ts(),
+            )
+            ordem += 1
+        decisoes = [m for m in res.mensagens if m.tipo == "decisoes"]
+        self._ev(
+            t,
+            "conversa.mensagens_do_agente",
+            tarefa,
+            execucao_id,
+            {
+                "secoes": [m.tipo for m in res.mensagens],
+                "decisoes_pendentes": len((decisoes[0].dados or {}).get("decisoes", [])) if decisoes else 0,
+            },
+        )
+
+    def _concluir(self, t: Tx, tarefa: dict, execucao_id: str, res: ResultadoAgente, gravados: dict, fim: dict) -> None:
         ids_art: dict[str, str] = {}
         for nome, (a, sha, rel, tam) in gravados.items():
-            row = t.inserir(T.Artefato, id=novo_id("ART"), tarefa_id=tarefa["id"], execucao_id=execucao_id,
-                            nome=nome, tipo=a.tipo, sha256=sha, caminho_relativo=rel, tamanho=tam,
-                            origem=res.agente_id, criado_em=self._ts())
+            row = t.inserir(
+                T.Artefato,
+                id=novo_id("ART"),
+                tarefa_id=tarefa["id"],
+                execucao_id=execucao_id,
+                nome=nome,
+                tipo=a.tipo,
+                sha256=sha,
+                caminho_relativo=rel,
+                tamanho=tam,
+                origem=res.agente_id,
+                criado_em=self._ts(),
+            )
             ids_art[nome] = row["id"]
         for ev in res.evidencias:
-            t.inserir(T.Evidencia, id=novo_id("EVID"), tarefa_id=tarefa["id"], execucao_id=execucao_id,
-                      tipo=ev.tipo, resumo=ev.resumo, artefato_id=ids_art.get(ev.artefato or ""),
-                      simulada=ev.simulada or res.mock, criado_em=self._ts())
+            t.inserir(
+                T.Evidencia,
+                id=novo_id("EVID"),
+                tarefa_id=tarefa["id"],
+                execucao_id=execucao_id,
+                tipo=ev.tipo,
+                resumo=ev.resumo,
+                artefato_id=ids_art.get(ev.artefato or ""),
+                simulada=ev.simulada or res.mock,
+                criado_em=self._ts(),
+            )
         tarefa = self._mudar(t, tarefa, ET.VALIDANDO, "validando resultado")
         # Verificacao deterministica: evidencia presente e integridade dos artefatos gravados.
         integros = all(
@@ -493,8 +810,9 @@ class Servico:
         if res.evidencias and integros:
             t.atualizar(T.Execucao, execucao_id, estado=EE.CONCLUIDA.value, **fim)
             nova = self._mudar(t, tarefa, ET.CONCLUIDA, "criterios verificados")
-            self._ev(t, "execucao.concluida", nova, execucao_id,
-                     {"evidencias": len(res.evidencias), "simulada": res.mock})
+            self._ev(
+                t, "execucao.concluida", nova, execucao_id, {"evidencias": len(res.evidencias), "simulada": res.mock}
+            )
         else:
             t.atualizar(T.Execucao, execucao_id, estado=EE.FALHOU.value, **fim)
             self._mudar(t, tarefa, ET.FALHOU, "validacao reprovada: sem evidencia ou artefato corrompido")
@@ -530,8 +848,12 @@ class Servico:
             t.atualizar(T.Execucao, execucao_id, estado=EE.CANCELADA.value, finalizado_em=self._ts())
             for ap in t.listar(T.Aprovacao, execucao_id=execucao_id, estado="pendente"):
                 t.atualizar(T.Aprovacao, ap["id"], estado="negada", decidido_por=ator, decidido_em=self._ts())
-            if tarefa["estado"] in (ET.EXECUTANDO.value, ET.BLOQUEADA.value, ET.AGUARDANDO_APROVACAO.value,
-                                    ET.ATRIBUIDA.value):
+            if tarefa["estado"] in (
+                ET.EXECUTANDO.value,
+                ET.BLOQUEADA.value,
+                ET.AGUARDANDO_APROVACAO.value,
+                ET.ATRIBUIDA.value,
+            ):
                 self._mudar(t, tarefa, ET.CANCELADA, motivo or "execucao cancelada", ator)
             self._ev(t, "execucao.cancelada", tarefa, execucao_id, {"ator": ator, "motivo": motivo})
             return t.obter(T.Execucao, execucao_id)
@@ -583,19 +905,49 @@ class Servico:
                     aprovados = ids if d.itens_aprovados is None else list(d.itens_aprovados)
                 lembrar = bool(d.lembrar_na_execucao and aprovados)
                 estado = "aprovada" if aprovados else "negada"
-                t.atualizar(T.Aprovacao, aprovacao_id, estado=estado, decidido_por=ator, decidido_em=ts, adendo=adendo,
-                            justificativa=d.justificativa or ap["justificativa"],
-                            escopo={"aprovados": aprovados, "lembrar": lembrar})
-                self._ev(t, f"aprovacao.{estado}", tarefa, ex["id"], {
-                    "aprovacao_id": aprovacao_id, "ator": ator, "aprovados": len(aprovados),
-                    "negados": len(ids) - len(aprovados), "com_adendo": bool(adendo), "lembrar": lembrar})
+                t.atualizar(
+                    T.Aprovacao,
+                    aprovacao_id,
+                    estado=estado,
+                    decidido_por=ator,
+                    decidido_em=ts,
+                    adendo=adendo,
+                    justificativa=d.justificativa or ap["justificativa"],
+                    escopo={"aprovados": aprovados, "lembrar": lembrar},
+                )
+                self._ev(
+                    t,
+                    f"aprovacao.{estado}",
+                    tarefa,
+                    ex["id"],
+                    {
+                        "aprovacao_id": aprovacao_id,
+                        "ator": ator,
+                        "aprovados": len(aprovados),
+                        "negados": len(ids) - len(aprovados),
+                        "com_adendo": bool(adendo),
+                        "lembrar": lembrar,
+                    },
+                )
                 self._retomar_apos_decisao(t, tarefa, ex, ator)
                 sinal = (aprovacao_id, {"aprovados": aprovados, "adendo": adendo, "lembrar": lembrar})
             else:
-                t.atualizar(T.Aprovacao, aprovacao_id, estado=d.decisao, decidido_por=ator, decidido_em=ts,
-                            adendo=adendo, justificativa=d.justificativa or ap["justificativa"])
-                self._ev(t, f"aprovacao.{d.decisao}", tarefa, ex["id"],
-                         {"aprovacao_id": aprovacao_id, "ator": ator, "com_adendo": bool(adendo)})
+                t.atualizar(
+                    T.Aprovacao,
+                    aprovacao_id,
+                    estado=d.decisao,
+                    decidido_por=ator,
+                    decidido_em=ts,
+                    adendo=adendo,
+                    justificativa=d.justificativa or ap["justificativa"],
+                )
+                self._ev(
+                    t,
+                    f"aprovacao.{d.decisao}",
+                    tarefa,
+                    ex["id"],
+                    {"aprovacao_id": aprovacao_id, "ator": ator, "com_adendo": bool(adendo)},
+                )
                 if d.decisao == "aprovada":
                     self._mudar(t, tarefa, ET.EXECUTANDO, "aprovada", ator)
                     t.atualizar(T.Execucao, ex["id"], estado=EE.EXECUTANDO.value)
@@ -630,8 +982,15 @@ class Servico:
         resultados, erros = [], []
         for aid in dict.fromkeys(d.ids):
             try:
-                resultados.append(self.decidir_aprovacao(aid, DecisaoAprovacaoIn(
-                    decisao=d.decisao, adendo=d.adendo, lembrar_na_execucao=d.lembrar_na_execucao), ator))
+                resultados.append(
+                    self.decidir_aprovacao(
+                        aid,
+                        DecisaoAprovacaoIn(
+                            decisao=d.decisao, adendo=d.adendo, lembrar_na_execucao=d.lembrar_na_execucao
+                        ),
+                        ator,
+                    )
+                )
             except ErroDominio as e:
                 erros.append({"id": aid, "erro": e.codigo, "mensagem": e.mensagem})
         return {"resultados": resultados, "erros": erros}
@@ -646,16 +1005,33 @@ class Servico:
             tarefa = t.obter(T.Tarefa, ex["tarefa_id"])
             itens_s = sanitizar(itens)
             resumo = "; ".join(i["descricao"] for i in itens_s)[:500]
-            ap = t.inserir(T.Aprovacao, id=novo_id("AP"), tarefa_id=tarefa["id"], execucao_id=execucao_id,
-                           acao=f"{len(itens_s)} acao(oes) solicitada(s) pelo agente", justificativa=resumo,
-                           estado="pendente", origem="durante_execucao", itens=itens_s, adendo="",
-                           criado_em=self._ts())
+            ap = t.inserir(
+                T.Aprovacao,
+                id=novo_id("AP"),
+                tarefa_id=tarefa["id"],
+                execucao_id=execucao_id,
+                acao=f"{len(itens_s)} acao(oes) solicitada(s) pelo agente",
+                justificativa=resumo,
+                estado="pendente",
+                origem="durante_execucao",
+                itens=itens_s,
+                adendo="",
+                criado_em=self._ts(),
+            )
             if tarefa["estado"] == ET.EXECUTANDO.value:
                 self._mudar(t, tarefa, ET.AGUARDANDO_APROVACAO, "aguardando decisao do operador")
             t.atualizar(T.Execucao, execucao_id, estado=EE.AGUARDANDO_APROVACAO.value)
-            self._ev(t, "aprovacao.solicitada", tarefa, execucao_id, {
-                "aprovacao_id": ap["id"], "acoes": [i["descricao"] for i in itens_s],
-                "riscos": [i["risco"] for i in itens_s]})
+            self._ev(
+                t,
+                "aprovacao.solicitada",
+                tarefa,
+                execucao_id,
+                {
+                    "aprovacao_id": ap["id"],
+                    "acoes": [i["descricao"] for i in itens_s],
+                    "riscos": [i["risco"] for i in itens_s],
+                },
+            )
         espera = _Espera()
         with self._mu:
             self._esperas[ap["id"]] = espera
@@ -679,8 +1055,14 @@ class Servico:
                 return
             ex = t.obter(T.Execucao, execucao_id)
             tarefa = t.obter(T.Tarefa, ex["tarefa_id"])
-            t.atualizar(T.Aprovacao, aprovacao_id, estado="negada", decidido_por="sistema:timeout",
-                        decidido_em=self._ts(), escopo={"aprovados": [], "lembrar": False})
+            t.atualizar(
+                T.Aprovacao,
+                aprovacao_id,
+                estado="negada",
+                decidido_por="sistema:timeout",
+                decidido_em=self._ts(),
+                escopo={"aprovados": [], "lembrar": False},
+            )
             self._ev(t, "aprovacao.expirada", tarefa, execucao_id, {"aprovacao_id": aprovacao_id})
             self._retomar_apos_decisao(t, tarefa, ex, "sistema")
 
@@ -702,14 +1084,23 @@ class Servico:
                 recuperadas += 1
             # Pedidos de aprovacao feitos DURANTE a execucao ficam orfaos se o worker morreu: nega e deixa retomavel.
             for ex in t.listar(T.Execucao, estado=EE.AGUARDANDO_APROVACAO.value):
-                pend = [a for a in t.listar(T.Aprovacao, execucao_id=ex["id"], estado="pendente")
-                        if a["origem"] == "durante_execucao"]
+                pend = [
+                    a
+                    for a in t.listar(T.Aprovacao, execucao_id=ex["id"], estado="pendente")
+                    if a["origem"] == "durante_execucao"
+                ]
                 with self._mu:
                     if not pend or ex["id"] in self._ativos:
                         continue
                 for a in pend:
-                    t.atualizar(T.Aprovacao, a["id"], estado="negada", decidido_por="sistema:reinicio",
-                                decidido_em=self._ts(), escopo={"aprovados": [], "lembrar": False})
+                    t.atualizar(
+                        T.Aprovacao,
+                        a["id"],
+                        estado="negada",
+                        decidido_por="sistema:reinicio",
+                        decidido_em=self._ts(),
+                        escopo={"aprovados": [], "lembrar": False},
+                    )
                 tarefa = t.obter(T.Tarefa, ex["tarefa_id"])
                 t.atualizar(T.Execucao, ex["id"], estado=EE.PAUSADA.value)
                 if tarefa["estado"] == ET.AGUARDANDO_APROVACAO.value:

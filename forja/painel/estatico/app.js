@@ -51,6 +51,7 @@ function acoesPara(t) {
   if (t.estado === "pronta") b.push(`<button data-acao="executar" data-id="${t.id}">executar</button>`);
   if (!["concluida", "falhou", "cancelada", "expirada"].includes(t.estado))
     b.push(`<button data-acao="cancelar" data-id="${t.id}" data-v="${t.versao_estado}">cancelar</button>`);
+  b.push(`<button data-acao="conversa" data-id="${t.id}">conversa</button>`);
   return b.join(" ");
 }
 
@@ -73,6 +74,7 @@ document.addEventListener("click", async (ev) => {
   try {
     if (acao === "fluxo") await preparar(id, Number(v));
     else if (acao === "executar") await executar(id);
+    else if (acao === "conversa") await abrirConversa(id);
     else if (acao === "cancelar")
       await api("POST", `/tarefas/${id}/transicao`, { para: "cancelada", expected_version: Number(v) });
     await listarTarefas();
@@ -220,6 +222,61 @@ $("#busca-form").addEventListener("submit", async (ev) => {
   }
 });
 
+// ---- Conversa da tarefa (briefing do agente + decisoes agrupadas + UMA resposta livre) ----
+const TITULOS = {
+  entendimento: "Entendimento", resposta: "Resposta", premissas: "Premissas", decisoes: "Decisões para você",
+  riscos: "Riscos", proximos_passos: "Próximos passos", resposta_operador: "Você",
+};
+let tarefaAberta = null;
+
+function cartaoMensagem(m) {
+  const caixa = el("article", { className: `msg ${m.papel}` }, el("h3", { textContent: TITULOS[m.tipo] || m.tipo }));
+  const decisoes = m.tipo === "decisoes" && m.dados && Array.isArray(m.dados.decisoes) ? m.dados.decisoes : [];
+  if (decisoes.length) {
+    for (const d of decisoes) {
+      const detalhes = [];
+      if (d.recomendacao) detalhes.push(el("small", { textContent: `Recomendo: ${d.recomendacao}` }));
+      if ((d.alternativas || []).length) detalhes.push(el("small", { textContent: `Alternativas: ${d.alternativas.join("; ")}` }));
+      caixa.append(el("div", { className: "decisao" }, el("strong", { textContent: `${d.numero}. ${d.pergunta}` }), ...detalhes));
+    }
+  } else {
+    caixa.append(el("p", { textContent: m.conteudo })); // textContent: o conteudo do agente e dado, nunca HTML
+  }
+  return caixa;
+}
+
+async function abrirConversa(id) {
+  tarefaAberta = id;
+  $("#secao-conversa").hidden = false;
+  $("#conversa-tarefa").textContent = id;
+  try {
+    const [msgs, usos] = await Promise.all([api("GET", `/tarefas/${id}/conversa`), api("GET", `/tarefas/${id}/contexto`)]);
+    $("#conversa-mensagens").replaceChildren(...msgs.map(cartaoMensagem));
+    const uso = usos[usos.length - 1];
+    $("#conversa-contexto").textContent = !uso ? "" : uso.itens.length
+      ? `Contexto enviado: ${uso.itens.length} item(ns), ~${uso.tokens_contexto} tokens (estimativa); usados pelo agente: ${(uso.uteis || []).length}.`
+      : `Nenhum contexto foi enviado (0 tokens): nada na memória era relevante o bastante. Omitidos: ${JSON.stringify(uso.omitidos)}`;
+  } catch (e) {
+    $("#conversa-mensagens").replaceChildren(el("p", { className: "aviso", textContent: `Erro: ${e.message}` }));
+  }
+}
+
+$("#conversa-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!tarefaAberta) return;
+  try {
+    const r = await api("POST", `/tarefas/${tarefaAberta}/conversa`, {
+      conteudo: $("#conversa-texto").value, retomar: $("#conversa-retomar").checked,
+    });
+    $("#conversa-texto").value = "";
+    if (r.aviso) alert(r.aviso);
+    await abrirConversa(tarefaAberta);
+    await listarTarefas();
+  } catch (e) {
+    alert(e.message);
+  }
+});
+
 $("#lote-aprovar").addEventListener("click", () => decidirLote("aprovada"));
 $("#lote-negar").addEventListener("click", () => decidirLote("negada"));
 
@@ -263,6 +320,7 @@ function registrarEvento(e) {
   $("#eventos").prepend(li);
   if (String(d.tipo).startsWith("tarefa.") || String(d.tipo).startsWith("execucao.")) listarTarefas();
   if (String(d.tipo).startsWith("aprovacao.")) listarAprovacoes();
+  if (String(d.tipo).startsWith("conversa.") && tarefaAberta && d.tarefa_id === tarefaAberta) abrirConversa(tarefaAberta);
 }
 
 if (token) {

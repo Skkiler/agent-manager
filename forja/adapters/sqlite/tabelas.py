@@ -267,3 +267,55 @@ class Simbolo(Base):
     tipo: Mapped[str] = mapped_column(String(16))
     linha: Mapped[int] = mapped_column(Integer)
     assinatura: Mapped[str] = mapped_column(String(300), default="")
+    # Colunas normalizadas e INDEXADAS: permitem buscar por nome sem varrer a tabela (lower(nome) impediria o uso de indice).
+    nome_norm: Mapped[str] = mapped_column(String(300), index=True, default="", server_default="")
+    nome_final: Mapped[str] = mapped_column(String(300), index=True, default="", server_default="")  # apos o ultimo '.'
+
+
+class CodigoTrecho(Base):
+    """Mapa (arquivo, linhas) -> rowid de `codigo_fts`. Filtrar o FTS5 por coluna UNINDEXED varre a tabela inteira;
+    esta tabela comum, indexada, torna remocao e consulta por arquivo/linha O(log n). `id` == rowid no FTS5."""
+
+    __tablename__ = "codigo_trecho"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    arquivo_id: Mapped[str] = mapped_column(ForeignKey("arquivo_indexado.id"))
+    linha_ini: Mapped[int] = mapped_column(Integer)
+    linha_fim: Mapped[int] = mapped_column(Integer)
+    __table_args__ = (Index("ix_codigo_trecho_arquivo_linha", "arquivo_id", "linha_ini"),)
+
+
+# ============================ Conversa e uso de contexto (Fase 4) ============================
+class Mensagem(Base):
+    """Conversa de uma tarefa entre o agente e o desenvolvedor: briefing em secoes, decisoes agrupadas, respostas."""
+
+    __tablename__ = "mensagem"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tarefa_id: Mapped[str] = mapped_column(ForeignKey("tarefa.id"), index=True)
+    ordem: Mapped[int] = mapped_column(Integer)  # monotonica por tarefa (timestamps podem empatar)
+    execucao_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    papel: Mapped[str] = mapped_column(String(16))  # agente | operador | sistema
+    tipo: Mapped[str] = mapped_column(
+        String(32)
+    )  # entendimento | resposta | premissas | decisoes | ... | resposta_operador
+    conteudo: Mapped[str] = mapped_column(Text)
+    dados: Mapped[Any] = mapped_column(JSON, nullable=True)  # ex.: decisoes estruturadas
+    criado_em: Mapped[str] = mapped_column(String(40))
+
+
+class ContextoUso(Base):
+    """O que entrou no prompt de uma execucao e o que o agente realmente USOU (base do aprendizado futuro)."""
+
+    __tablename__ = "contexto_uso"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tarefa_id: Mapped[str] = mapped_column(ForeignKey("tarefa.id"), index=True)
+    execucao_id: Mapped[str] = mapped_column(String(64), unique=True)
+    itens: Mapped[Any] = mapped_column(JSON)  # [{ref, origem, id, tokens, pontuacao, texto}]
+    tokens_contexto: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_prompt: Mapped[int] = mapped_column(
+        Integer, default=0
+    )  # ESTIMADO (~4 caracteres/token), nao contagem do provedor
+    orcamento: Mapped[int] = mapped_column(Integer, default=0)
+    omitidos: Mapped[Any] = mapped_column(JSON)
+    termos: Mapped[Any] = mapped_column(JSON)
+    uteis: Mapped[Any] = mapped_column(JSON, nullable=True)
+    criado_em: Mapped[str] = mapped_column(String(40))

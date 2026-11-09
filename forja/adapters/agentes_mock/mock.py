@@ -12,7 +12,13 @@ import time
 from typing import Any
 
 from forja.agentes.base import ControleExecucao
-from forja.dominio.contratos import ArtefatoSaida, ConsumoMedicao, EvidenciaSaida, ResultadoAgente
+from forja.dominio.contratos import (
+    ArtefatoSaida,
+    ConsumoMedicao,
+    EvidenciaSaida,
+    MensagemSaida,
+    ResultadoAgente,
+)
 
 
 def _limitar(v: Any, minimo: int, maximo: int, padrao: int) -> int:
@@ -47,6 +53,8 @@ class AgenteMock:
             ctl.registrar_checkpoint({"passo": i + 1, "total": passos})
             ctl.evento("agente.passo", {"passo": i + 1, "total": passos, "mock": True})
 
+        if cenario == "conversa":
+            return self._conversa(tarefa, t0)
         if cenario == "falha":
             return self._res("falhou", "Falha simulada solicitada pelo cenario.", t0)
         if cenario == "bloqueio":
@@ -65,6 +73,57 @@ class AgenteMock:
             EvidenciaSaida(
                 tipo="mock_simulacao",
                 resumo="Relatorio sintetico gerado pelo agente mock; evidencia SIMULADA.",
+                simulada=True,
+                artefato="relatorio.json",
+            )
+        )
+        return r
+
+    def _conversa(self, tarefa: dict[str, Any], t0: float) -> ResultadoAgente:
+        """Simula o fluxo organico: 1a rodada entende, propoe e PEDE decisoes (agrupadas); a retomada conclui."""
+        retomada = tarefa.get("retomada")
+        if not retomada:
+            decisoes = [
+                {
+                    "numero": 1,
+                    "pergunta": "Usar token Bearer ou cookie?",
+                    "recomendacao": "Bearer",
+                    "alternativas": ["cookie"],
+                },
+                {
+                    "numero": 2,
+                    "pergunta": "Publicar a API agora?",
+                    "recomendacao": "nao, apos revisao",
+                    "alternativas": [],
+                },
+            ]
+            r = self._res("bloqueada", "Aguardando 2 decisao(oes) do desenvolvedor (simulado).", t0)
+            r.pendencias.append("aguardando_decisoes_do_usuario")
+            r.mensagens += [
+                MensagemSaida(tipo="entendimento", conteudo="Voce quer definir a autenticacao da API (simulado)."),
+                MensagemSaida(
+                    tipo="decisoes",
+                    conteudo="1. Usar token Bearer ou cookie?\n2. Publicar a API agora?",
+                    dados={"decisoes": decisoes},
+                ),
+            ]
+            return r
+        r = self._res("concluida", "Conversa concluida apos as respostas (simulado).", t0)
+        r.mensagens.append(
+            MensagemSaida(
+                tipo="resposta",
+                conteudo=(
+                    f"Considerei {len(retomada.get('respostas', []))} resposta(s) do desenvolvedor e segui com o plano (simulado)."
+                ),
+            )
+        )
+        r.artefatos.append(
+            ArtefatoSaida(nome="relatorio.json", tipo="json", conteudo='{"simulado": true, "conversa": true}')
+        )
+        r.evidencias.append(
+            EvidenciaSaida(
+                tipo="mock_simulacao",
+                resumo="Conversa simulada concluida; evidencia SIMULADA.",
                 simulada=True,
                 artefato="relatorio.json",
             )

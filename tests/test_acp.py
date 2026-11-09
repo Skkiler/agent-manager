@@ -158,7 +158,8 @@ def test_provedor_sucesso_com_redacao(tmp_path):
     assert r.evidencias[0].tipo == "kiro_resposta" and r.evidencias[0].simulada is False
     conteudo = r.artefatos[0].conteudo
     assert "Resumo" in conteudo and "SEGREDO123456" not in conteudo  # segredo redigido
-    assert r.consumo.fonte == "indisponivel" and r.consumo.tokens_input is None  # nunca inventa consumo
+    # o ACP nao expoe contagem do provedor: so ha ESTIMATIVA (~4 car./token), sempre rotulada 'estimado', nunca 'provedor'
+    assert r.consumo.fonte == "estimado" and r.consumo.tokens_input > 0 and r.consumo.tokens_output > 0
     assert r.consumo.chamadas_modelo == 1
     tipos = [t for t, _ in eventos]
     assert "kiro.conectado" in tipos and "kiro.ferramenta" in tipos

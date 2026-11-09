@@ -100,11 +100,24 @@ class IngerirIn(_Estrito):
     raiz: Annotated[str, Field(min_length=1, max_length=500)]
     repositorio: Texto
     commit_sha: Annotated[str, Field(max_length=64)] = ""
+    # Restringe o escopo (ex.: [".py", ".md"]). Vazio = todas as linguagens conhecidas. Util p/ evitar dumps JSON/HTML.
+    extensoes: list[Annotated[str, Field(max_length=10)]] = Field(default_factory=list, max_length=20)
 
     @field_validator("namespace")
     @classmethod
     def _ns(cls, v: str) -> str:
         return validar_namespace(v)
+
+    @field_validator("extensoes")
+    @classmethod
+    def _ext(cls, v: list[str]) -> list[str]:
+        from forja.memoria.indexador import LINGUAGENS
+
+        norm = [e.casefold() if e.startswith(".") else "." + e.casefold() for e in v]
+        desconhecidas = [e for e in norm if e not in LINGUAGENS]
+        if desconhecidas:
+            raise ValueError(f"extensoes sem suporte: {desconhecidas}")
+        return norm
 
 
 class NoIn(_Estrito):

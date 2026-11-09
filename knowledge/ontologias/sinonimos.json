@@ -1,0 +1,15 @@
+{
+  "descricao": "Grupos de sinonimos tecnicos PT/EN que ampliam a busca lexical. Publico e generico: sem termos de empresa.",
+  "grupos": [
+    ["arquitetura", "camada", "layer", "architecture", "estrutura"],
+    ["teste", "test", "pytest", "validacao", "verificacao"],
+    ["commit", "versionamento", "git", "historico"],
+    ["seguranca", "security", "appsec", "vulnerabilidade", "vulnerability"],
+    ["banco", "database", "sql", "dba", "tabela", "indice"],
+    ["pipeline", "ci", "cd", "devops", "deploy", "implantacao"],
+    ["interface", "ui", "ux", "usabilidade", "acessibilidade", "accessibility"],
+    ["robo", "rpa", "automacao", "automation", "bot"],
+    ["busca", "search", "recuperacao", "retrieval", "consulta"],
+    ["nome", "nomenclatura", "naming", "convencao", "convention"]
+  ]
+}

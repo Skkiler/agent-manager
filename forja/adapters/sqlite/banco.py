@@ -14,6 +14,15 @@ from sqlalchemy import Engine, create_engine, event
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 
 
+# Tabelas virtuais FTS5 e suas tabelas-sombra NAO sao modeladas pelo SQLAlchemy. Sem este filtro, o autogenerate as trata
+# como "orfas" e propoe APAGA-LAS (o que destruiria o indice de memoria/codigo). Usado pelo env.py e pelos testes.
+PREFIXOS_FTS = ("memoria_fts", "codigo_fts")
+
+
+def incluir_objeto(objeto, nome, tipo, reflected, compare_to) -> bool:  # noqa: ANN001
+    return not (tipo == "table" and nome and nome.startswith(PREFIXOS_FTS))
+
+
 def _url(caminho: Path) -> str:
     return f"sqlite:///{caminho.resolve().as_posix()}"
 

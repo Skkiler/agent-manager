@@ -52,6 +52,9 @@ class Politicas(_Estrito):
     sandbox: Literal["nenhum", "worktree"] = "nenhum"
     exige_revisao: bool = False
     exige_aprovacao: bool = False
+    # Contexto recuperado da memoria no prompt: 'auto' (so se houver acerto relevante) ou 'nenhum' (custo zero).
+    contexto: Literal["auto", "nenhum"] = "auto"
+    contexto_max_tokens: int | None = Field(default=None, ge=50, le=20_000)
 
 
 class ProjetoIn(_Estrito):
@@ -140,6 +143,21 @@ class EvidenciaSaida(_Estrito):
     artefato: str | None = None  # nome de um ArtefatoSaida do mesmo resultado
 
 
+class MensagemSaida(_Estrito):
+    """Uma secao da resposta do agente, ja organizada como conversa (entendimento, resposta, decisoes...)."""
+
+    tipo: Annotated[str, Field(min_length=1, max_length=32)]
+    conteudo: Annotated[str, Field(max_length=100_000)]
+    dados: dict[str, Any] | None = None
+
+
+class ConversaIn(_Estrito):
+    """Resposta livre do desenvolvedor na conversa de uma tarefa (UMA resposta cobre todas as decisoes pendentes)."""
+
+    conteudo: Annotated[str, Field(min_length=1, max_length=8000)]
+    retomar: bool = True  # se a tarefa estiver aguardando decisoes, retoma a execucao com esta resposta
+
+
 class ResultadoAgente(_Estrito):
     estado: Literal["concluida", "falhou", "bloqueada", "pausada", "cancelada"]
     resumo: TextoLongo
@@ -149,5 +167,6 @@ class ResultadoAgente(_Estrito):
     evidencias: list[EvidenciaSaida] = Field(default_factory=list)
     hipoteses: list[str] = Field(default_factory=list)
     pendencias: list[str] = Field(default_factory=list)
+    mensagens: list[MensagemSaida] = Field(default_factory=list)
     consumo: ConsumoMedicao = Field(default_factory=ConsumoMedicao)
     proximo_passo: str | None = None

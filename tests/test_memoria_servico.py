@@ -124,6 +124,24 @@ def test_simbolo_so_aparece_para_quem_tem_acesso_ao_namespace(mem, repo_dir):
         mem.buscar(PUB, "SoNoPrivado", ["empresa/acme"])
 
 
+def test_simbolo_que_casa_um_de_tres_termos_tem_cobertura_proporcional(mem, repo_dir):
+    """Regressao: cobertura de simbolo era fixa em 1.0, entao consulta sem sentido parecia 100% coberta."""
+    (repo_dir / "a.py").write_text("class Assunto:\n    pass\n", encoding="utf-8")
+    ingerir(mem, repo_dir, ns="publico")
+    r = mem.buscar(TUDO, "assunto zzqxw yyvkt", ["publico"], fontes=("codigo",))["resultados"]
+    assert r, "o simbolo que casa um termo deve aparecer"
+    assert r[0]["cobertura"] == pytest.approx(1 / 3, abs=0.01), r[0]["cobertura"]
+
+
+def test_termos_inexistentes_no_indice_reduzem_a_cobertura(mem):
+    """Regressao achada na base real: 'assunto inexistente zzqxw' devolvia cobertura 1.00 (termo ausente sumia do calculo)."""
+    nova(mem, ns="publico", titulo="Assunto geral da reuniao", conteudo="pauta do assunto")
+    sem_termo_ausente = mem.buscar(TUDO, "assunto reuniao pauta", ["publico"], fontes=("memoria",))["resultados"][0]
+    com_termo_ausente = mem.buscar(TUDO, "assunto zzqxw yyvkt", ["publico"], fontes=("memoria",))["resultados"][0]
+    assert sem_termo_ausente["cobertura"] == 1.0  # AND completo
+    assert com_termo_ausente["cobertura"] < 0.5, com_termo_ausente["cobertura"]  # 2 de 3 termos nem existem no indice
+
+
 def test_acento_e_caixa_nao_atrapalham(mem):
     nova(mem, titulo="Autenticação do portal", conteudo="Fluxo de autenticação com sessão")
     assert ids(mem.buscar(TUDO, "AUTENTICACAO sessao", ["publico"]))
@@ -154,7 +172,7 @@ def test_consulta_vazia_e_rejeitada(mem):
 def test_sem_correspondencia_exata_relaxa_para_ou_e_avisa(mem):
     nova(mem, titulo="Receita de login", conteudo="sessao e formulario")
     r = mem.buscar(TUDO, "login inexistentexyz", ["publico"])
-    assert r["resultados"] and any("qualquer termo" in a for a in r["avisos"])
+    assert r["resultados"] and any("cobertura" in a for a in r["avisos"])
 
 
 # ================================================================ namespaces / ACL

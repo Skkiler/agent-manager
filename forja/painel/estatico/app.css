@@ -30,3 +30,12 @@ th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(-
 #busca-resultados li { margin: .6rem 0; }
 #busca-resultados pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: .3rem 0; font-size: .85em; max-height: 9rem; overflow: auto; }
 mark { background: #f9a82655; color: inherit; padding: 0 .1em; }
+#conversa-mensagens { display: grid; gap: .6rem; margin: .6rem 0; }
+.msg { border: 1px solid var(--b); border-radius: 8px; padding: .5rem .8rem; }
+.msg.operador { border-color: #0969da88; background: #0969da11; }
+.msg h3 { font-size: .85rem; margin: 0 0 .25rem; opacity: .8; text-transform: uppercase; letter-spacing: .03em; }
+.msg p, .msg li { margin: .15rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.decisao { margin: .3rem 0; padding: .3rem .5rem; border-left: 3px solid #f9a826; }
+.decisao small { display: block; opacity: .85; }
+#conversa-form { display: grid; gap: .4rem; }
+#conversa-form textarea { width: 100%; }

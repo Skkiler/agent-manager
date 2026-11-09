@@ -88,3 +88,29 @@ def client(config: Configuracoes) -> Iterator[TestClient]:
     app = criar_app(config, AgenteMock())
     with TestClient(app, headers={"Authorization": "Bearer token-de-teste-com-tamanho-suficiente"}) as c:
         yield c
+
+
+@pytest.fixture
+def validar_memoria(repo):
+    """Leva uma memoria de 'candidato' a 'validado' com evidencia REAL sintetica (para testes de contexto/conversa)."""
+    from forja.adapters.sqlite import tabelas as T
+    from forja.memoria.contratos import TransicaoMemoriaIn, ValidarIn
+
+    def _validar(memoria_servico, principal, m):
+        with repo.escrita() as t:
+            n = t.s.query(T.Projeto).count() + 1
+            t.inserir(T.Projeto, id=f"VP{n}", nome=f"vp{n}", descricao="", estado="ativo", criado_em="2026")
+            t.inserir(T.Objetivo, id=f"VO{n}", projeto_id=f"VP{n}", titulo="o", descricao="", prioridade=3,
+                      criterios_sucesso=[], orcamento={}, criado_em="2026")
+            t.inserir(T.Tarefa, id=f"VT{n}", objetivo_id=f"VO{n}", projeto_id=f"VP{n}", titulo="t", descricao="",
+                      criterios_aceite=["x"], dependencias=[], especialidade="g", modo="analise", recursos={}, orcamento={},
+                      politicas={}, entrada={}, contexto_refs=[], estado="concluida", versao_estado=1, tentativas=1,
+                      motivo_estado="", correlation_id="c", criado_em="2026", atualizado_em="2026")
+            t.inserir(T.Evidencia, id=f"VEV{n}", tarefa_id=f"VT{n}", execucao_id=None, tipo="teste", resumo="ok",
+                      artefato_id=None, simulada=False, criado_em="2026")
+        memoria_servico.vincular_evidencia(principal, m["id"], f"VEV{n}")
+        v = memoria_servico.transicionar(principal, m["id"], TransicaoMemoriaIn(para="verificado",
+                                                                               expected_version=m["versao"]))
+        return memoria_servico.validar(principal, m["id"], ValidarIn(expected_version=v["versao"], validado_por="teste"))
+
+    return _validar

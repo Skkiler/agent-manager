@@ -47,8 +47,19 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 3.8 API /api/v1/memorias* e /conhecimento*; painel de busca com fonte e avisos; ingestao so em raizes autorizadas.
 - [x] 3.9 Testes de mutacao nas defesas de ACL/evidencia/injection/raiz; 	ests/test_git_safe.py; ADR-007.
 - [ ] 3.10 Propostas automaticas de procedimento a partir de episodios (so como candidato).
-- [ ] 3.11 Integrar a recuperacao ao prompt do provedor Kiro (contexto minimo com source_ref) — Fase 4.
+- [x] 3.11 Recuperacao ligada ao prompt do Kiro (ConstrutorContexto, orcamento, so namespaces autorizados) — ver 4.2.
 - [ ] 3.12 Embeddings opcionais / sqlite-vec apos benchmark contra o baseline textual — Fase 4.
+
+## Fase 4 — Contexto economico, conversa e busca
+- [x] 4.1 Busca: radicais PT/EN, sinonimos, cobertura ponderada por idf, ranker de grafo; benchmark recall@k/MRR/nDCG. ADR-010.
+- [x] 4.2 `ConstrutorContexto` com portoes e orcamento; persistencia e marcacao de itens uteis. ADR-008.
+- [x] 4.3 Protocolo de conversa (briefing, decisoes agrupadas, retomada compacta), API e painel. ADR-009.
+- [x] 4.4 Desempenho de busca em codigo (migracao 0005) e ingestao local por script (`scripts/memoria_ingerir.py`).
+- [x] 4.5 Base publica `knowledge/procedimentos` + sinonimos, com teste de busca.
+- [x] 4.6 Plano de ferramentas para agentes: `docs/arquitetura/ferramentas-planejadas.md` (economia ainda nao medida).
+- [ ] 4.7 Implementar ferramentas 3, 5 e 7 do plano e medir tokens antes/depois.
+- [ ] 4.8 Precisao em linguagem natural sobre corpus real (exige rotulagem manual pelo usuario).
+- [ ] 4.9 Embeddings somente se superarem o baseline lexical no benchmark.
 ## Gate Fase 1
 Atingido: tarefa simulada percorre rascunho -> ... -> concluida com estado consistente, evidencia (simulada),
 artefato integro, eventos via SSE e logs — verificado por testes e pelo smoke contra servidor real.

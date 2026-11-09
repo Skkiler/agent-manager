@@ -176,6 +176,17 @@ def test_varredura_ignora_segredos_binarios_symlink_cache_e_gigantes(tmp_path: P
     assert indexador.analisar(tmp_path, tmp_path / "bin.py") is None
 
 
+def test_arquivos_minificados_ou_empacotados_sao_ignorados(tmp_path: Path):
+    (tmp_path / "lib.min.js").write_text("var a=1;" * 50, encoding="utf-8")
+    (tmp_path / "vendor.js").write_text("function f(){return 1}" * 400, encoding="utf-8")  # 1 linha de ~9 KB
+    (tmp_path / "app.js").write_text("export function iniciar() {\n  return 1;\n}\n" * 3, encoding="utf-8")
+    (tmp_path / "mapa.js.map").write_text("{}", encoding="utf-8")
+    achados = {p.name for p in indexador.listar_arquivos(tmp_path)}
+    analisados = {n for n in achados if indexador.analisar(tmp_path, tmp_path / n) is not None}
+    assert analisados == {"app.js"}
+    assert indexador.eh_minificado("a.js", "x" * 5000) and not indexador.eh_minificado("a.js", "linha\n" * 800)
+
+
 def test_arquivo_com_erro_de_sintaxe_cai_no_fallback_textual(tmp_path: Path):
     f = tmp_path / "quebrado.py"
     f.write_text("def (:\n  isto nao compila\n", encoding="utf-8")

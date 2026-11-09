@@ -10,7 +10,15 @@ from fastapi.responses import StreamingResponse
 from forja import __version__
 from forja.adapters.kiro_acp.diagnostico import diagnosticar
 from forja.adapters.sqlite import tabelas as T
-from forja.dominio.contratos import DecisaoAprovacaoIn, DecisaoLoteIn, ObjetivoIn, ProjetoIn, TarefaIn, TransicaoIn
+from forja.dominio.contratos import (
+    ConversaIn,
+    DecisaoAprovacaoIn,
+    DecisaoLoteIn,
+    ObjetivoIn,
+    ProjetoIn,
+    TarefaIn,
+    TransicaoIn,
+)
 from forja.dominio.estados import EstadoTarefa
 from forja.observabilidade import recursos as recursos_mod
 from forja.orquestracao.servico import Servico
@@ -135,6 +143,24 @@ def transicionar(id_: ID, d: TransicaoIn, resp: Response, s: Svc, chave: ChaveId
     if repetida:
         resp.headers["Idempotent-Replayed"] = "true"
     return corpo
+
+
+@r.get("/tarefas/{id_}/conversa")
+def conversa(id_: ID, s: Svc) -> list[dict]:
+    """Conversa da tarefa: secoes do agente (entendimento, resposta, decisoes...) e respostas do desenvolvedor."""
+    return s.conversa(id_)
+
+
+@r.post("/tarefas/{id_}/conversa")
+def responder(id_: ID, d: ConversaIn, s: Svc) -> dict:
+    """UMA resposta livre cobre todas as decisoes pendentes; com `retomar` (padrao) a execucao continua."""
+    return s.responder(id_, d, ATOR)
+
+
+@r.get("/tarefas/{id_}/contexto")
+def contexto(id_: ID, s: Svc) -> list[dict]:
+    """O que entrou no prompt de cada execucao, quanto custou (estimado), o que foi omitido e o que foi usado."""
+    return s.contexto_da_tarefa(id_)
 
 
 @r.post("/tarefas/{id_}/execucoes")

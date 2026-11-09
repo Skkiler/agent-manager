@@ -18,6 +18,8 @@ _PADROES_VALOR = [
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     re.compile(r"(?i)\b(token|secret|password|senha|api[_-]?key)\s*[=:]\s*\S+"),
 ]
+# Contadores de consumo (tokens_input, tokens_output, max_tokens, ...) contem a palavra 'token' mas NAO sao credenciais.
+_CONTADOR = re.compile(r"(?i)^(max_)?tokens?(_[a-z_]+)?$|^[a-z_]+_tokens$|^total_tokens$")
 MAX_STR = 2000
 MAX_PROFUNDIDADE = 8
 
@@ -43,7 +45,8 @@ def sanitizar(obj: Any, _nivel: int = 0) -> Any:
         saida: dict[str, Any] = {}
         for k, v in obj.items():
             ks = str(k)
-            saida[ks] = REDACTED if _CHAVES_SENSIVEIS.search(ks) else sanitizar(v, _nivel + 1)
+            contador = _CONTADOR.match(ks) is not None and (v is None or isinstance(v, int | float))
+            saida[ks] = REDACTED if (_CHAVES_SENSIVEIS.search(ks) and not contador) else sanitizar(v, _nivel + 1)
         return saida
     if isinstance(obj, (list, tuple, set)):
         return [sanitizar(x, _nivel + 1) for x in list(obj)[:200]]

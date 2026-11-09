@@ -41,6 +41,11 @@ class Configuracoes(BaseSettings):
     app_memory_allowed_namespaces: str = "publico,pessoal"
     # Raizes de disco autorizadas para ingestao via API (separadas por ';'). Vazio = ingestao via API DESLIGADA.
     app_memory_ingest_roots: str = ""
+    # Contexto no prompt: a memoria so e injetada se houver acerto RELEVANTE (senao, zero tokens). Como o prompt vai ao
+    # provedor (Kiro), so entram namespaces liberados AQUI de forma explicita (padrao: apenas 'publico').
+    app_context_enabled: bool = True
+    app_context_namespaces: str = "publico"
+    app_context_budget_tokens: int = 2000
     app_require_auth: bool = True
     app_allow_lan_bind: bool = False
     # Opcional: token fixo vindo do ambiente/secret store. Se ausente, gera-se um em data/.
@@ -57,6 +62,10 @@ class Configuracoes(BaseSettings):
             raise ValueError("Bind fora de loopback exige APP_REQUIRE_AUTH=true.")
         if self.app_enable_local_llm:
             raise ValueError("LLM local nao e suportado na Fase 1 (APP_ENABLE_LOCAL_LLM deve ser false).")
+        if not 100 <= self.app_context_budget_tokens <= 20_000:
+            raise ValueError("APP_CONTEXT_BUDGET_TOKENS deve estar entre 100 e 20000.")
+        if not set(self.contexto_namespaces) <= set(self.memoria_namespaces):
+            raise ValueError("APP_CONTEXT_NAMESPACES deve ser subconjunto de APP_MEMORY_ALLOWED_NAMESPACES.")
         if self.app_kiro_prompt_timeout_seconds < 10:
             raise ValueError("APP_KIRO_PROMPT_TIMEOUT_SECONDS deve ser >= 10.")
         if self.app_resource_profile not in {"auto", "essencial", "equilibrado", "ampliado"}:
@@ -75,6 +84,12 @@ class Configuracoes(BaseSettings):
 
         brutos = self.app_memory_allowed_namespaces.split(",")
         return frozenset(validar_namespace(n.strip()) for n in brutos if n.strip())
+
+    @property
+    def contexto_namespaces(self) -> list[str]:
+        from forja.memoria.modelo import validar_namespace
+
+        return [validar_namespace(n.strip()) for n in self.app_context_namespaces.split(",") if n.strip()]
 
     @property
     def memoria_raizes(self) -> list[Path]:

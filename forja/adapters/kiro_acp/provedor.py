@@ -26,11 +26,21 @@ from forja.adapters.kiro_acp.cliente import (
 )
 from forja.adapters.kiro_acp.mediador import MediadorPermissoes
 from forja.agentes.base import ControleExecucao
-from forja.dominio.contratos import ArtefatoSaida, ConsumoMedicao, EvidenciaSaida, ResultadoAgente
-from forja.observabilidade.sanitizar import sanitizar_texto
+from forja.conversa.briefing import Briefing
+from forja.conversa.briefing import parse as parse_briefing
+from forja.dominio.contratos import (
+    ArtefatoSaida,
+    ConsumoMedicao,
+    EvidenciaSaida,
+    MensagemSaida,
+    ResultadoAgente,
+)
+from forja.memoria.saneamento import estimar_tokens
+from forja.observabilidade.sanitizar import redigir_segredos, sanitizar_texto
 
 log = logging.getLogger("forja.kiro")
 MAX_RESPOSTA = 200_000
+TETO_MENSAGEM = 20_000  # caracteres por mensagem de conversa (o artefato guarda a resposta integral)
 MAX_EVENTOS_TOOL = 100
 MODOS_PERMITIDOS = {"analise", "documentacao"}
 
@@ -65,20 +75,71 @@ def _adendos_texto(adendos: list[str]) -> str:
     return "\n".join(f"- {sanitizar_texto(a)[:1000]}" for a in adendos[:10])
 
 
+PROTOCOLO = (
+    "Voce e um assistente de ANALISE (somente leitura) da plataforma Forja, conversando com o desenvolvedor responsavel. "
+    "Nao modifique arquivos nem acesse segredos.\n"
+    "Responda em portugues, de forma natural e explicativa, com EXATAMENTE estas secoes (omita as vazias):\n"
+    "## Entendimento (1 a 3 frases)\n"
+    "## Resposta (o principal; ao usar o contexto recebido cite [M1]/[C1])\n"
+    "## Premissas (o que voce assumiu para seguir sem perguntar)\n"
+    "## Decisões para você (SOMENTE o que realmente bloqueia; TODAS juntas, numeradas, no formato "
+    '"N. pergunta — Recomendo: X (motivo). Alternativas: A; B.")\n'
+    "## Próximos passos (ate 3)\n"
+    "Prefira assumir uma recomendacao razoavel e registrar em Premissas a perguntar. Nao repita o contexto recebido."
+)
+
+
+# Retomada: a sessao ACP e nova, entao o formato precisa ser lembrado, mas em versao curta (o protocolo cheio so na 1a rodada).
+PROTOCOLO_CURTO = (
+    "Voce e um assistente de ANALISE (somente leitura) conversando com o desenvolvedor. Mantenha as secoes: "
+    "## Entendimento, ## Resposta, ## Premissas, ## Decisões para você, ## Próximos passos (omita as vazias)."
+)
+
+
 def montar_prompt(tarefa: dict[str, Any]) -> str:
+    """Prompt inicial: protocolo curto + tarefa + (se houver acerto relevante) contexto citavel. Nada alem disso."""
+    if tarefa.get("retomada"):
+        return montar_prompt_retomada(tarefa)
     criterios = "\n".join(f"- {c}" for c in tarefa.get("criterios_aceite", []))
     texto = (
-        "Voce e um agente de ANALISE SOMENTE LEITURA executando uma tarefa da plataforma Forja.\n"
-        "Nao modifique arquivos, nao execute comandos de escrita, nao acesse segredos ou credenciais.\n"
-        "Responda em portugues com: resumo, evidencias, hipoteses (marcadas como tal) e pendencias.\n\n"
-        f"Tarefa: {tarefa['titulo']}\n"
+        f"{PROTOCOLO}\n\nTarefa: {tarefa['titulo']}\n"
         f"Descricao: {tarefa.get('descricao') or '(sem descricao)'}\n"
         f"Criterios de aceite:\n{criterios}\n"
     )
     if tarefa.get("adendos_operador"):
-        texto += ("\nOrientacoes adicionais do operador (adendos a autorizacao):\n"
-                  f"{_adendos_texto(tarefa['adendos_operador'])}\n")
+        texto += (
+            "\nOrientacoes adicionais do operador (adendos a autorizacao):\n"
+            f"{_adendos_texto(tarefa['adendos_operador'])}\n"
+        )
+    if tarefa.get("contexto_texto"):
+        texto += f"\n{tarefa['contexto_texto']}\n"
     return texto
+
+
+def montar_prompt_retomada(tarefa: dict[str, Any]) -> str:
+    """Retomada apos o desenvolvedor responder: so o essencial (entendimento curto, decisoes propostas, respostas).
+    NAO reenvia a resposta anterior inteira nem contexto que nao foi usado: a sessao ACP e nova, mas o custo e minimo."""
+    r = tarefa["retomada"]
+    partes = [PROTOCOLO_CURTO, f"\nRetomada da conversa sobre a tarefa: {tarefa['titulo']}"]
+    if r.get("entendimento"):
+        partes.append(f"Seu entendimento anterior: {r['entendimento']}")
+    if r.get("decisoes"):
+        linhas = [
+            f"{d.get('numero', i)}. {d.get('pergunta', '')}"
+            + (f" (voce recomendou: {d['recomendacao']})" if d.get("recomendacao") else "")
+            for i, d in enumerate(r["decisoes"], start=1)
+        ]
+        partes.append("Decisoes que voce propos:\n" + "\n".join(linhas))
+    partes.append(
+        "Resposta do desenvolvedor (trate como decisao final):\n"
+        + "\n".join(f"- {sanitizar_texto(x)}" for x in r.get("respostas", [])[-5:])
+    )
+    partes.append(
+        "Continue a partir dai, sem repetir o que ja foi dito. So liste novas decisoes se algo NOVO realmente bloquear."
+    )
+    if tarefa.get("contexto_texto"):
+        partes.append(tarefa["contexto_texto"])
+    return "\n".join(partes) + "\n"
 
 
 def montar_acompanhamento(adendos: list[str]) -> str:
@@ -114,11 +175,19 @@ class ProvedorKiroAcp:
     def executar(self, tarefa: dict[str, Any], checkpoint: dict[str, Any], ctl: ControleExecucao) -> ResultadoAgente:
         t0 = time.monotonic()
         if tarefa.get("modo") not in MODOS_PERMITIDOS:
-            return self._res("falhou", f"Modo '{tarefa.get('modo')}' nao habilitado no provedor Kiro (Fase 2: somente "
-                             f"{sorted(MODOS_PERMITIDOS)}).", t0)
+            return self._res(
+                "falhou",
+                f"Modo '{tarefa.get('modo')}' nao habilitado no provedor Kiro (Fase 2: somente "
+                f"{sorted(MODOS_PERMITIDOS)}).",
+                t0,
+            )
         if self.comando is None:
-            return self._res("bloqueada", "Kiro CLI nao encontrado.", t0,
-                             pendencias=["kiro_cli_ausente: instale o Kiro CLI ou configure APP_KIRO_CLI_PATH"])
+            return self._res(
+                "bloqueada",
+                "Kiro CLI nao encontrado.",
+                t0,
+                pendencias=["kiro_cli_ausente: instale o Kiro CLI ou configure APP_KIRO_CLI_PATH"],
+            )
         self.workspace.mkdir(parents=True, exist_ok=True)
 
         partes: list[str] = []
@@ -133,40 +202,65 @@ class ProvedorKiroAcp:
                     partes.append(str(c.get("text", "")))
             elif tipo in ("tool_call", "tool_call_update") and n_tools < MAX_EVENTOS_TOOL:
                 n_tools += 1
-                ctl.evento("kiro.ferramenta", {"titulo": str(upd.get("title", ""))[:200],
-                           "tipo": upd.get("kind"), "status": upd.get("status")})
+                ctl.evento(
+                    "kiro.ferramenta",
+                    {"titulo": str(upd.get("title", ""))[:200], "tipo": upd.get("kind"), "status": upd.get("status")},
+                )
 
         mediador = MediadorPermissoes(ctl, self.workspace, janela=self.janela_agrupamento)
-        cliente = ClienteAcp(self.comando, cwd=str(self.workspace),
-                             decisor_permissao=self._decisor or mediador.decidir, on_update=on_update)
+        cliente = ClienteAcp(
+            self.comando,
+            cwd=str(self.workspace),
+            decisor_permissao=self._decisor or mediador.decidir,
+            on_update=on_update,
+        )
         sid: str | None = None
         chamadas = 1
         try:
             cliente.iniciar()
             cliente.inicializar(self.timeout_handshake)
-            ctl.evento("kiro.conectado", {"agente": cliente.agent_info.get("name"),
-                                          "versao": cliente.agent_info.get("version")})
+            ctl.evento(
+                "kiro.conectado",
+                {"agente": cliente.agent_info.get("name"), "versao": cliente.agent_info.get("version")},
+            )
             sid = cliente.nova_sessao(str(self.workspace.resolve()), self.timeout_handshake)
             ctl.registrar_checkpoint({"sessao": "criada"})
-            fut = cliente.requisitar("session/prompt", {"sessionId": sid,
-                                     "prompt": [{"type": "text", "text": montar_prompt(tarefa)}]})
+            prompt = montar_prompt(tarefa)
+            tokens_in = estimar_tokens(prompt)
+            ctl.evento(
+                "kiro.prompt_montado",
+                {
+                    "tokens_estimados": tokens_in,
+                    "com_contexto": bool(tarefa.get("contexto_texto")),
+                    "retomada": bool(tarefa.get("retomada")),
+                },
+            )
+            fut = cliente.requisitar("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": prompt}]})
             parada = self._aguardar(cliente, fut, sid, ctl)
             if parada == "end_turn" and mediador.adendos and not (ctl.cancelado() or ctl.pausado()):
                 # Adendos dados DURANTE a execucao nao podem ser injetados no meio do turno (ACP): entrega-se em
                 # UM turno de acompanhamento, contado no orcamento de chamadas.
                 partes.append("\n\n---\n### Complemento apos adendos do operador\n")
-                fut2 = cliente.requisitar("session/prompt", {"sessionId": sid, "prompt": [
-                    {"type": "text", "text": montar_acompanhamento(mediador.adendos)}]})
+                seguimento = montar_acompanhamento(mediador.adendos)
+                tokens_in += estimar_tokens(seguimento)
+                fut2 = cliente.requisitar(
+                    "session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": seguimento}]}
+                )
                 chamadas += 1
                 parada = self._aguardar(cliente, fut2, sid, ctl)
-            texto = sanitizar_texto("".join(partes)) if partes else ""
+            texto = redigir_segredos("".join(partes)) if partes else ""  # sem truncar: so redige segredos
             if parada == "interrompido":
-                return self._res("cancelada" if ctl.cancelado() else "pausada",
-                                 "Execucao interrompida pelo orquestrador.", t0)
-            return self._concluir(parada, texto, cliente, n_tools, t0, mediador, chamadas)
+                return self._res(
+                    "cancelada" if ctl.cancelado() else "pausada", "Execucao interrompida pelo orquestrador.", t0
+                )
+            return self._concluir(parada, texto, cliente, n_tools, t0, mediador, chamadas, tokens_in)
         except AcpAutenticacaoNecessaria as e:
-            return self._res("bloqueada", "Autenticacao do Kiro necessaria.", t0,
-                             pendencias=["reautenticacao_necessaria: execute 'kiro-cli login' no desktop", e.mensagem])
+            return self._res(
+                "bloqueada",
+                "Autenticacao do Kiro necessaria.",
+                t0,
+                pendencias=["reautenticacao_necessaria: execute 'kiro-cli login' no desktop", e.mensagem],
+            )
         except AcpCliAusente:
             return self._res("bloqueada", "Kiro CLI nao encontrado.", t0, pendencias=["kiro_cli_ausente"])
         except AcpTimeout as e:
@@ -174,8 +268,12 @@ class ProvedorKiroAcp:
         except AcpProtocoloNaoSuportado as e:
             return self._res("falhou", e.mensagem, t0, pendencias=["protocolo_acp_incompativel"])
         except AcpDesconectado:
-            return self._res("falhou", "Conexao ACP perdida durante a execucao.", t0,
-                             pendencias=[f"stderr: {cliente.stderr_recente()[:300]}"])
+            return self._res(
+                "falhou",
+                "Conexao ACP perdida durante a execucao.",
+                t0,
+                pendencias=[f"stderr: {cliente.stderr_recente()[:300]}"],
+            )
         except AcpErro as e:
             return self._res("falhou", f"Erro ACP: {e.mensagem}", t0)
         finally:
@@ -198,29 +296,116 @@ class ProvedorKiroAcp:
                 raise AcpTimeout(f"session/prompt excedeu {self.timeout_prompt:.0f}s.")
             time.sleep(0.05)
 
-    def _concluir(self, parada: str, texto: str, cliente: ClienteAcp, n_tools: int, t0: float,
-                  mediador: MediadorPermissoes, chamadas: int) -> ResultadoAgente:
+    @staticmethod
+    def _mensagens(b: Briefing, texto: str) -> list[MensagemSaida]:
+        """Briefing -> mensagens de conversa. Sem formato reconhecido: uma unica mensagem 'resposta' (nada se perde)."""
+
+        def cortar(c: str) -> str:  # a conversa mostra ate TETO_MENSAGEM; o texto integral fica no artefato
+            return (
+                c
+                if len(c) <= TETO_MENSAGEM
+                else c[:TETO_MENSAGEM].rstrip() + "\n…[restante no artefato resposta_kiro.md]"
+            )
+
+        if not b.estruturado:
+            return [MensagemSaida(tipo="resposta", conteudo=cortar(texto))] if texto.strip() else []
+        saida = []
+        for chave in ("entendimento", "resposta", "premissas", "riscos", "decisoes", "proximos_passos"):
+            if chave in b.secoes:
+                dados = {"decisoes": [d.como_dict() for d in b.decisoes]} if chave == "decisoes" else None
+                saida.append(MensagemSaida(tipo=chave, conteudo=cortar(b.secoes[chave]), dados=dados))
+        return saida
+
+    def _concluir(
+        self,
+        parada: str,
+        texto: str,
+        cliente: ClienteAcp,
+        n_tools: int,
+        t0: float,
+        mediador: MediadorPermissoes,
+        chamadas: int,
+        tokens_in: int = 0,
+    ) -> ResultadoAgente:
+        tokens_out = estimar_tokens(texto) if texto else 0
         if parada == "refusal":
-            return self._res("falhou", "O modelo recusou a solicitacao (refusal).", t0, chamadas=chamadas)
+            return self._res(
+                "falhou",
+                "O modelo recusou a solicitacao (refusal).",
+                t0,
+                chamadas=chamadas,
+                tokens=(tokens_in, tokens_out),
+            )
         if not texto.strip():
-            return self._res("falhou", f"Kiro finalizou ({parada}) sem conteudo de resposta.", t0, chamadas=chamadas)
-        r = self._res("concluida", f"Resposta do Kiro recebida (stopReason={parada}).", t0, chamadas=chamadas)
+            return self._res(
+                "falhou",
+                f"Kiro finalizou ({parada}) sem conteudo de resposta.",
+                t0,
+                chamadas=chamadas,
+                tokens=(tokens_in, tokens_out),
+            )
+        briefing = parse_briefing(texto)
+        mensagens = self._mensagens(briefing, texto)
+        if (
+            briefing.precisa_do_usuario
+        ):  # UMA pergunta consolidada, com recomendacao: o desenvolvedor responde de uma vez
+            r = self._res(
+                "bloqueada",
+                f"Aguardando {len(briefing.decisoes)} decisao(oes) do desenvolvedor.",
+                t0,
+                pendencias=["aguardando_decisoes_do_usuario"],
+                chamadas=chamadas,
+                tokens=(tokens_in, tokens_out),
+            )
+            r.mensagens = mensagens
+            return r
+        r = self._res(
+            "concluida",
+            f"Resposta do Kiro recebida (stopReason={parada}).",
+            t0,
+            chamadas=chamadas,
+            tokens=(tokens_in, tokens_out),
+        )
+        r.mensagens = mensagens
         r.artefatos.append(ArtefatoSaida(nome="resposta_kiro.md", tipo="texto", conteudo=texto))
-        r.evidencias.append(EvidenciaSaida(
-            tipo="kiro_resposta", simulada=False, artefato="resposta_kiro.md",
-            resumo=f"Resposta de LLM via ACP (nao verificada deterministicamente). Ferramentas observadas: {n_tools}; "
-                   f"permissoes aprovadas: {cliente.permissoes_aprovadas}, negadas: {cliente.permissoes_negadas}; "
-                   f"consultas ao operador: {mediador.perguntas}."))
+        r.evidencias.append(
+            EvidenciaSaida(
+                tipo="kiro_resposta",
+                simulada=False,
+                artefato="resposta_kiro.md",
+                resumo=f"Resposta de LLM via ACP (nao verificada deterministicamente). Ferramentas observadas: {n_tools}; "
+                f"permissoes aprovadas: {cliente.permissoes_aprovadas}, negadas: {cliente.permissoes_negadas}; "
+                f"consultas ao operador: {mediador.perguntas}.",
+            )
+        )
         if parada == "max_tokens":
             r.pendencias.append("resposta_truncada: stopReason=max_tokens")
         r.hipoteses.append("Conteudo da resposta e gerado por modelo; requer revisao antes de uso.")
         return r
 
-    def _res(self, estado: str, resumo: str, t0: float, pendencias: list[str] | None = None,
-             chamadas: int = 0) -> ResultadoAgente:
+    def _res(
+        self,
+        estado: str,
+        resumo: str,
+        t0: float,
+        pendencias: list[str] | None = None,
+        chamadas: int = 0,
+        tokens: tuple[int, int] | None = None,
+    ) -> ResultadoAgente:
+        # O ACP nao expoe contagem do provedor. Quando ha texto, registramos uma ESTIMATIVA (~4 caracteres/token) e a
+        # rotulamos 'estimado' (nunca 'provedor'); sem texto, 'indisponivel'.
+        medido = tokens is not None and (tokens[0] or tokens[1])
         return ResultadoAgente(
             estado=estado,  # type: ignore[arg-type]
-            resumo=resumo, agente_id=self.id, mock=False, pendencias=pendencias or [],
-            consumo=ConsumoMedicao(latencia_ms=int((time.monotonic() - t0) * 1000), chamadas_modelo=chamadas,
-                                   fonte="indisponivel"),
+            resumo=resumo,
+            agente_id=self.id,
+            mock=False,
+            pendencias=pendencias or [],
+            consumo=ConsumoMedicao(
+                latencia_ms=int((time.monotonic() - t0) * 1000),
+                chamadas_modelo=chamadas,
+                tokens_input=tokens[0] if medido else None,
+                tokens_output=tokens[1] if medido else None,
+                fonte="estimado" if medido else "indisponivel",
+            ),
         )
