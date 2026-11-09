@@ -56,6 +56,33 @@ def test_fluxo_ponta_a_ponta_sucesso(servico: Servico):
     assert arts and servico.obter_artefato(arts[0]["id"], com_conteudo=True)["conteudo"]
 
 
+def test_gravacao_concorrente_do_mesmo_artefato_nao_colide(servico: Servico):
+    """Regressao: artefatos sao enderecados por conteudo; duas execucoes com resposta identica escreviam no MESMO .tmp
+    e uma falhava com PermissionError no Windows (descoberto como flaky em test_decisao_em_lote)."""
+    import threading
+
+    erros: list[Exception] = []
+    barreira = threading.Barrier(12)
+
+    def gravar() -> None:
+        try:
+            barreira.wait()
+            for _ in range(25):
+                servico._gravar_artefato("conteudo identico entre execucoes concorrentes")
+        except Exception as e:  # noqa: BLE001
+            erros.append(e)
+
+    ths = [threading.Thread(target=gravar) for _ in range(12)]
+    [t.start() for t in ths]
+    [t.join() for t in ths]
+    assert erros == [], erros[:2]
+    arquivos = [p for p in servico.artefatos_dir.rglob("*") if p.is_file()]
+    assert len(arquivos) == 1 and not any(p.suffix == ".tmp" for p in arquivos)  # 1 blob; nenhum .tmp esquecido
+    sha, rel, tam = servico._gravar_artefato("conteudo identico entre execucoes concorrentes")
+    assert (servico.artefatos_dir / rel).read_bytes() == b"conteudo identico entre execucoes concorrentes"
+    assert tam == len(b"conteudo identico entre execucoes concorrentes")
+
+
 def test_cenario_falha(servico: Servico):
     tarefa = _preparar(servico, "falha")
     final = _executar_ate_fim(servico, tarefa["id"])

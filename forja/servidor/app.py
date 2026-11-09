@@ -21,9 +21,11 @@ from forja.agentes.base import ProvedorAgente
 from forja.config import Configuracoes, obter_configuracoes
 from forja.dominio.erros import ErroDominio
 from forja.observabilidade.logs import configurar_logging, correlation_id_var
+from forja.orquestracao.memoria_servico import ServicoMemoria
 from forja.orquestracao.servico import Servico
 from forja.seguranca.auth import LimitadorTaxa, carregar_token
 from forja.servidor.rotas import publico, r
+from forja.servidor.rotas_memoria import rm
 
 log = logging.getLogger("forja.app")
 ESTATICO = __import__("pathlib").Path(__file__).resolve().parent.parent / "painel" / "estatico"
@@ -68,6 +70,8 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
                   docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.config = cfg
     app.state.servico = provedor_servico = criar_servico(cfg, provedor)
+    _ = cfg.memoria_namespaces  # falha cedo se APP_MEMORY_ALLOWED_NAMESPACES for invalido
+    app.state.memoria = ServicoMemoria(provedor_servico.repo, raizes_ingestao=cfg.memoria_raizes)
     app.state.token = carregar_token(cfg)
     app.state.limitador = LimitadorTaxa(cfg.app_rate_limit_per_minute)
     app.state.encerrando = threading.Event()
@@ -78,6 +82,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     _registrar_handlers(app)
     app.include_router(publico)
     app.include_router(r)
+    app.include_router(rm)
     _ = provedor_servico  # servico ja referenciado em app.state
 
     if ESTATICO.exists():

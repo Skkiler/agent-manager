@@ -10,6 +10,7 @@ import json
 import logging
 import threading
 import time
+import uuid
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -416,9 +417,18 @@ class Servico:
         destino = self.artefatos_dir / rel
         destino.parent.mkdir(parents=True, exist_ok=True)
         if not destino.exists():
-            tmp = destino.with_suffix(".tmp")
-            tmp.write_bytes(dados)
-            tmp.replace(destino)
+            # .tmp UNICO por escritor: o blob e enderecado por conteudo, entao execucoes concorrentes com resposta
+            # identica disputam o mesmo destino (um .tmp compartilhado falhava com PermissionError no Windows).
+            tmp = destino.with_name(f"{destino.name}.{uuid.uuid4().hex}.tmp")
+            try:
+                tmp.write_bytes(dados)
+                try:
+                    tmp.replace(destino)
+                except OSError:
+                    if not destino.exists():  # outro escritor vencer a corrida e aceitavel: conteudo identico (hash)
+                        raise
+            finally:
+                tmp.unlink(missing_ok=True)
         return sha, rel, len(dados)
 
     def _finalizar(self, execucao_id: str, ctl: ControleExecucao, res: ResultadoAgente) -> None:

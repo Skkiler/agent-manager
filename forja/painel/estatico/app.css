@@ -26,3 +26,7 @@ th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(-
 .risco.medio { background: #f9a82622; border-color: #f9a826; }
 .aprov-acoes { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
 .aprov-acoes input[type="text"] { flex: 1 1 14rem; }
+#busca-resultados { padding-left: 1.2rem; }
+#busca-resultados li { margin: .6rem 0; }
+#busca-resultados pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: .3rem 0; font-size: .85em; max-height: 9rem; overflow: auto; }
+mark { background: #f9a82655; color: inherit; padding: 0 .1em; }

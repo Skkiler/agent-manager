@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -27,11 +28,23 @@ class RelogioFake:
         self._t += timedelta(seconds=segundos)
 
 
-@pytest.fixture
-def db_path(tmp_path: Path) -> Path:
-    p = tmp_path / "data" / "forja.sqlite3"
+@pytest.fixture(scope="session")
+def _db_migrado(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Banco ja migrado ate 'head', criado UMA vez por sessao (as migracoes custam ~1 s por teste)."""
+    p = tmp_path_factory.mktemp("template") / "forja.sqlite3"
     migrar(p)
     return p
+
+
+def _copiar_banco(origem: Path, destino: Path) -> Path:
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(origem, destino)
+    return destino
+
+
+@pytest.fixture
+def db_path(tmp_path: Path, _db_migrado: Path) -> Path:
+    return _copiar_banco(_db_migrado, tmp_path / "data" / "forja.sqlite3")
 
 
 @pytest.fixture
@@ -56,7 +69,8 @@ def servico(repo: RepositorioSqlite, tmp_path: Path, relogio: RelogioFake) -> It
 
 
 @pytest.fixture
-def config(tmp_path: Path) -> Configuracoes:
+def config(tmp_path: Path, _db_migrado: Path) -> Configuracoes:
+    _copiar_banco(_db_migrado, tmp_path / "data" / "forja.sqlite3")  # criar_app so confirma que ja esta em 'head'
     return Configuracoes(
         _env_file=None,  # type: ignore[call-arg]
         app_data_dir=tmp_path / "data",

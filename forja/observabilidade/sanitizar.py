@@ -22,9 +22,15 @@ MAX_STR = 2000
 MAX_PROFUNDIDADE = 8
 
 
-def sanitizar_texto(s: str) -> str:
+def redigir_segredos(s: str) -> str:
+    """Redige padroes de segredo SEM truncar (para documentos/memoria; sanitizar_texto trunca em MAX_STR)."""
     for p in _PADROES_VALOR:
         s = p.sub(REDACTED, s)
+    return s
+
+
+def sanitizar_texto(s: str) -> str:
+    s = redigir_segredos(s)
     if len(s) > MAX_STR:
         s = s[:MAX_STR] + "...[truncado]"
     return s

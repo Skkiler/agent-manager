@@ -36,6 +36,11 @@ class Configuracoes(BaseSettings):
     app_kiro_prompt_timeout_seconds: int = 300
     # Tempo maximo que um pedido de aprovacao aguarda o operador; expirado => negado (nunca aprova por omissao).
     app_approval_timeout_seconds: int = 900
+    # Memoria: namespaces que o operador desta instancia pode ler/escrever.
+    # 'empresa/*' e 'terceiros' exigem inclusao explicita.
+    app_memory_allowed_namespaces: str = "publico,pessoal"
+    # Raizes de disco autorizadas para ingestao via API (separadas por ';'). Vazio = ingestao via API DESLIGADA.
+    app_memory_ingest_roots: str = ""
     app_require_auth: bool = True
     app_allow_lan_bind: bool = False
     # Opcional: token fixo vindo do ambiente/secret store. Se ausente, gera-se um em data/.
@@ -63,6 +68,17 @@ class Configuracoes(BaseSettings):
     @property
     def db_path(self) -> Path:
         return self.app_data_dir / "forja.sqlite3"
+
+    @property
+    def memoria_namespaces(self) -> frozenset[str]:
+        from forja.memoria.modelo import validar_namespace
+
+        brutos = self.app_memory_allowed_namespaces.split(",")
+        return frozenset(validar_namespace(n.strip()) for n in brutos if n.strip())
+
+    @property
+    def memoria_raizes(self) -> list[Path]:
+        return [Path(r.strip()) for r in self.app_memory_ingest_roots.split(";") if r.strip()]
 
     @property
     def kiro_workspace_dir(self) -> Path:

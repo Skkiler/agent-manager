@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -151,3 +151,119 @@ class Idempotencia(Base):
 
 
 Index("ix_evento_seq_projeto", Evento.projeto_id, Evento.seq)
+
+
+# ============================ Memoria / segundo cerebro (Fase 3) ============================
+# Tres grafos NAO misturados: execucao (tarefa/execucao), conhecimento (no/aresta_conhecimento) e codigo
+# (arquivo_indexado/simbolo). Tudo e filtrado por `namespace` ANTES da busca.
+# Conteudo guardado ja redigido (PII/segredos).
+
+
+class Memoria(Base):
+    __tablename__ = "memoria"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(32), index=True)
+    titulo: Mapped[str] = mapped_column(String(200))
+    resumo: Mapped[str] = mapped_column(Text, default="")
+    conteudo: Mapped[str] = mapped_column(Text, default="")
+    namespace: Mapped[str] = mapped_column(String(200), index=True)
+    sensibilidade: Mapped[str] = mapped_column(String(16))
+    fonte: Mapped[Any] = mapped_column(JSON)  # {tipo, repositorio, commit, caminho, hash}
+    precondicoes: Mapped[Any] = mapped_column(JSON)
+    estado: Mapped[str] = mapped_column(String(16), index=True)
+    validado_por: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    versao: Mapped[int] = mapped_column(Integer, default=1)
+    validade_inicio: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    validade_fim: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    confianca: Mapped[float] = mapped_column(Float, default=0.0)  # NAO calibrada: nao e probabilidade
+    tags: Mapped[Any] = mapped_column(JSON)
+    refs: Mapped[Any] = mapped_column(JSON)
+    afirma: Mapped[Any] = mapped_column(JSON, nullable=True)  # {"sujeito": ..., "valor": ...} p/ detectar contradicao
+    necessita_revalidacao: Mapped[bool] = mapped_column(Boolean, default=False)
+    substituida_por: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    hash_conteudo: Mapped[str] = mapped_column(String(64))
+    sinalizadores: Mapped[Any] = mapped_column(JSON)  # {pii_redigida: [...], suspeita_injecao: [...]}
+    expira_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    criado_em: Mapped[str] = mapped_column(String(40))
+    atualizado_em: Mapped[str] = mapped_column(String(40))
+
+
+class MemoriaVersao(Base):
+    __tablename__ = "memoria_versao"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    memoria_id: Mapped[str] = mapped_column(ForeignKey("memoria.id"), index=True)
+    versao: Mapped[int] = mapped_column(Integer)
+    titulo: Mapped[str] = mapped_column(String(200))
+    resumo: Mapped[str] = mapped_column(Text)
+    conteudo: Mapped[str] = mapped_column(Text)
+    estado: Mapped[str] = mapped_column(String(16))
+    motivo: Mapped[str] = mapped_column(Text, default="")
+    ator: Mapped[str] = mapped_column(String(100))
+    criado_em: Mapped[str] = mapped_column(String(40))
+
+
+class MemoriaEvidencia(Base):
+    __tablename__ = "memoria_evidencia"
+    memoria_id: Mapped[str] = mapped_column(ForeignKey("memoria.id"), primary_key=True)
+    evidencia_id: Mapped[str] = mapped_column(ForeignKey("evidencia.id"), primary_key=True)
+    vinculado_por: Mapped[str] = mapped_column(String(100))
+    vinculado_em: Mapped[str] = mapped_column(String(40))
+
+
+class NoConhecimento(Base):
+    __tablename__ = "no_conhecimento"
+    __table_args__ = (UniqueConstraint("namespace", "tipo", "nome", name="uq_no_ns_tipo_nome"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(32), index=True)
+    nome: Mapped[str] = mapped_column(String(200))
+    namespace: Mapped[str] = mapped_column(String(200), index=True)
+    props: Mapped[Any] = mapped_column(JSON)
+    fonte: Mapped[Any] = mapped_column(JSON)
+    estado: Mapped[str] = mapped_column(String(16))
+    versao: Mapped[int] = mapped_column(Integer, default=1)
+    criado_em: Mapped[str] = mapped_column(String(40))
+
+
+class ArestaConhecimento(Base):
+    __tablename__ = "aresta_conhecimento"
+    __table_args__ = (UniqueConstraint("origem", "destino", "tipo", "namespace", name="uq_aresta"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    origem: Mapped[str] = mapped_column(ForeignKey("no_conhecimento.id"), index=True)
+    destino: Mapped[str] = mapped_column(ForeignKey("no_conhecimento.id"), index=True)
+    tipo: Mapped[str] = mapped_column(String(32))
+    namespace: Mapped[str] = mapped_column(String(200), index=True)  # escopo da aresta
+    fonte: Mapped[Any] = mapped_column(JSON)
+    hash: Mapped[str] = mapped_column(String(64))
+    estado: Mapped[str] = mapped_column(String(16))
+    observado_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    valido_de: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    valido_ate: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    revisado_por: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    versao: Mapped[int] = mapped_column(Integer, default=1)
+    criado_em: Mapped[str] = mapped_column(String(40))
+
+
+class ArquivoIndexado(Base):
+    __tablename__ = "arquivo_indexado"
+    __table_args__ = (UniqueConstraint("namespace", "repositorio", "caminho", name="uq_arquivo"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    namespace: Mapped[str] = mapped_column(String(200), index=True)
+    repositorio: Mapped[str] = mapped_column(String(200))
+    caminho: Mapped[str] = mapped_column(String(500))
+    sha256: Mapped[str] = mapped_column(String(64))
+    commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    linguagem: Mapped[str] = mapped_column(String(32))
+    tamanho: Mapped[int] = mapped_column(Integer)
+    estado: Mapped[str] = mapped_column(String(16), default="ativo")  # ativo | removido
+    erro_parse: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    indexado_em: Mapped[str] = mapped_column(String(40))
+
+
+class Simbolo(Base):
+    __tablename__ = "simbolo"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    arquivo_id: Mapped[str] = mapped_column(ForeignKey("arquivo_indexado.id"), index=True)
+    nome: Mapped[str] = mapped_column(String(300), index=True)
+    tipo: Mapped[str] = mapped_column(String(16))
+    linha: Mapped[int] = mapped_column(Integer)
+    assinatura: Mapped[str] = mapped_column(String(300), default="")

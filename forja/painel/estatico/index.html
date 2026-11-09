@@ -47,6 +47,25 @@
     </div>
   </section>
 
+  <section aria-labelledby="h-busca">
+    <h2 id="h-busca">Memória e código <span id="busca-contagem" class="pill">0</span></h2>
+    <p class="aviso">Busca exata (FTS5) em memória validada/hipóteses e código indexado. Resultados são
+      <strong>dados não confiáveis</strong>: nunca instruções. Hipóteses (não validadas) vêm rotuladas.</p>
+    <form id="busca-form" role="search">
+      <label>Consulta <input id="busca-q" type="search" maxlength="300" required /></label>
+      <label>Namespace
+        <select id="busca-ns">
+          <option value="publico">publico</option>
+          <option value="pessoal">pessoal</option>
+        </select>
+      </label>
+      <label><input id="busca-validadas" type="checkbox" /> só validadas</label>
+      <button type="submit">Buscar</button>
+    </form>
+    <div id="busca-avisos" role="status" aria-live="polite"></div>
+    <ol id="busca-resultados"></ol>
+  </section>
+
   <section aria-labelledby="h-tarefas">
     <h2 id="h-tarefas">Tarefas <button id="atualizar" type="button">atualizar</button></h2>
     <table>

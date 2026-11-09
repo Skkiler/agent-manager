@@ -76,6 +76,21 @@ todos, alguns ou nenhum, com um **adendo** livre e a opção "lembrar nesta exec
 Ações que envolvem segredos (`.env`, chaves, tokens) são negadas automaticamente. Sem resposta no prazo
 (`APP_APPROVAL_TIMEOUT_SECONDS`), o pedido é **negado**. Detalhes em `docs/adr/0006-aprovacao-por-acao-agrupada.md`.
 
+### Memória / segundo cérebro (Fase 3)
+Busca exata (SQLite FTS5) em **memórias** (com proveniência, estados `candidato → … → validado` e histórico) e em
+**código/documentos indexados** (símbolos Python via AST, apontando para a linha da definição). Tudo isolado por
+*namespace* (`publico`, `pessoal`, `terceiros`, `empresa/<id>`); por padrão esta instância só enxerga `publico` e `pessoal`.
+
+```powershell
+# habilitar ingestao de um repositorio (raizes autorizadas separadas por ';'; vazio = desligado)
+$env:APP_MEMORY_INGEST_ROOTS = "C:\caminho\do\repositorio-publico"
+# POST /api/v1/memorias/ingerir {"namespace":"publico","raiz":"...","repositorio":"demo"}   (incremental, por SHA-256)
+# GET  /api/v1/memorias/buscar?q=ClienteAcp&namespace=publico            (painel: seção "Memória e código")
+```
+O conteúdo da memória fica em `data\forja.sqlite3` (**ignorado pelo Git**); PII e segredos são redigidos antes de gravar;
+resultados são sempre *dados não confiáveis* (nunca instruções). Evidências simuladas (mock) não validam memória.
+Detalhes e limites em `docs/adr/0007-memoria-fts5-namespaces-acl.md`.
+
 ### Limites desta fase
 O agente e um **mock** deterministico: as evidencias que ele produz sao **simuladas** e nao comprovam
 funcionalidade real. Integracao Kiro (ACP), memoria/grafos, multiagentes e o painel pixel art chegam nas Fases 2+.

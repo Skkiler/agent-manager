@@ -36,6 +36,11 @@ _CAMPOS_CAMINHO = (
     "path", "file_path", "filePath", "filepath", "file", "target", "dest", "destination", "directory", "dir")
 
 
+def caminho_sensivel(caminho: str) -> bool:
+    """True se o caminho parece segredo/credencial (.env, chaves, tokens). Usado tambem pela ingestao de memoria."""
+    return bool(_SENSIVEL.search(caminho.replace("\\", "/")))
+
+
 def _comando(raw: Any) -> str:
     if not isinstance(raw, dict):
         return ""

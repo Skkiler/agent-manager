@@ -285,6 +285,11 @@ def test_concorrencia_de_decisoes_so_uma_vence(mk):
     s.aguardar(ex["id"], 30)
 
 
+def _sem_fts(objeto, nome, tipo, reflected, compare_to):
+    """FTS5 (tabelas virtuais e sombras) nao e modelado pelo SQLAlchemy: fica fora do diff."""
+    return not (tipo == "table" and nome and (nome.startswith("memoria_fts") or nome.startswith("codigo_fts")))
+
+
 # ---------------------------------------------------------------- migracao 0002
 def test_migracao_0002_preserva_dados_e_bate_com_os_modelos(tmp_path: Path):
     from alembic.autogenerate import compare_metadata
@@ -306,7 +311,7 @@ def test_migracao_0002_preserva_dados_e_bate_com_os_modelos(tmp_path: Path):
     with eng.connect() as c:
         row = c.execute(text("SELECT origem, adendo FROM aprovacao WHERE id='AP'")).one()
         assert tuple(row) == ("pre_execucao", "")
-        diff = compare_metadata(MigrationContext.configure(c), T.Base.metadata)
+        diff = compare_metadata(MigrationContext.configure(c, opts={"include_object": _sem_fts}), T.Base.metadata)
     assert diff == [], f"modelos e migracoes divergem: {diff}"
     assert {"origem", "itens", "escopo", "adendo"} <= {c["name"] for c in inspect(eng).get_columns("aprovacao")}
     eng.dispose()

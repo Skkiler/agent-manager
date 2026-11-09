@@ -107,3 +107,39 @@ Cada REQ aponta para teste automatizado real. O estado verificado fica em `docs/
   nada permanece pendente sem worker; nunca usar `allow_always` do Kiro.
 - Aceite: `test_timeout_nega_*`, `test_cancelar_enquanto_aguarda_aprovacao`, `test_recuperacao_de_pedido_orfao_*`,
   `test_segredos_sao_sensiveis_e_criticos`, `test_comando_que_toca_segredo_e_sensivel`; migração 0002 sem divergência de modelo.
+
+## Fase 3 — Memória textual e grafos (ver ADR-007)
+
+### REQ-020 — Namespaces e ACL antes da busca
+- Todo acesso (busca, leitura, escrita, ingestão, grafo) passa pela ACL por prefixo de namespace; pedido fora da ACL é 403,
+  memória inacessível é 404; o filtro está dentro da consulta FTS5 e não vaza entre irmãos com nomes parecidos (`_`).
+- Aceite: `test_filtro_entre_namespaces_na_busca`, `test_pedido_de_namespace_sem_acesso_e_negado`,
+  `test_memoria_inacessivel_parece_inexistente`, `test_subnamespace_herda_*`, `test_underscore_no_namespace_*`,
+  `test_simbolo_so_aparece_para_quem_tem_acesso_ao_namespace`, `test_memoria_de_outro_namespace_e_404_nao_403`.
+
+### REQ-021 — Qualidade epistemológica
+- `verificado` exige evidência real; `validado` só por `/validar` sem injection e sem contradição; contradição é devolvida e
+  nunca resolvida em silêncio; edição derruba validação; obsoletas saem da busca padrão.
+- Aceite: `test_promocao_exige_evidencia_real`, `test_dois_fatos_contraditorios_*`, `test_editar_conteudo_derruba_*`,
+  `test_memoria_obsoleta_*`, `test_hipotese_e_rotulada_*`, `test_duas_transicoes_concorrentes_so_uma_vence`.
+
+### REQ-022 — Ingestão incremental, hashes e obsolescência por origem
+- Ingestão por SHA-256, só em raízes autorizadas; arquivo alterado/removido marca memórias da origem para revalidação.
+- Aceite: `test_ingestao_incremental_por_hash`, `test_mudanca_na_origem_*`, `test_arquivo_removido_*`,
+  `test_ingestao_exige_raiz_autorizada`, `test_varredura_ignora_*`, `test_arquivo_com_erro_de_sintaxe_*`.
+
+### REQ-023 — Privacidade: PII, segredos e prompt injection
+- PII/segredos redigidos antes de gravar/indexar; injection sinalizada e bloqueia validação; resultados são dados não
+  confiáveis; eventos não vazam conteúdo; nada privado é rastreável pelo Git.
+- Aceite: `test_pii_e_segredos_redigidos_*`, `test_prompt_injection_*`, `test_segredo_dentro_de_arquivo_ingerido_*`,
+  `test_eventos_de_memoria_nao_vazam_*`, `tests/test_git_safe.py` (59 casos).
+
+### REQ-024 — Retenção e remoção
+- `retencao_dias` define expiração; `purgar_expiradas` e `remover` apagam memória, índice, versões e vínculos.
+- Aceite: `test_retencao_expirada_e_purgada`, `test_remocao_apaga_tudo_*`.
+
+### REQ-025 — Gate da fase
+- Uma nova tarefa localiza um procedimento sintético validado, com fonte e pré-condições, num repositório grande, dentro do
+  orçamento de recuperação, sem devolver o repositório.
+- Aceite: `test_gate_nova_tarefa_encontra_procedimento_validado_sem_ler_o_repositorio`; busca de símbolo leva à linha da
+  definição: `test_busca_de_simbolo_leva_a_linha_da_definicao_em_arquivo_longo`.

@@ -34,3 +34,10 @@ node_modules/
 /segundo-cerebro/
 *.brain
 *.memoria.json
+# Credenciais adicionais (paridade com .gitignore): o agente tambem nao deve le-las
+id_rsa*
+id_ed25519*
+credentials.json
+secrets.json
+secrets.yaml
+*.jks

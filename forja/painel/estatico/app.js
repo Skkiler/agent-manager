@@ -173,6 +173,53 @@ async function decidirLote(decisao) {
     alert(e.message);
   }
 }
+// ---- Busca de memoria e codigo (Fase 3). Trechos sao dados NAO confiaveis: so textContent/<mark>, nunca innerHTML ----
+function trechoSeguro(texto) {
+  const frag = document.createDocumentFragment();
+  // o servidor marca os acertos com « » (FTS5 snippet); qualquer outro caractere e texto puro
+  String(texto).split("«").forEach((parte, i) => {
+    if (i === 0) return frag.append(parte);
+    const [acerto, ...resto] = parte.split("»");
+    frag.append(el("mark", { textContent: acerto }), resto.join("»"));
+  });
+  return frag;
+}
+
+function itemBusca(r) {
+  const sel = [];
+  if (r.origem === "memoria") {
+    sel.push(el("span", { className: "pill", textContent: `${r.tipo} · ${r.estado} v${r.versao}` }));
+    if (r.hipotese) sel.push(el("span", { className: "risco medio", textContent: "hipótese (não validada)" }));
+    if (r.necessita_revalidacao) sel.push(el("span", { className: "risco alto", textContent: "origem mudou: revalidar" }));
+    if ((r.conflito_com || []).length) sel.push(el("span", { className: "risco critico", textContent: "contradição aberta" }));
+  } else {
+    sel.push(el("span", { className: "pill", textContent: `código · ${r.linguagem}` }));
+  }
+  if ((r.suspeita_injecao || []).length) sel.push(el("span", { className: "risco critico", textContent: "possível prompt injection" }));
+  const titulo = r.origem === "memoria" ? r.titulo : `${r.caminho}:${r.linhas[0]}-${r.linhas[1]}`;
+  const fonte = r.origem === "memoria"
+    ? `fonte: ${(r.fonte && (r.fonte.caminho || r.fonte.tipo)) || "manual"}${r.fonte && r.fonte.commit ? ` @${r.fonte.commit.slice(0, 8)}` : ""}`
+    : `repositório ${r.repositorio}${r.commit_sha ? ` @${r.commit_sha.slice(0, 8)}` : ""} · sha256 ${r.sha256.slice(0, 12)}`;
+  return el("li", {}, el("strong", { textContent: titulo }), " ", ...sel,
+    el("pre", {}, trechoSeguro(r.trecho)),
+    el("small", { textContent: `${fonte} · ns ${r.namespace} · ~${r.tokens_estimados} tokens (estimativa)` }));
+}
+
+$("#busca-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const params = new URLSearchParams({ q: $("#busca-q").value, namespace: $("#busca-ns").value });
+  if ($("#busca-validadas").checked) params.set("apenas_validadas", "true");
+  try {
+    const r = await api("GET", `/memorias/buscar?${params}`);
+    $("#busca-contagem").textContent = String(r.resultados.length);
+    $("#busca-avisos").replaceChildren(...[...r.avisos, ...r.conflitos.map((c) => `Conflito sobre «${c.sujeito}»: ${c.memorias.join(", ")}`)]
+      .map((a) => el("p", { className: "aviso", textContent: a })));
+    $("#busca-resultados").replaceChildren(...r.resultados.map(itemBusca));
+  } catch (e) {
+    $("#busca-avisos").replaceChildren(el("p", { className: "aviso", textContent: `Erro: ${e.message}` }));
+  }
+});
+
 $("#lote-aprovar").addEventListener("click", () => decidirLote("aprovada"));
 $("#lote-negar").addEventListener("click", () => decidirLote("negada"));
 

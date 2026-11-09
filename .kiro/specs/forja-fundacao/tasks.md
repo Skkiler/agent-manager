@@ -36,6 +36,19 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [ ] 2.8 Agentes/skills/Specs-templates Kiro e primeiro Workflow de producao (Workflows nao confirmado na conta).
 - [ ] 2.9 Pool/reuso de processo ACP e `session/load` (so se o agente anunciar `loadSession`; hoje `false`).
 
+## Fase 3 — Memoria textual e grafos
+- [x] 3.1 Dominio da memoria: namespaces/ACL, estados epistemologicos, ontologia (REQ-020, REQ-021).
+- [x] 3.2 Saneamento: PII (Luhn p/ cartao), segredos, deteccao de prompt injection, consulta FTS5 segura (REQ-023).
+- [x] 3.3 Persistencia: migracao 0003 (memoria, versoes, evidencias, grafo, arquivo/simbolo) + FTS5 (memoria_fts, codigo_fts).
+- [x] 3.4 ServicoMemoria: CRUD versionado, promocao com evidencia real, contradicao, retencao/remocao (REQ-021, REQ-024).
+- [x] 3.5 Indexador e ingestao incremental por SHA-256, simbolos via AST Python, invalidacao por origem (REQ-022).
+- [x] 3.6 Busca hibrida: FTS5 + ranker de simbolos + RRF; hipoteses rotuladas; conflitos devolvidos (REQ-025).
+- [x] 3.7 Grafo de conhecimento tipado com escopo/ACL e vizinhos (1-2 saltos).
+- [x] 3.8 API /api/v1/memorias* e /conhecimento*; painel de busca com fonte e avisos; ingestao so em raizes autorizadas.
+- [x] 3.9 Testes de mutacao nas defesas de ACL/evidencia/injection/raiz; 	ests/test_git_safe.py; ADR-007.
+- [ ] 3.10 Propostas automaticas de procedimento a partir de episodios (so como candidato).
+- [ ] 3.11 Integrar a recuperacao ao prompt do provedor Kiro (contexto minimo com source_ref) — Fase 4.
+- [ ] 3.12 Embeddings opcionais / sqlite-vec apos benchmark contra o baseline textual — Fase 4.
 ## Gate Fase 1
 Atingido: tarefa simulada percorre rascunho -> ... -> concluida com estado consistente, evidencia (simulada),
 artefato integro, eventos via SSE e logs — verificado por testes e pelo smoke contra servidor real.

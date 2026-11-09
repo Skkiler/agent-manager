@@ -54,3 +54,28 @@ def test_backup_restore_preserva_dados(tmp_path: Path):
         assert tx.obter(T.Projeto, "P-1")["nome"] == "demo"
     repo.fechar()
     repo2.fechar()
+
+
+def test_migracao_0003_cria_fts5_e_downgrade_remove(tmp_path: Path):
+    import sqlite3
+
+    db = tmp_path / "fts.sqlite3"
+    migrar(db)
+    con = sqlite3.connect(str(db))
+    try:
+        tabelas = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert {"memoria", "memoria_versao", "memoria_evidencia", "no_conhecimento", "aresta_conhecimento",
+                "arquivo_indexado", "simbolo", "memoria_fts", "codigo_fts"} <= tabelas
+        con.execute("INSERT INTO memoria_fts(titulo, resumo, conteudo, tags, memoria_id, namespace) "
+                    "VALUES ('Titulo', 'r', 'conteudo', 't', 'M1', 'publico')")
+        assert con.execute("SELECT memoria_id FROM memoria_fts WHERE memoria_fts MATCH 'titulo'").fetchone() == ("M1",)
+    finally:
+        con.close()
+    rebaixar(db, "0002")
+    con = sqlite3.connect(str(db))
+    try:
+        restantes = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert "memoria" not in restantes and not any(n.startswith(("memoria_fts", "codigo_fts")) for n in restantes)
+        assert "aprovacao" in restantes  # 0002 intacta
+    finally:
+        con.close()
