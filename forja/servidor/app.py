@@ -21,13 +21,18 @@ from forja.agentes.base import ProvedorAgente
 from forja.config import Configuracoes, obter_configuracoes
 from forja.contexto.construtor import ConstrutorContexto
 from forja.dominio.erros import ErroDominio
+from forja.ferramentas.catalogo import Catalogo
 from forja.memoria.modelo import Principal
 from forja.observabilidade.logs import configurar_logging, correlation_id_var
 from forja.orquestracao.memoria_servico import ServicoMemoria
+from forja.orquestracao.propostas import PropostasMemoria
+from forja.orquestracao.quadro_servico import QuadroServico
 from forja.orquestracao.servico import Servico
 from forja.seguranca.auth import LimitadorTaxa, carregar_token
 from forja.servidor.rotas import publico, r
+from forja.servidor.rotas_ferramentas import rf
 from forja.servidor.rotas_memoria import rm
+from forja.servidor.rotas_quadro import rq
 
 log = logging.getLogger("forja.app")
 ESTATICO = __import__("pathlib").Path(__file__).resolve().parent.parent / "painel" / "estatico"
@@ -78,6 +83,9 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
         ns = cfg.contexto_namespaces
         provedor_servico.construtor_contexto = ConstrutorContexto(
             app.state.memoria, Principal("contexto", frozenset(ns)), ns, orcamento=cfg.app_context_budget_tokens)
+    app.state.propostas = PropostasMemoria(provedor_servico, app.state.memoria)
+    app.state.ferramentas = Catalogo(cfg.ferramentas_raizes)
+    app.state.quadro = QuadroServico(provedor_servico.repo)
     app.state.token = carregar_token(cfg)
     app.state.limitador = LimitadorTaxa(cfg.app_rate_limit_per_minute)
     app.state.encerrando = threading.Event()
@@ -89,6 +97,8 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.include_router(publico)
     app.include_router(r)
     app.include_router(rm)
+    app.include_router(rf)
+    app.include_router(rq)
     _ = provedor_servico  # servico ja referenciado em app.state
 
     if ESTATICO.exists():

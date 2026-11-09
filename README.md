@@ -104,6 +104,14 @@ python scripts\memoria_ingerir.py --raiz "C:\minha\pasta" --namespace pessoal --
   --db data\segundo-cerebro.sqlite3 --extensoes .py .md --consultar "conexao com banco" --mostrar-trechos
 ```
 
+### Ferramentas dos agentes, quadro e segundo cerebro (Fase 4)
+- `GET /api/v1/ferramentas` lista as ferramentas N0 (outline, resumo de pytest/diff/logs, mapa do repositorio, varredura de segredos,
+  esquema SQLite, conversor, orcamento de tokens); `POST /api/v1/ferramentas/{id}/executar` as executa. Ferramentas de arquivo so leem
+  as pastas de `APP_TOOLS_ROOTS` (vazio = desligadas). Economia medida: `python scripts\medir_ferramentas.py`.
+- Quadro de comunicacao entre master, operador e agentes: `POST/GET /api/v1/quadro`, `POST /api/v1/quadro/retirar`, `POST /api/v1/quadro/{id}/resolver`;
+  visao do master em `GET /api/v1/controle/painel`.
+- `POST /api/v1/tarefas/{id}/propor-memoria` gera uma memoria **candidata** a partir de uma tarefa concluida (nunca validada sozinha).
+Detalhes em `docs/adr/0011-catalogo-de-ferramentas-quadro-e-propostas.md`.
 ### Limites desta fase
 O agente e um **mock** deterministico: as evidencias que ele produz sao **simuladas** e nao comprovam
 funcionalidade real. Integracao Kiro (ACP), memoria/grafos, multiagentes e o painel pixel art chegam nas Fases 2+.

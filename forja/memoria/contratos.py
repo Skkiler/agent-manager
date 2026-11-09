@@ -168,3 +168,14 @@ class ArestaIn(_Estrito):
     @classmethod
     def _ns(cls, v: str) -> str:
         return validar_namespace(v)
+
+
+class PropostaIn(_Estrito):
+    """Pedido de memoria candidata a partir de uma tarefa concluida (o namespace e escolha explicita do operador)."""
+
+    namespace: str
+
+    @field_validator("namespace")
+    @classmethod
+    def _ns(cls, v: str) -> str:
+        return validar_namespace(v)

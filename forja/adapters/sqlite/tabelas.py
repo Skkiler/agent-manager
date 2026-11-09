@@ -319,3 +319,33 @@ class ContextoUso(Base):
     termos: Mapped[Any] = mapped_column(JSON)
     uteis: Mapped[Any] = mapped_column(JSON, nullable=True)
     criado_em: Mapped[str] = mapped_column(String(40))
+
+
+# ============================ Quadro de comunicacao (blackboard, orientacao 7.4) ============================
+class MensagemQuadro(Base):
+    """Mensagem tipada entre master, operador, sistema e agentes. Dado (payload sanitizado) + referencias, nunca historico."""
+
+    __tablename__ = "mensagem_quadro"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    versao: Mapped[int] = mapped_column(Integer, default=1)
+    origem: Mapped[str] = mapped_column(String(60))
+    destino: Mapped[str] = mapped_column(String(60))
+    tipo: Mapped[str] = mapped_column(String(16))  # comando | evento | apontamento | pergunta | resultado
+    prioridade: Mapped[int] = mapped_column(Integer, default=3)  # 1 = mais urgente ... 5
+    assunto: Mapped[str] = mapped_column(String(200))
+    payload: Mapped[Any] = mapped_column(JSON)
+    referencias: Mapped[Any] = mapped_column(JSON)
+    tarefa_id: Mapped[str | None] = mapped_column(ForeignKey("tarefa.id"), nullable=True, index=True)
+    estado: Mapped[str] = mapped_column(String(16))  # pendente | entregue | resolvida | expirada
+    dedup_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    correlation_id: Mapped[str] = mapped_column(String(64))
+    criado_em: Mapped[str] = mapped_column(String(40))
+    expira_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    entregue_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    resolvida_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    resolvida_por: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    nota_resolucao: Mapped[str] = mapped_column(Text, default="")
+    __table_args__ = (
+        UniqueConstraint("origem", "dedup_key", name="uq_quadro_origem_dedup"),
+        Index("ix_quadro_destino_estado_prio", "destino", "estado", "prioridade"),
+    )

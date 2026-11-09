@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass, field
 
 from forja.ferramentas.contrato import ResultadoFerramenta, montar
-from forja.observabilidade.sanitizar import redigir_segredos
+from forja.ferramentas.segredos import suspeita
 from forja.seguranca.acoes import caminho_sensivel
 
 MAX_ARQUIVOS = 40
@@ -71,7 +71,7 @@ def resumir_diff(diff: str) -> ResultadoFerramenta:
                 atual.contextos.append(ctx[:80])
         elif ln.startswith("+") and not ln.startswith("+++"):
             atual.add += 1
-            if redigir_segredos(ln) != ln:
+            if suspeita(ln[1:]):
                 atual.segredos.append(linha_nova)
             linha_nova += 1
         elif ln.startswith("-") and not ln.startswith("---"):

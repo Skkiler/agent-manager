@@ -43,6 +43,9 @@ class Configuracoes(BaseSettings):
     app_memory_ingest_roots: str = ""
     # Contexto no prompt: a memoria so e injetada se houver acerto RELEVANTE (senao, zero tokens). Como o prompt vai ao
     # provedor (Kiro), so entram namespaces liberados AQUI de forma explicita (padrao: apenas 'publico').
+    # Raizes de disco que as ferramentas de arquivo (outline, mapa, varredura de segredos...) podem ler, separadas por ';'.
+    # Vazio = ferramentas de arquivo DESLIGADAS (as que recebem texto continuam disponiveis).
+    app_tools_roots: str = ""
     app_context_enabled: bool = True
     app_context_namespaces: str = "publico"
     app_context_budget_tokens: int = 2000
@@ -94,6 +97,10 @@ class Configuracoes(BaseSettings):
     @property
     def memoria_raizes(self) -> list[Path]:
         return [Path(r.strip()) for r in self.app_memory_ingest_roots.split(";") if r.strip()]
+
+    @property
+    def ferramentas_raizes(self) -> tuple[Path, ...]:
+        return tuple(Path(r.strip()) for r in self.app_tools_roots.split(";") if r.strip())
 
     @property
     def kiro_workspace_dir(self) -> Path:

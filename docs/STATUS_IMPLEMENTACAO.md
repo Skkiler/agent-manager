@@ -15,7 +15,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   Kiro CLI 3.1.0 autenticado (login feito pelo usuario). Terminal da sessao roda como **Administrador** (o CLI recomenda evitar).
 
 ## Resultados reais de teste (2026-11-08)
-- `python -m pytest` -> **413 passed** (~75 s), exit 0, sem warnings; cobertura **92%** (medida com 396 testes, antes das ferramentas N0) (a Fase 3 tinha 265 testes/91%). `ResourceWarning` continua tratado como erro.
+- `python -m pytest` -> **494 passed** (~105 s), exit 0, sem warnings; cobertura **93%** (a Fase 3 tinha 265 testes/91%). `ResourceWarning` continua tratado como erro.
 - `python -m ruff check forja tests scripts` -> All checks passed. `node --check` do `app.js` -> ok.
 - **Testes de mutacao nas defesas criticas (9 mutantes, 9 detectados):** ACL do FTS removida; `substr`->`LIKE`; raiz de ingestao nao
   verificada; evidencia simulada aceita; ACL ignorada ao carregar memoria; validacao ignora injection; validacao ignora contradicao;
@@ -85,6 +85,25 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   resumo de pytest com 8 falhas: 675 -> 117 (82,7%; amostra sintetica pequena, saidas maiores tendem a reduzir mais);
   resumo de diff de 3 commits recentes: 97,1% a 98,8%.
 - Limites: so pytest; diff por regex (sem AST); ferramentas ainda **nao expostas ao agente** (4.7b) — a economia real no Kiro nao foi medida.
+## Ferramentas ampliadas, quadro, painel e propostas (itens 4.7b, 4.10-4.13, 3.10) — resultados reais
+- **Novos:** `forja/ferramentas/{catalogo,caminhos,amostra,logs,mapa,segredos,esquema,conversor,orcamento}.py`; `forja/dominio/quadro.py`;
+  `forja/orquestracao/{quadro_servico,propostas,aprovacoes,conversa_contexto}.py`; `forja/servidor/{rotas_ferramentas,rotas_quadro}.py`;
+  migracao `0006`; testes `test_ferramentas_catalogo.py` (42), `test_quadro.py` (35), `test_propostas.py` (4). ADR-011.
+- **Regressao/integridade:** `Servico` (1133 linhas) dividido em mixins (764 linhas) sem mudar a API; as 413 verificacoes anteriores seguiram verdes
+  depois do refator. Benchmark de busca identico (recall/MRR/nDCG 0,94/0,87/0,89). O prompt do Kiro nao foi alterado (catalogo nao e injetado).
+- **Mutacao (24 mutantes nas defesas novas):** 21 detectados (1 deles so depois de novo teste: difusao `todos` duplicada) e 3 equivalentes por
+  defesa em camadas (`PRAGMA query_only` x `mode=ro`; recusa de caminho absoluto em `Contexto.resolver` x guarda lexica).
+- **Bugs reais achados pelos testes:** oracle de existencia fora da raiz (`../x` inexistente 404 x existente 422) -> contencao lexica antes do
+  `resolve`; scanner de segredos com 7 falsos positivos em 8 (`token = obter(...)`) -> detector proprio (agora 1 achado em `forja/`, o proprio
+  regex de chave privada).
+- **Economia medida (tokens estimados; baseline = ler o material inteiro):** outline de 38 arquivos 87.637 -> 6.143 (mediana 92,6%);
+  diff de commits recentes 97,7% e 98,8%; pytest com falhas 82,7% (amostra pequena); esquema SQLite do DDL real 47,8% (3.104 -> 1.620).
+  `repo.mapa` e `segredos.varrer` mostram ~100%, mas o baseline (ler o repositorio todo) e um limite superior irreal: nao use como ganho esperado.
+  Em arquivo minusculo o resumo e MAIOR que o bruto (reducao truncada em 0): as ferramentas so compensam em material grande.
+- **Limites:** ferramentas ainda nao expostas via MCP e a economia **dentro do Kiro real nao foi medida**; `origem` do quadro e declarada pelo chamador
+  (token unico de operador); quadro ainda nao e alimentado automaticamente pelo orquestrador (4.14) nem aparece no painel web; sem timeout por
+  ferramenta (tetos de tamanho de entrada); `logs.agrupar_falhas` e `dados.converter` medidos so em testes sinteticos; `sql.inspecionar` so SQLite.
+- **Superficie nova (padrao desligada):** `APP_TOOLS_ROOTS` vazio = ferramentas de arquivo desligadas; ao ativar, o operador autenticado le arquivos dessas pastas.
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -103,7 +122,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - Scanner dedicado de segredos (gitleaks) e CI continuam ausentes. Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 413 passed.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 494 passed.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: itens 4.7-4.9 (ferramentas N0 medidas, precisao em corpus real, embeddings so se ganharem). Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

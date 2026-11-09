@@ -46,7 +46,7 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 3.7 Grafo de conhecimento tipado com escopo/ACL e vizinhos (1-2 saltos).
 - [x] 3.8 API /api/v1/memorias* e /conhecimento*; painel de busca com fonte e avisos; ingestao so em raizes autorizadas.
 - [x] 3.9 Testes de mutacao nas defesas de ACL/evidencia/injection/raiz; 	ests/test_git_safe.py; ADR-007.
-- [ ] 3.10 Propostas automaticas de procedimento a partir de episodios (so como candidato).
+- [x] 3.10 Propostas automaticas de procedimento a partir de tarefas concluidas (so como candidato) — ver 4.12.
 - [x] 3.11 Recuperacao ligada ao prompt do Kiro (ConstrutorContexto, orcamento, so namespaces autorizados) — ver 4.2.
 - [ ] 3.12 Embeddings opcionais / sqlite-vec apos benchmark contra o baseline textual — Fase 4.
 
@@ -58,7 +58,13 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.5 Base publica `knowledge/procedimentos` + sinonimos, com teste de busca.
 - [x] 4.6 Plano de ferramentas para agentes: `docs/arquitetura/ferramentas-planejadas.md` (economia ainda nao medida).
 - [x] 4.7 Ferramentas N0 3, 5 e 7 (`forja/ferramentas/`) com contrato comum, 17 testes, mutacao 7/7 e `scripts/medir_ferramentas.py`.
-- [ ] 4.7b Expor as ferramentas ao agente (rota `/api/v1/ferramentas/*` e depois MCP em loopback) e medir tokens numa tarefa real do Kiro.
+- [x] 4.7b Catalogo de ferramentas (contrato, fallback, custo observado) e rota `/api/v1/ferramentas/*`; 6 ferramentas novas (logs, segredos, mapa, esquema, conversor, orcamento, amostra). ADR-011.
+- [ ] 4.7c Expor via MCP em loopback e medir tokens numa tarefa real do Kiro (a economia no agente real segue nao medida).
+- [x] 4.10 Quadro de comunicacao (blackboard) com prioridade, dedup por origem, validade e entrega unica; migracao 0006.
+- [x] 4.11 Painel de controle do master (`/controle/painel`): urgentes, bloqueadas, aprovacoes, execucoes paradas.
+- [x] 4.12 Propostas de memoria candidata a partir de tarefa concluida (fecha 3.10).
+- [x] 4.13 Refator: `Servico` dividido em mixins (1133 -> 764 linhas) sem mudar a API.
+- [ ] 4.14 Ligar o quadro ao orquestrador (agentes publicam resultado/pergunta automaticamente) e ao painel web.
 - [ ] 4.8 Precisao em linguagem natural sobre corpus real (exige rotulagem manual pelo usuario).
 - [ ] 4.9 Embeddings somente se superarem o baseline lexical no benchmark.
 ## Gate Fase 1

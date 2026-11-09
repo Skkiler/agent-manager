@@ -4,32 +4,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from forja.dominio.erros import NaoEncontrado, ValidacaoDominio
+from forja.dominio.erros import ValidacaoDominio
+from forja.ferramentas.caminhos import resolver_dentro
 from forja.ferramentas.contrato import ResultadoFerramenta, montar
 from forja.memoria.indexador import MAX_BYTES, analisar
-from forja.seguranca.acoes import caminho_sensivel
 
 MAX_SIMBOLOS = 200
 
 
 def outline_arquivo(raiz: Path, caminho: str) -> ResultadoFerramenta:
     """`caminho` e relativo a `raiz` e nunca pode sair dela, ser link simbolico ou arquivo sensivel."""
-    base = raiz.resolve()
-    alvo = base / caminho
-    if caminho_sensivel(caminho):
-        raise ValidacaoDominio("arquivo sensivel nao pode ser lido por esta ferramenta")
-    if alvo.is_symlink():
-        raise ValidacaoDominio("links simbolicos nao sao seguidos")
-    try:
-        real = alvo.resolve(strict=True)
-        real.relative_to(base)
-    except FileNotFoundError as e:
-        raise NaoEncontrado("arquivo nao encontrado") from e
-    except (ValueError, OSError) as e:
-        raise ValidacaoDominio("caminho fora da raiz autorizada") from e
-    if not real.is_file() or real.stat().st_size > MAX_BYTES:
-        raise ValidacaoDominio("nao e um arquivo de texto dentro do limite de tamanho")
-    arq = analisar(base, real)
+    real = resolver_dentro(raiz, caminho)
+    if real.stat().st_size > MAX_BYTES:
+        raise ValidacaoDominio("arquivo acima do limite de tamanho")
+    arq = analisar(raiz.resolve(), real)
     if arq is None:
         raise ValidacaoDominio("arquivo binario ou minificado")
 

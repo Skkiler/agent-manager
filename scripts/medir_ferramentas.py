@@ -57,6 +57,19 @@ def main() -> int:
                            encoding="utf-8", errors="replace", check=False)
         if p.returncode == 0 and p.stdout:
             print("[diff]  ", _linha(f"HEAD~{i + 1}..HEAD~{i}", resumir_diff(p.stdout)))
+    # 4. ferramentas de repositorio/banco (mesmo catalogo que o agente usa)
+    from forja.adapters.sqlite.banco import migrar
+    from forja.ferramentas.esquema import inspecionar_sqlite
+    from forja.ferramentas.mapa import mapa_repositorio
+    from forja.ferramentas.segredos import varrer
+
+    print("[mapa]   ", _linha("repo.mapa (repositorio)", mapa_repositorio(RAIZ)))
+    sec = varrer(RAIZ, "forja")
+    print("[segredos]", _linha("segredos.varrer forja/", sec), f"| achados={len(sec.dados['achados'])}")
+    with tempfile.TemporaryDirectory() as tmp:
+        banco = Path(tmp) / "x.sqlite3"
+        migrar(banco)
+        print("[esquema]", _linha("sql.inspecionar (DDL real)", inspecionar_sqlite(Path(tmp), "x.sqlite3")))
     return 0
 
 

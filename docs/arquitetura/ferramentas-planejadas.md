@@ -14,19 +14,30 @@ vira "pronto" depois de medir tokens antes/depois numa tarefa real com o mesmo c
 | 1 | Busca de simbolos (`definicao de X`) | arquivo, linha, tipo | leitura de varios arquivos | **existe** (ranker de simbolos); falta expor como MCP |
 | 2 | Busca de memoria/contexto | itens uteis dentro de orcamento | colar documentos | **existe** (`ConstrutorContexto`) |
 | 3 | Outline de arquivo (`codigo.outline`) | lista de simbolos e linhas | ler o arquivo inteiro | **existe** (`forja/ferramentas/outline.py`); falta expor via API/MCP |
-| 4 | Mapa do repositorio | arvore resumida + pontos de entrada | varredura manual | planejado |
+| 4 | Mapa do repositorio (`repo.mapa`) | linguagens, pastas, entradas, config, testes | varredura manual | **existe** |
 | 5 | Resumo de saida de testes (`testes.resumir_saida`) | veredito, contagens, falhas e causa | log completo do pytest | **existe** (`forja/ferramentas/testes.py`); so pytest |
-| 6 | Triagem de logs | linhas de erro agrupadas por assinatura | log bruto | planejado |
+| 6 | Triagem de logs (`logs.agrupar_falhas`) | erros agrupados por assinatura | log bruto | **existe** |
 | 7 | Resumo de diff (`git.diff_analisar`) | arquivos, areas tocadas, riscos, segredo sem o valor | `git diff` completo | **existe** (`forja/ferramentas/diff.py`) |
-| 8 | Inspetor de esquema | tabelas, colunas, indices | dump de SQL | planejado |
-| 9 | Scanner de segredos | achados com arquivo/linha, sem o valor | revisao manual | planejado (gitleaks pendente de aprovacao) |
+| 8 | Inspetor de esquema (`sql.inspecionar`) | tabelas, colunas, indices (SQLite, somente leitura) | dump de SQL | **existe** (so SQLite) |
+| 9 | Scanner de segredos (`segredos.varrer`) | achados com arquivo/linha, sem o valor | revisao manual | **existe** (heuristico; gitleaks segue pendente de aprovacao) |
 | 10 | Extrator de documentos (pdf/docx) | texto e secoes | anexar documento inteiro | planejado |
-| 11 | Orcamentador de contexto | estimativa de tokens por item | tentativa e erro | parcial (estimativa ~4 car./token) |
+| 11 | Orcamentador (`tokens.orcar`) | quais trechos cabem no orcamento | tentativa e erro | **existe** (estimativa ~4 car./token) |
 | 12 | Verificador de citacoes | confere se `[M1]` aponta para item entregue | revisao manual | planejado |
 
 ## Como expor
 Cada ferramenta e uma funcao pura com contrato tipado em `forja/ferramentas/`, atras do servico de orquestracao. Exposicao
 via MCP **somente em loopback** e com a mesma ACL de namespace da memoria. Saida sempre rotulada como dado nao confiavel.
 
+## Ferramentas adicionais ja existentes (alem da lista acima)
+| Id | Funcao |
+|---|---|
+| `texto.amostra` | trecho numerado de arquivo; e o **fallback** automatico do `codigo.outline` quando nao ha simbolos |
+| `dados.converter` | json/jsonl/csv/tabela markdown, conversao exata; neutraliza formulas (`=`, `+`, `-`, `@`) no CSV |
+
+## Como o agente as usa hoje
+`GET /api/v1/ferramentas` lista o catalogo (contrato, risco, fallback, disponibilidade); `POST /api/v1/ferramentas/{id}/executar`
+roda uma ferramenta; `GET /api/v1/ferramentas/estatisticas` mostra o custo observado (chamadas, erros, fallbacks, tokens bruto x resumo,
+latencia). Ferramentas de arquivo so enxergam as raizes de `APP_TOOLS_ROOTS` (vazio = desligadas). **Nao** ha texto de catalogo
+injetado no prompt do Kiro: o custo em tokens do prompt nao mudou. Exposicao via MCP segue pendente.
 ## Ordem sugerida
 3 -> 5 -> 7 -> 4 (reusam indexador e `git`), depois 6, 8, 9; 10 e 12 conforme necessidade real.

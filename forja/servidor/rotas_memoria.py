@@ -12,6 +12,7 @@ from forja.memoria.contratos import (
     MemoriaAtualizaIn,
     MemoriaIn,
     NoIn,
+    PropostaIn,
     ResolverConflitoIn,
     RevalidarIn,
     TransicaoMemoriaIn,
@@ -60,6 +61,14 @@ def buscar(
 @rm.post("/memorias/resolver-conflito")
 def resolver_conflito(d: ResolverConflitoIn, s: Mem, p: Pr) -> dict[str, Any]:
     return s.resolver_conflito(p, d, ATOR)
+
+
+@rm.post("/tarefas/{tarefa_id}/propor-memoria")
+def propor_memoria(tarefa_id: ID, d: PropostaIn, request: Request, p: Pr, resposta: Response) -> dict[str, Any]:
+    """Segundo cerebro: gera uma memoria CANDIDATA a partir da tarefa concluida (idempotente; nunca valida)."""
+    r = request.app.state.propostas.propor_de_tarefa(p, tarefa_id, d.namespace, ATOR)
+    resposta.status_code = 201 if r["criada"] else 200
+    return r
 
 
 @rm.post("/memorias/ingerir")

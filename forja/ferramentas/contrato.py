@@ -30,14 +30,20 @@ class ResultadoFerramenta(BaseModel):
         return 0.0 if self.tokens_origem <= 0 else max(0.0, 1 - self.tokens_resumo / self.tokens_origem)
 
 
+def tokens_de_bytes(n: int) -> int:
+    """Estimativa (~4 bytes/token) sem materializar o texto."""
+    return max(0, (n + 3) // 4)
+
+
 def montar(ferramenta: str, bruto: str, resumo: str, dados: dict[str, Any], truncado: bool = False,
-           avisos: list[str] | None = None) -> ResultadoFerramenta:
+           avisos: list[str] | None = None, tokens_origem: int | None = None) -> ResultadoFerramenta:
+    """`tokens_origem` explicito serve a ferramentas que varrem muito material sem carrega-lo em `bruto`."""
     resumo = redigir_segredos(resumo)
     return ResultadoFerramenta(
         ferramenta=ferramenta,
         resumo=resumo,
         dados=dados,
-        tokens_origem=estimar_tokens(bruto),
+        tokens_origem=estimar_tokens(bruto) if tokens_origem is None else tokens_origem,
         tokens_resumo=estimar_tokens(resumo),
         truncado=truncado,
         avisos=avisos or [],

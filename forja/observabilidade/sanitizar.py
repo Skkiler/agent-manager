@@ -20,6 +20,8 @@ _PADROES_VALOR = [
 ]
 # Contadores de consumo (tokens_input, tokens_output, max_tokens, ...) contem a palavra 'token' mas NAO sao credenciais.
 _CONTADOR = re.compile(r"(?i)^(max_)?tokens?(_[a-z_]+)?$|^[a-z_]+_tokens$|^total_tokens$")
+# Formatos de credencial reconheciveis por si so (sem depender do NOME da variavel): base de scanners de arquivo.
+PADROES_ALTA_CONFIANCA = tuple(_PADROES_VALOR[:-1])
 MAX_STR = 2000
 MAX_PROFUNDIDADE = 8
 
