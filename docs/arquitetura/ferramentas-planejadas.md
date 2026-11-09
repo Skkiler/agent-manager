@@ -37,7 +37,9 @@ via MCP **somente em loopback** e com a mesma ACL de namespace da memoria. Saida
 | `agenda.ler_ics` | eventos de um `.ics` local por periodo (Google Agenda/Outlook/Apple exportam `.ics`); recorrencia nao expandida |
 | `email.ler_mbox` | mensagens de uma exportacao `.mbox` local (Gmail via Google Takeout); enderecos mascarados, corpo opt-in |
 
-Conectores com rede/OAuth (Gmail API, Google Agenda, GitHub, Notion/Trello/Jira, avisos de saida) estao **planejados** no registro
+Ferramentas de **rede** (somente leitura; so ficam disponiveis se a integracao estiver configurada, ligada e com as variaveis no ambiente): `jira.buscar`, `jira.obter_issue`, `jira.listar_projetos`, `github.listar_issues`, `github.obter_issue`, `agenda.ler_ics_url` (ADR-013).
+
+Conectores com OAuth ou escrita (Gmail API, Google Agenda API, Notion/Trello, escrita no Jira/GitHub, avisos de saida) estao **planejados** no registro
 `GET /api/v1/integracoes`, cada um com o que o operador precisa aprovar antes de ativar.
 
 ## Como o agente as usa hoje

@@ -82,6 +82,36 @@ class EntMbox(_Base):
     mascarar_enderecos: bool = True
 
 
+class EntNada(_Base):
+    pass
+
+
+class EntJiraBuscar(_Base):
+    jql: Annotated[str, StringConstraints(max_length=500)] = ""
+    limite: int | None = Field(None, ge=1, le=50)
+
+
+class EntJiraObter(_Base):
+    chave: Annotated[str, StringConstraints(min_length=3, max_length=40)]
+
+
+class EntGhIssues(_Base):
+    repo: Annotated[str, StringConstraints(min_length=3, max_length=201)]
+    estado: str = "open"
+    limite: int | None = Field(None, ge=1, le=50)
+
+
+class EntGhObter(_Base):
+    repo: Annotated[str, StringConstraints(min_length=3, max_length=201)]
+    numero: int = Field(ge=1, le=10_000_000)
+
+
+class EntAgendaUrl(_Base):
+    de: str = ""
+    ate: str = ""
+    limite: int | None = Field(None, ge=1, le=50)
+
+
 class EntLogs(_Base):
     texto: Texto
     limite: int = Field(10, ge=1, le=30)
@@ -114,6 +144,12 @@ class EntOrcar(_Base):
 @dataclass
 class Contexto:
     raizes: tuple[Path, ...] = ()
+    integracoes: Any = None  # IntegracaoServico (opcional): ferramentas de rede so funcionam se a integracao estiver pronta
+
+    def integracao(self, id_: str, acao: str, params: dict[str, Any]) -> ResultadoFerramenta:
+        if self.integracoes is None:
+            raise ValidacaoDominio("integracoes de rede desligadas neste servidor")
+        return self.integracoes.executar(id_, acao, params)
 
     def resolver(self, caminho: str) -> tuple[Path, str]:
         """Escolhe a raiz autorizada que contem `caminho` (absoluto ou relativo) e devolve (raiz, relativo)."""
@@ -145,6 +181,7 @@ class Ferramenta:
     usa_arquivos: bool = False
     risco: str = "leitura"
     fallback: str | None = None
+    integracao: str | None = None  # id da integracao de rede exigida (configurada e pronta)
 
 
 @dataclass
@@ -186,6 +223,18 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
     Ferramenta("vault.indexar", "Notas Markdown (estilo Obsidian): links, backlinks, tags, orfas.", EntMapa, _arquivo(indexar_vault), True),
     Ferramenta("agenda.ler_ics", "Eventos de um arquivo .ics local, por periodo.", EntAgenda, _arquivo(ler_agenda), True),
     Ferramenta("email.ler_mbox", "Mensagens de uma exportacao .mbox local (enderecos mascarados).", EntMbox, _arquivo(ler_mbox), True),
+    Ferramenta("jira.buscar", "Issues do Jira (JQL restrito aos projetos permitidos). Somente leitura.", EntJiraBuscar,
+               lambda e, c: c.integracao("jira", "buscar", e.model_dump(exclude_none=True)), integracao="jira"),
+    Ferramenta("jira.obter_issue", "Uma issue do Jira (resumo, descricao e ultimos comentarios).", EntJiraObter,
+               lambda e, c: c.integracao("jira", "obter", e.model_dump()), integracao="jira"),
+    Ferramenta("jira.listar_projetos", "Projetos do Jira permitidos nesta integracao.", EntNada,
+               lambda e, c: c.integracao("jira", "projetos", {}), integracao="jira"),
+    Ferramenta("github.listar_issues", "Issues e PRs de um repositorio permitido. Somente leitura.", EntGhIssues,
+               lambda e, c: c.integracao("github", "listar_issues", e.model_dump(exclude_none=True)), integracao="github"),
+    Ferramenta("github.obter_issue", "Uma issue ou PR de um repositorio permitido.", EntGhObter,
+               lambda e, c: c.integracao("github", "obter_issue", e.model_dump()), integracao="github"),
+    Ferramenta("agenda.ler_ics_url", "Eventos da agenda por endereco .ics secreto (guardado no ambiente).", EntAgendaUrl,
+               lambda e, c: c.integracao("agenda_ics_url", "eventos", e.model_dump(exclude_none=True)), integracao="agenda_ics_url"),
     Ferramenta("testes.resumir_saida", "Veredito e causa das falhas a partir da saida do pytest.", EntPytest,
                lambda e, c: resumir_pytest(e.texto, e.limite)),
     Ferramenta("git.diff_analisar", "Arquivos, areas e riscos de um diff unificado.", EntTexto,
@@ -202,6 +251,7 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
 @dataclass
 class Catalogo:
     raizes: tuple[Path, ...] = ()
+    integracoes: Any = None
     ferramentas: dict[str, Ferramenta] = field(default_factory=lambda: {f.id: f for f in FERRAMENTAS})
     _uso: dict[str, _Uso] = field(default_factory=dict)
     _mu: threading.Lock = field(default_factory=threading.Lock)
@@ -210,11 +260,17 @@ class Catalogo:
         return [
             {
                 "id": f.id, "descricao": f.descricao, "risco": f.risco, "fallback": f.fallback,
-                "usa_arquivos": f.usa_arquivos, "disponivel": bool(self.raizes) or not f.usa_arquivos,
+                "usa_arquivos": f.usa_arquivos, "integracao": f.integracao,
+                "disponivel": self._disponivel(f),
                 "entrada": f.entrada.model_json_schema(),
             }
             for f in self.ferramentas.values()
         ]
+
+    def _disponivel(self, f: Ferramenta) -> bool:
+        if f.integracao:
+            return self.integracoes is not None and self.integracoes.pronta(f.integracao)
+        return bool(self.raizes) or not f.usa_arquivos
 
     def estatisticas(self) -> dict[str, dict[str, Any]]:
         with self._mu:
@@ -246,7 +302,7 @@ class Catalogo:
         except ValidationError as e:
             raise ValidacaoDominio("entrada invalida: " + "; ".join(
                 f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors()[:5])) from e
-        ctx = Contexto(self.raizes)
+        ctx = Contexto(self.raizes, self.integracoes)
         usada, de_fallback = f, None
         while True:
             ini = time.perf_counter()

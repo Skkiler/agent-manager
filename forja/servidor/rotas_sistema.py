@@ -8,7 +8,6 @@ from fastapi import APIRouter, Depends, Request, Response
 
 from forja.dominio.configuracao import SalvarConfiguracaoIn
 from forja.dominio.revisao import SolicitarRevisaoIn
-from forja.integracoes.registro import listar as listar_integracoes
 from forja.orquestracao.configuracao_servico import ConfiguracaoServico
 from forja.orquestracao.revisao import RevisaoServico
 from forja.servidor.rotas import autenticar
@@ -41,11 +40,6 @@ def modelos_da_conta(request: Request) -> dict[str, Any]:
 @rs.put("/configuracao")
 def salvar_configuracao(d: SalvarConfiguracaoIn, c: Cfg) -> dict[str, Any]:
     return c.salvar(d)
-
-
-@rs.get("/integracoes")
-def integracoes(request: Request) -> list[dict[str, Any]]:
-    return listar_integracoes(set(request.app.state.ferramentas.ferramentas))
 
 
 @rs.post("/revisoes", status_code=201)

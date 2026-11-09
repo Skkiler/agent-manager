@@ -8,7 +8,10 @@ export function el(tag, props = {}, ...filhos) {
     if (v === undefined || v === null || v === false) continue;
     if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2), v);
     else if (k === "dataset") Object.assign(n.dataset, v);
-    else if (k in n && !k.includes("-")) n[k] = v;
+    else if (k in n && !k.includes("-")) {
+      // Algumas propriedades do DOM sao somente leitura (ex.: input.list, form.elements): cai no atributo.
+      try { n[k] = v; } catch { n.setAttribute(k, v === true ? "" : String(v)); }
+    }
     else n.setAttribute(k, v === true ? "" : String(v));
   }
   for (const f of filhos.flat()) if (f !== null && f !== undefined && f !== false) n.append(f);

@@ -70,7 +70,8 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.17 Painel estilo IDE: Kanban, quadro de comunicacao, grafo/notas (Obsidian), ferramentas, integracoes e configuracao; CSP e a11y basica; verificado no navegador.
 - [x] 4.18 Ferramentas de servicos locais: `vault.indexar`, `agenda.ler_ics`, `email.ler_mbox`; registro de integracoes (`/integracoes`).
 - [x] 4.19 Refator de `Servico` em mixins; testes de migracoes (ciclo completo, sem deriva) e do painel estatico.
-- [ ] 4.20 Integracoes com rede/OAuth (Gmail API, Google Agenda, GitHub, quadros): dependem da aprovacao do operador.
+- [x] 4.20 Integracoes de rede configuraveis pela tela, desligadas por padrao, segredo so no ambiente: Jira, GitHub e agenda por URL .ics (somente leitura). ADR-013.
+- [ ] 4.20b Gmail API/IMAP, Google Agenda API, Notion/Trello e ESCRITA em servicos (comentar/criar/transicionar via aprovacoes por acao): seguem planejados e dependem da sua aprovacao.
 - [ ] 4.21 Teste visual automatizado em CI (Playwright) e auditoria com leitor de tela.
 - [ ] 4.22 Edicao/arrastar de arestas no grafo e criacao de arestas tipadas pela UI.
 - [ ] 4.8 Precisao em linguagem natural sobre corpus real (exige rotulagem manual pelo usuario).

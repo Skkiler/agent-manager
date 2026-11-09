@@ -91,6 +91,12 @@ O conteúdo da memória fica em `data\forja.sqlite3` (**ignorado pelo Git**); PI
 resultados são sempre *dados não confiáveis* (nunca instruções). Evidências simuladas (mock) não validam memória.
 Detalhes e limites em `docs/adr/0007-memoria-fts5-namespaces-acl.md`.
 
+### Integracoes de rede (Jira, GitHub, agenda por URL)
+Disponiveis, mas **desligadas e sem configuracao**. Em *Integracoes* escolha o conector, informe o endereco, os projetos/repositorios
+permitidos e os **nomes** das variaveis (`FORJA_INT_*`); o **valor** do token fica so no `.env` ou no ambiente (veja `.env.example`) e a
+tela mostra apenas "presente/ausente". Sao somente leitura, HTTPS, restritas ao host configurado, com limite por minuto e auditoria.
+Detalhes e riscos em `docs/adr/0013-integracoes-de-rede-configuraveis.md`.
+
 ### Painel (interface estilo IDE)
 Abra `http://127.0.0.1:8787/` com o servidor local rodando. Areas: **Tarefas** (Kanban), **Quadro** (comunicacao entre master, operador
 e agentes), **Memoria** (grafo do segundo cerebro com busca, leitura/edicao e backlinks, estilo Obsidian), **Ferramentas**,

@@ -83,3 +83,5 @@ Thumbs.db
 /segundo-cerebro/
 *.brain
 *.memoria.json
+# capturas locais do painel (scripts/inspecionar_painel.py)
+capturas-painel/

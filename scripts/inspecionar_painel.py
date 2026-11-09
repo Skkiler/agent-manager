@@ -20,6 +20,47 @@ VISTAS = {
 }
 
 
+def integracoes(pagina, base: str, saida: Path, expect, passo) -> int:
+    """Configura integracoes de rede pela tela. O Jira usa dados ficticios (host .example nunca resolve); o GitHub faz UMA
+    chamada real de leitura (GET /rate_limit em api.github.com, sem token e sem enviar dados) para validar TLS e o fixador de IP."""
+    pagina.goto(base + "#/integracoes")
+    pagina.reload()
+    pagina.wait_for_selector(".card")
+    jira = pagina.locator(".card", has_text="Jira (leitura de issues)")
+    passo("integracoes de rede nascem desligadas", "desligada" in jira.inner_text() and jira.get_by_role("button", name="Testar conexão").is_disabled())
+    jira.get_by_role("button", name="Configurar").click()
+    passo("formulario avisa que segredo nunca e digitado", "Segredos nunca sao digitados" in pagina.locator("#dlg-geral").inner_text())
+    pagina.get_by_label("Endereco do Jira", exact=True).fill("https://jira.forja-teste.example")
+    pagina.get_by_label("Projetos permitidos", exact=True).fill("abc\nOPS")
+    pagina.get_by_label("Variavel do token", exact=True).fill("ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8")  # token colado no lugar do nome
+    pagina.get_by_label("Variavel do e-mail (so Cloud)").fill("FORJA_INT_JIRA_EMAIL")
+    pagina.get_by_role("button", name="Salvar").click()
+    campo = pagina.get_by_label("Variavel do token", exact=True)
+    passo("token colado no campo do NOME e barrado pelo formulario (so FORJA_INT_*) antes de sair do navegador",
+          campo.evaluate("el => el.validity.patternMismatch") and pagina.locator("#dlg-geral").is_visible())
+    pagina.get_by_label("Variavel do token", exact=True).fill("FORJA_INT_JIRA_TOKEN")
+    pagina.get_by_label("Ativar esta integracao").check()
+    pagina.get_by_role("button", name="Salvar").click()
+    expect(pagina.locator(".toast.ok").first).to_contain_text("Integracao salva", timeout=5000)
+    pagina.wait_for_selector(".card:has-text('Jira (leitura de issues)') .tag")
+    estado = pagina.locator(".card", has_text="Jira (leitura de issues)").inner_text()
+    passo("sem as variaveis no ambiente a integracao fica nao pronta e diz o motivo", "faltam variaveis" in estado or "pronta" in estado)
+    pagina.screenshot(path=str(saida / "integracoes.png"))
+
+    gh = pagina.locator(".card", has_text="GitHub (issues e pull requests, leitura)")
+    gh.get_by_role("button", name="Configurar").click()
+    pagina.get_by_label("Repositorios permitidos", exact=True).fill("octocat/Hello-World")
+    pagina.get_by_label("Ativar esta integracao").check()
+    pagina.get_by_role("button", name="Salvar").click()
+    expect(pagina.locator(".toast.ok").first).to_contain_text("Integracao salva", timeout=5000)
+    gh = pagina.locator(".card", has_text="GitHub (issues e pull requests, leitura)")
+    expect(gh.locator(".tag", has_text="pronta")).to_be_visible(timeout=5000)
+    gh.get_by_role("button", name="Testar conexão").click()
+    expect(pagina.locator(".toast", has_text="conexao e credencial validas").first).to_be_visible(timeout=20000)
+    passo("teste real contra api.github.com valida TLS e IP fixado", True)
+    return 0
+
+
 def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     from playwright.sync_api import expect  # a CSP da pagina proibe eval: wait_for_function nao funciona aqui
 
@@ -99,6 +140,8 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.get_by_role("button", name="Solicitar revisao").click()
     pagina.wait_for_selector("text=Revisao criada e preparada", timeout=8000)
     passo("solicitar revisao cria tarefa preparada sem executar", True)
+
+    falhas += integracoes(pagina, base, saida, expect, passo)
 
     pagina.goto(base + "#/ferramentas")
     pagina.reload()

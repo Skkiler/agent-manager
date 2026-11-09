@@ -18,6 +18,7 @@ from forja.ferramentas.agenda import ler_agenda, parse_ics
 from forja.ferramentas.catalogo import FERRAMENTAS, Catalogo
 from forja.ferramentas.email_mbox import ler_mbox, mascarar
 from forja.ferramentas.vault import indexar_vault
+from forja.integracoes.conectores import CONECTORES
 from forja.integracoes.registro import REGISTRO, listar
 from forja.memoria.wikilinks import extrair_tags, extrair_wikilinks
 from forja.servidor.app import criar_app
@@ -179,14 +180,18 @@ def test_mbox_recusa_extensao_e_fora_da_raiz(mbox: Path, tmp_path: Path):
 # ---------------------------------------------------------------- registro de integracoes
 
 
-def test_registro_so_declara_implementado_o_que_existe_e_e_local_e_sem_credencial():
+def test_registro_so_declara_implementado_o_que_existe_e_rede_so_se_configuravel():
     ids = {f.id for f in FERRAMENTAS}
     for c in REGISTRO:
         if c.estado == "implementado":
             assert c.ferramentas and set(c.ferramentas) <= ids, c.id
-            assert not c.rede and not c.credencial, f"{c.id}: conector implementado nao pode usar rede/credencial"
+            if c.modo == "local":
+                assert not c.rede and not c.credencial and not c.configuravel, f"{c.id}: local nao usa rede/credencial"
+            else:  # rede: so existe se o operador configurar pela tela (nasce desligada) e as ferramentas exigem a integracao pronta
+                assert c.rede and c.configuravel and c.id in CONECTORES, c.id
+                assert all(f.integracao == c.id for f in FERRAMENTAS if f.id in c.ferramentas), c.id
         else:
-            assert c.estado == "planejado" and not c.ferramentas
+            assert c.estado == "planejado" and not c.ferramentas and not c.configuravel
             assert c.aprovacao, f"{c.id}: conector planejado precisa dizer o que o operador deve aprovar"
             assert c.rede and c.credencial
 
@@ -199,7 +204,9 @@ def test_todo_conector_planejado_tem_alternativa_local_documentada():
 
 def test_listar_marca_disponivel_conforme_o_catalogo():
     todos = listar({f.id for f in FERRAMENTAS})
-    assert {c["id"] for c in todos if c["disponivel"]} == {c.id for c in REGISTRO if c.estado == "implementado"}
+    assert {c["id"] for c in todos if c["disponivel"]} == {c.id for c in REGISTRO if c.estado == "implementado" and c.modo == "local"}
+    com_jira = listar({f.id for f in FERRAMENTAS}, {"jira"})
+    assert next(c for c in com_jira if c["id"] == "jira")["disponivel"] and not next(c for c in com_jira if c["id"] == "github")["disponivel"]
     parcial = listar(set())
     assert not any(c["disponivel"] for c in parcial)
 
@@ -233,6 +240,8 @@ def test_api_integracoes(cli: TestClient):
     assert r.status_code == 200
     por = {c["id"]: c for c in r.json()}
     assert por["email_mbox"]["disponivel"] and not por["gmail_api"]["disponivel"]
+    assert por["jira"]["modo"] == "rede" and not por["jira"]["disponivel"] and por["jira"]["rede_estado"]["motivo"] == "desligada"
+    assert por["email_mbox"]["rede_estado"] is None
     assert por["gmail_api"]["aprovacao"] and "mbox" in por["gmail_api"]["como_usar"]
     sem = TestClient(cli.app, headers={"Host": "testserver"})
     assert sem.get("/api/v1/integracoes").status_code in (401, 403)

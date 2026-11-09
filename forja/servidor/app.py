@@ -27,6 +27,7 @@ from forja.memoria.modelo import Principal
 from forja.observabilidade.logs import configurar_logging, correlation_id_var
 from forja.orquestracao.configuracao_servico import ConfiguracaoServico
 from forja.orquestracao.grafo_servico import GrafoServico
+from forja.orquestracao.integracao_servico import IntegracaoServico
 from forja.orquestracao.memoria_servico import ServicoMemoria
 from forja.orquestracao.propostas import PropostasMemoria
 from forja.orquestracao.quadro_servico import QuadroServico
@@ -36,6 +37,7 @@ from forja.orquestracao.visoes import VisaoKanban
 from forja.seguranca.auth import LimitadorTaxa, carregar_token
 from forja.servidor.rotas import publico, r
 from forja.servidor.rotas_ferramentas import rf
+from forja.servidor.rotas_integracoes import ri
 from forja.servidor.rotas_memoria import rm
 from forja.servidor.rotas_quadro import rq
 from forja.servidor.rotas_sistema import rs
@@ -91,7 +93,8 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
         provedor_servico.construtor_contexto = ConstrutorContexto(
             app.state.memoria, Principal("contexto", frozenset(ns)), ns, orcamento=cfg.app_context_budget_tokens)
     app.state.propostas = PropostasMemoria(provedor_servico, app.state.memoria)
-    app.state.ferramentas = Catalogo(cfg.ferramentas_raizes)
+    app.state.integracoes = IntegracaoServico(provedor_servico.repo)
+    app.state.ferramentas = Catalogo(cfg.ferramentas_raizes, app.state.integracoes)
     app.state.quadro = QuadroServico(provedor_servico.repo)
     app.state.kanban = VisaoKanban(provedor_servico.repo)
     app.state.grafo = GrafoServico(provedor_servico.repo)
@@ -113,6 +116,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.include_router(r)
     app.include_router(rm)
     app.include_router(rf)
+    app.include_router(ri)
     app.include_router(rq)
     app.include_router(rs)
     app.include_router(rv)

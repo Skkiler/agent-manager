@@ -15,7 +15,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   Kiro CLI 3.1.0 autenticado (login feito pelo usuario). Terminal da sessao roda como **Administrador** (o CLI recomenda evitar).
 
 ## Resultados reais de teste (2026-11-08)
-- `python -m pytest` -> **605 passed** (~115 s), exit 0, sem warnings; cobertura **93%** (a Fase 3 tinha 265 testes/91%). `ResourceWarning` continua tratado como erro.
+- `python -m pytest` -> **690 passed** (~115 s), exit 0, sem warnings; cobertura **93%** (a Fase 3 tinha 265 testes/91%). `ResourceWarning` continua tratado como erro.
 - `python -m ruff check forja tests scripts` -> All checks passed. `node --check` do `app.js` -> ok.
 - **Testes de mutacao nas defesas criticas (9 mutantes, 9 detectados):** ACL do FTS removida; `substr`->`LIKE`; raiz de ingestao nao
   verificada; evidencia simulada aceita; ACL ignorada ao carregar memoria; validacao ignora injection; validacao ignora contradicao;
@@ -123,6 +123,19 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   nao ha regressao visual automatizada nem auditoria com leitor de tela (so HTML semantico, foco visivel, ARIA de tabs e `prefers-reduced-motion`); grafo trunca em ~500 nos;
   a lista de modelos depende do CLI instalado e logado.
 
+## Integracoes de rede configuraveis (item 4.20) — resultados reais
+- **Novos:** `integracoes/{ambiente,rede,config,conectores}.py`, `orquestracao/integracao_servico.py`, `servidor/rotas_integracoes.py`, 6 ferramentas de rede no catalogo (`jira.*`, `github.*`, `agenda.ler_ics_url`),
+  tela de configuracao em `Integracoes`, `tests/test_integracoes_rede.py` (85 testes). ADR-013. Registro reescrito: locais x rede x planejados.
+- **Regra seguida:** a funcionalidade existe, **nada vem configurado nem ligado**; o segredo vive so no ambiente (`FORJA_INT_*`) e a tela guarda o NOME da variavel; tudo somente leitura.
+- **Verificado:** 690 testes; mutacao nas defesas de rede (30 mutantes: 28 detectados, 1 depois de reforco, 1 equivalente no Python 3.13); navegador real (6 vistas e 23 interacoes, 0 erros de console/CSP);
+  **uma chamada real de leitura** (`GET /rate_limit` em `api.github.com`, sem token e sem enviar dados) validou TLS, SNI e o IP fixado. O Jira so foi testado com transporte simulado: **nao ha Jira real validado**.
+- **Bugs reais achados so no navegador/ambiente real:** (1) `input.list` e somente leitura e quebrava a tela de Configuracao (corrigido em `ui.js`); (2) `package-data` do `pyproject.toml` nao incluia `painel/estatico/js/`
+  (um wheel perderia a interface; corrigido); (3) servidores demo antigos continuavam vivos apos parar o terminal e serviam codigo velho (cuidado operacional: confira `-m forja` em execucao); (4) `IcsUrl` lia o endereco pelo
+  ambiente padrao em vez do injetado (corrigido antes de commitar).
+- **Dependencia:** `httpx==0.28.1` passou de dev para runtime (fixa).
+- **Limites/pendencias:** sem escrita em servicos; Gmail API/IMAP, Google Agenda API, Notion/Trello seguem planejados; Jira Cloud real, Server/DC e o `.ics` secreto precisam de validacao com credenciais reais suas;
+  a lista de projetos/repositorios e a unica barreira de escopo (use tokens somente leitura); o limite de 240 req/min conta tambem os arquivos estaticos do painel (cada carga de pagina gasta ~18) — decisao pendente.
+
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -141,7 +154,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - Scanner dedicado de segredos (gitleaks) e CI continuam ausentes. Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 605 passed.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 690 passed.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: itens 4.7-4.9 (ferramentas N0 medidas, precisao em corpus real, embeddings so se ganharem). Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

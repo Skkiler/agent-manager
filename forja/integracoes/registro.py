@@ -1,7 +1,8 @@
-"""Registro de integracoes: o que ja funciona (local, gratuito, sem credencial) e o que depende de aprovacao.
+"""Registro de integracoes: o que funciona hoje e o que depende de aprovacao.
 
-Regra do projeto: nada aqui abre rede nem guarda credencial. Conectores com rede/OAuth ficam `planejado` ate o operador
-aprovar escopo, onde a credencial vive (variavel de ambiente/cofre, nunca Git) e quais dados podem sair da maquina.
+Locais (gratuitos, sem rede nem credencial) funcionam assim que a ferramenta e usada. Conectores de REDE (Jira, GitHub, agenda
+por URL) estao implementados, mas NASCEM DESLIGADOS: o operador os configura na tela, o segredo fica so no ambiente (.env) e a
+tela guarda apenas o NOME da variavel. Os planejados exigem aprovacao de escopo antes de existirem.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ class Conector:
     como_usar: str = ""
     riscos: tuple[str, ...] = field(default_factory=tuple)
     aprovacao: str = ""  # o que o operador precisa aprovar antes de ativar (so planejados)
+    modo: str = "local"  # local | rede
+    configuravel: bool = False  # True = configurado pela tela (conectores de rede implementados)
 
 
 REGISTRO: tuple[Conector, ...] = (
@@ -40,32 +43,51 @@ REGISTRO: tuple[Conector, ...] = (
              ("dados.converter",), "Converte entre csv, json, jsonl e tabela markdown; neutraliza formulas no CSV."),
     Conector("sqlite_local", "Bancos SQLite", "dados", "implementado", "gratuito, local", False, False,
              ("sql.inspecionar",), "Mostra tabelas, colunas e indices sem ler linhas."),
-    Conector("gmail_api", "Gmail (API, tempo real)", "email", "planejado", "gratuito na cota; exige projeto OAuth", True, True,
-             (), "Prefira o .mbox acima enquanto isto nao for aprovado.",
-             ("OAuth guarda refresh token em disco", "e-mail sai da maquina para o provedor de IA se for ao prompt"),
-             "Escopo somente leitura (gmail.readonly), onde guardar o token, rotulos permitidos, retencao."),
+    Conector("jira", "Jira (leitura de issues)", "organizacao", "implementado", "depende do seu plano do Jira", True, True,
+             ("jira.buscar", "jira.obter_issue", "jira.listar_projetos"),
+             "Desligada por padrao. Na tela, informe o endereco, os projetos permitidos e os NOMES das variaveis "
+             "(ex.: FORJA_INT_JIRA_TOKEN); o token fica so no .env.",
+             ("dados do Jira podem ir ao prompt do provedor de IA", "token com mais permissao do que o necessario"),
+             modo="rede", configuravel=True),
+    Conector("github", "GitHub (issues e pull requests, leitura)", "codigo", "implementado", "gratuito (limite da API)", True, True,
+             ("github.listar_issues", "github.obter_issue"),
+             "Desligada por padrao. Informe os repositorios permitidos e, se precisar, o NOME da variavel do token "
+             "(token fino, somente leitura).",
+             ("repositorios privados exigem token", "dados podem ir ao prompt do provedor de IA"),
+             modo="rede", configuravel=True),
+    Conector("agenda_ics_url", "Agenda por endereco .ics secreto", "agenda", "implementado", "gratuito", True, True,
+             ("agenda.ler_ics_url",),
+             "Desligada por padrao. Guarde o endereco secreto no .env e informe so o NOME da variavel e o servidor "
+             "permitido (ex.: calendar.google.com).",
+             ("quem tem o endereco le a agenda inteira", "fusos horarios ignorados"), modo="rede", configuravel=True),
+    Conector("gmail_api", "Gmail (API/IMAP, tempo real)", "email", "planejado", "gratuito na cota; exige OAuth ou senha de app",
+             True, True, (), "Prefira o .mbox acima enquanto isto nao for aprovado.",
+             ("OAuth guarda refresh token", "e-mail sai da maquina para o provedor de IA se for ao prompt"),
+             "Escopo somente leitura, onde guardar o token, rotulos permitidos, retencao."),
     Conector("google_calendar", "Google Agenda (API)", "agenda", "planejado", "gratuito na cota", True, True, (),
-             "Use o .ics enquanto isto nao for aprovado.", ("OAuth", "dados de terceiros nos convites"),
+             "Use o endereco .ics secreto (acima) enquanto isto nao for aprovado.", ("OAuth", "dados de terceiros nos convites"),
              "Escopo somente leitura e calendarios permitidos."),
-    Conector("github", "GitHub (issues/PRs)", "codigo", "planejado", "gratuito (API publica, token opcional)", True, True, (),
-             "Use `git.diff_analisar` com `git diff` local.", ("token com escopo minimo", "repositorios privados"),
-             "Repositorios permitidos e escopo do token (somente leitura)."),
-    Conector("notion_trello_jira", "Notion / Trello / Jira (quadros)", "organizacao", "planejado", "gratuito em planos basicos",
-             True, True, (), "O quadro Kanban da Forja cobre o fluxo local; exporte CSV destes servicos e use `dados.converter`.",
-             ("tokens de API", "dados de empresa"), "Qual servico, quais quadros e se dados de empresa podem ser lidos."),
+    Conector("notion_trello", "Notion / Trello (quadros)", "organizacao", "planejado", "gratuito em planos basicos", True, True, (),
+             "Use o Kanban da Forja, ou exporte CSV e use `dados.converter`.", ("tokens de API", "dados de empresa"),
+             "Qual servico, quais quadros e se dados de empresa podem ser lidos."),
     Conector("webhook_saida", "Avisos de saida (Slack/Teams/ntfy)", "notificacao", "planejado", "gratuito", True, True, (),
              "Hoje os avisos ficam no painel (SSE).", ("vazamento de conteudo em mensagens",),
              "Destino, conteudo permitido (somente ids/estados) e limite de frequencia."),
+    Conector("escrita_em_servicos", "Escrita em servicos externos (comentar, criar, transicionar)", "organizacao", "planejado",
+             "depende do servico", True, True, (), "Hoje todas as integracoes de rede sao SOMENTE LEITURA.",
+             ("alteracoes irreversiveis em sistemas de terceiros", "vazamento de dados para fora"),
+             "Cada acao de escrita passaria pelas aprovacoes por acao (uma pergunta em linguagem natural por acao)."),
 )
 
 
-def listar(ferramentas_disponiveis: set[str]) -> list[dict]:
-    """Registro serializavel; `disponivel` = todas as ferramentas do conector existem no catalogo carregado."""
+def listar(ferramentas_disponiveis: set[str], prontas: set[str] | None = None) -> list[dict]:
+    """Registro serializavel. `disponivel` = ferramentas no catalogo e, nos de rede, a integracao esta PRONTA."""
     saida = []
     for c in REGISTRO:
         d = asdict(c)
         d["ferramentas"] = list(c.ferramentas)
         d["riscos"] = list(c.riscos)
-        d["disponivel"] = c.estado == "implementado" and all(f in ferramentas_disponiveis for f in c.ferramentas)
+        d["disponivel"] = (c.estado == "implementado" and all(f in ferramentas_disponiveis for f in c.ferramentas)
+                           and (c.modo == "local" or c.id in (prontas or set())))
         saida.append(d)
     return saida

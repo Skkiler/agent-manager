@@ -80,12 +80,19 @@ def ler_agenda(raiz: Path, caminho: str, de: str = "", ate: str = "", limite: in
         raise ValidacaoDominio("esperado um arquivo .ics")
     if real.stat().st_size > MAX_BYTES:
         raise ValidacaoDominio("arquivo .ics acima do limite de tamanho")
+    texto = real.read_text(encoding="utf-8", errors="replace")
+    return resumir_eventos(texto, de, ate, limite, "agenda.ler_ics")
+
+
+def resumir_eventos(texto: str, de: str, ate: str, limite: int, ferramenta: str) -> ResultadoFerramenta:
+    """Resumo de eventos de um texto .ics (arquivo local ou baixado por URL). `de`/`ate` em ISO."""
+    if not 1 <= limite <= MAX_EVENTOS:
+        raise ValidacaoDominio(f"limite deve estar entre 1 e {MAX_EVENTOS}")
     try:
         ini = datetime.fromisoformat(de) if de else None
         fim = datetime.fromisoformat(ate) if ate else None
     except ValueError as e:
         raise ValidacaoDominio("de/ate devem estar em ISO (YYYY-MM-DD)") from e
-    texto = real.read_text(encoding="utf-8", errors="replace")
     todos = parse_ics(texto)
     no_periodo = [e for e in todos if (not ini or e["inicio"] >= ini) and (not fim or e["inicio"] <= fim)]
     no_periodo.sort(key=lambda e: e["inicio"])
@@ -100,5 +107,4 @@ def ler_agenda(raiz: Path, caminho: str, de: str = "", ate: str = "", limite: in
                           "titulo": e.get("titulo", ""), "local": e.get("local", ""),
                           "recorrente": bool(e.get("recorrente"))} for e in corte]}
     avisos = ["fusos horarios sao ignorados: horarios lidos como escritos no arquivo"]
-    return montar("agenda.ler_ics", texto, "\n".join(linhas), dados, len(no_periodo) > len(corte), avisos)
-
+    return montar(ferramenta, texto, "\n".join(linhas), dados, len(no_periodo) > len(corte), avisos)
