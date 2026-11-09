@@ -57,7 +57,8 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.4 Desempenho de busca em codigo (migracao 0005) e ingestao local por script (`scripts/memoria_ingerir.py`).
 - [x] 4.5 Base publica `knowledge/procedimentos` + sinonimos, com teste de busca.
 - [x] 4.6 Plano de ferramentas para agentes: `docs/arquitetura/ferramentas-planejadas.md` (economia ainda nao medida).
-- [ ] 4.7 Implementar ferramentas 3, 5 e 7 do plano e medir tokens antes/depois.
+- [x] 4.7 Ferramentas N0 3, 5 e 7 (`forja/ferramentas/`) com contrato comum, 17 testes, mutacao 7/7 e `scripts/medir_ferramentas.py`.
+- [ ] 4.7b Expor as ferramentas ao agente (rota `/api/v1/ferramentas/*` e depois MCP em loopback) e medir tokens numa tarefa real do Kiro.
 - [ ] 4.8 Precisao em linguagem natural sobre corpus real (exige rotulagem manual pelo usuario).
 - [ ] 4.9 Embeddings somente se superarem o baseline lexical no benchmark.
 ## Gate Fase 1

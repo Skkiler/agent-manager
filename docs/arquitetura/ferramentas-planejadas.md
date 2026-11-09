@@ -13,11 +13,11 @@ vira "pronto" depois de medir tokens antes/depois numa tarefa real com o mesmo c
 |---|---|---|---|---|
 | 1 | Busca de simbolos (`definicao de X`) | arquivo, linha, tipo | leitura de varios arquivos | **existe** (ranker de simbolos); falta expor como MCP |
 | 2 | Busca de memoria/contexto | itens uteis dentro de orcamento | colar documentos | **existe** (`ConstrutorContexto`) |
-| 3 | Outline de arquivo | lista de simbolos e linhas | ler o arquivo inteiro | planejado (reusa o indexador) |
+| 3 | Outline de arquivo (`codigo.outline`) | lista de simbolos e linhas | ler o arquivo inteiro | **existe** (`forja/ferramentas/outline.py`); falta expor via API/MCP |
 | 4 | Mapa do repositorio | arvore resumida + pontos de entrada | varredura manual | planejado |
-| 5 | Resumo de saida de testes | so falhas e causa provavel | log completo do pytest | planejado |
+| 5 | Resumo de saida de testes (`testes.resumir_saida`) | veredito, contagens, falhas e causa | log completo do pytest | **existe** (`forja/ferramentas/testes.py`); so pytest |
 | 6 | Triagem de logs | linhas de erro agrupadas por assinatura | log bruto | planejado |
-| 7 | Resumo de diff | arquivos, hunks e risco | `git diff` completo | planejado |
+| 7 | Resumo de diff (`git.diff_analisar`) | arquivos, areas tocadas, riscos, segredo sem o valor | `git diff` completo | **existe** (`forja/ferramentas/diff.py`) |
 | 8 | Inspetor de esquema | tabelas, colunas, indices | dump de SQL | planejado |
 | 9 | Scanner de segredos | achados com arquivo/linha, sem o valor | revisao manual | planejado (gitleaks pendente de aprovacao) |
 | 10 | Extrator de documentos (pdf/docx) | texto e secoes | anexar documento inteiro | planejado |

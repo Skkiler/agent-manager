@@ -15,7 +15,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   Kiro CLI 3.1.0 autenticado (login feito pelo usuario). Terminal da sessao roda como **Administrador** (o CLI recomenda evitar).
 
 ## Resultados reais de teste (2026-11-08)
-- `python -m pytest` -> **396 passed** (~100 s, com cobertura), exit 0, sem warnings; cobertura **92%** (a Fase 3 tinha 265 testes/91%). `ResourceWarning` continua tratado como erro.
+- `python -m pytest` -> **413 passed** (~75 s), exit 0, sem warnings; cobertura **92%** (medida com 396 testes, antes das ferramentas N0) (a Fase 3 tinha 265 testes/91%). `ResourceWarning` continua tratado como erro.
 - `python -m ruff check forja tests scripts` -> All checks passed. `node --check` do `app.js` -> ok.
 - **Testes de mutacao nas defesas criticas (9 mutantes, 9 detectados):** ACL do FTS removida; `substr`->`LIKE`; raiz de ingestao nao
   verificada; evidencia simulada aceita; ACL ignorada ao carregar memoria; validacao ignora injection; validacao ignora contradicao;
@@ -77,6 +77,14 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   autogenerate do Alembic propondo DROP das tabelas FTS; regressao de "relaxar termos raros"; mensagem >100k car.; stdin cp1252 no agente falso; cobertura de simbolo fixa em 1,0.
 - Decisao: **sem criptografia em repouso** (ferramenta local, usuario unico); ver ADR-010.
 
+## Ferramentas N0 (item 4.7) — resultados reais
+- Novas: `forja/ferramentas/{contrato,outline,testes,diff}.py`, `tests/test_ferramentas.py` (17), `scripts/medir_ferramentas.py`. Somente leitura; segredos redigidos; saida rotulada como dado nao confiavel.
+- Mutacao: 7/7 detectados (1 sobreviveu na 1a rodada: link simbolico sem teste; reforcado). Bug real achado pelo teste: o outline omitia o nome do metodo.
+- Medicao no proprio repositorio (tokens **estimados**, ~4 car./token; compara com ler o material inteiro, nao com o que o agente leria de fato):
+  outline de 29 arquivos .py >3.000 car.: 77.045 -> 5.283 tokens (reducao mediana 93,8%, minima 80,7%);
+  resumo de pytest com 8 falhas: 675 -> 117 (82,7%; amostra sintetica pequena, saidas maiores tendem a reduzir mais);
+  resumo de diff de 3 commits recentes: 97,1% a 98,8%.
+- Limites: so pytest; diff por regex (sem AST); ferramentas ainda **nao expostas ao agente** (4.7b) — a economia real no Kiro nao foi medida.
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -95,7 +103,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - Scanner dedicado de segredos (gitleaks) e CI continuam ausentes. Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 396 passed.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 413 passed.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: itens 4.7-4.9 (ferramentas N0 medidas, precisao em corpus real, embeddings so se ganharem). Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.
