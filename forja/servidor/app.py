@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from forja.adapters.agentes_mock.mock import AgenteMock
+from forja.adapters.kiro_acp.modelos import CatalogoModelos
 from forja.adapters.kiro_acp.provedor import ProvedorKiroAcp, montar_comando, resolver_cli
 from forja.adapters.sqlite.banco import criar_engines, migrar
 from forja.adapters.sqlite.repositorio import RepositorioSqlite
@@ -24,15 +25,21 @@ from forja.dominio.erros import ErroDominio
 from forja.ferramentas.catalogo import Catalogo
 from forja.memoria.modelo import Principal
 from forja.observabilidade.logs import configurar_logging, correlation_id_var
+from forja.orquestracao.configuracao_servico import ConfiguracaoServico
+from forja.orquestracao.grafo_servico import GrafoServico
 from forja.orquestracao.memoria_servico import ServicoMemoria
 from forja.orquestracao.propostas import PropostasMemoria
 from forja.orquestracao.quadro_servico import QuadroServico
+from forja.orquestracao.revisao import RevisaoServico
 from forja.orquestracao.servico import Servico
+from forja.orquestracao.visoes import VisaoKanban
 from forja.seguranca.auth import LimitadorTaxa, carregar_token
 from forja.servidor.rotas import publico, r
 from forja.servidor.rotas_ferramentas import rf
 from forja.servidor.rotas_memoria import rm
 from forja.servidor.rotas_quadro import rq
+from forja.servidor.rotas_sistema import rs
+from forja.servidor.rotas_visoes import rv
 
 log = logging.getLogger("forja.app")
 ESTATICO = __import__("pathlib").Path(__file__).resolve().parent.parent / "painel" / "estatico"
@@ -86,6 +93,14 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.state.propostas = PropostasMemoria(provedor_servico, app.state.memoria)
     app.state.ferramentas = Catalogo(cfg.ferramentas_raizes)
     app.state.quadro = QuadroServico(provedor_servico.repo)
+    app.state.kanban = VisaoKanban(provedor_servico.repo)
+    app.state.grafo = GrafoServico(provedor_servico.repo)
+    app.state.configuracao = ConfiguracaoServico(provedor_servico.repo, modelo_padrao=cfg.app_kiro_model)
+    app.state.revisao = RevisaoServico(provedor_servico, app.state.ferramentas, app.state.configuracao)
+    if isinstance(provedor_servico.provedor, ProvedorKiroAcp):  # modelo por parte do sistema (configuravel no painel)
+        provedor_servico.provedor.modelo_de = app.state.configuracao.modelo_para
+        provedor_servico.provedor.esforco_de = app.state.configuracao.esforco_para
+    app.state.modelos = CatalogoModelos(resolver_cli(cfg.app_kiro_cli_path))  # lista da conta (somente leitura)
     app.state.token = carregar_token(cfg)
     app.state.limitador = LimitadorTaxa(cfg.app_rate_limit_per_minute)
     app.state.encerrando = threading.Event()
@@ -99,6 +114,8 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.include_router(rm)
     app.include_router(rf)
     app.include_router(rq)
+    app.include_router(rs)
+    app.include_router(rv)
     _ = provedor_servico  # servico ja referenciado em app.state
 
     if ESTATICO.exists():

@@ -15,7 +15,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   Kiro CLI 3.1.0 autenticado (login feito pelo usuario). Terminal da sessao roda como **Administrador** (o CLI recomenda evitar).
 
 ## Resultados reais de teste (2026-11-08)
-- `python -m pytest` -> **494 passed** (~105 s), exit 0, sem warnings; cobertura **93%** (a Fase 3 tinha 265 testes/91%). `ResourceWarning` continua tratado como erro.
+- `python -m pytest` -> **605 passed** (~115 s), exit 0, sem warnings; cobertura **93%** (a Fase 3 tinha 265 testes/91%). `ResourceWarning` continua tratado como erro.
 - `python -m ruff check forja tests scripts` -> All checks passed. `node --check` do `app.js` -> ok.
 - **Testes de mutacao nas defesas criticas (9 mutantes, 9 detectados):** ACL do FTS removida; `substr`->`LIKE`; raiz de ingestao nao
   verificada; evidencia simulada aceita; ACL ignorada ao carregar memoria; validacao ignora injection; validacao ignora contradicao;
@@ -104,6 +104,25 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   (token unico de operador); quadro ainda nao e alimentado automaticamente pelo orquestrador (4.14) nem aparece no painel web; sem timeout por
   ferramenta (tetos de tamanho de entrada); `logs.agrupar_falhas` e `dados.converter` medidos so em testes sinteticos; `sql.inspecionar` so SQLite.
 - **Superficie nova (padrao desligada):** `APP_TOOLS_ROOTS` vazio = ferramentas de arquivo desligadas; ao ativar, o operador autenticado le arquivos dessas pastas.
+## Painel IDE, configuracao por parte, integracoes e revisao (itens 4.15-4.19) — resultados reais
+- **Novos (backend):** `dominio/{configuracao,revisao}.py`, `orquestracao/{configuracao_servico,visoes,grafo_servico,revisao}.py`, `adapters/kiro_acp/{modelos,sessao_config}.py`,
+  `ferramentas/{vault,agenda,email_mbox}.py`, `integracoes/registro.py`, `memoria/wikilinks.py`, rotas `rotas_{visoes,sistema}.py`, migracao `0007`. **Novos (front):** `painel/estatico/` reescrito em 15 modulos ES. ADR-012.
+- **Validacao dos checkpoints anteriores (re-executada agora):** suite completa 605 verdes; benchmark de busca identico (recall/MRR/nDCG 0,94/0,87/0,89);
+  ciclo completo de migracoes (head -> base -> head, uma revisao por vez), sem deriva entre modelos e migracoes e FTS5 preservado (`test_migracoes.py`);
+  smoke contra servidor real (mock): fluxo ponta a ponta concluido; Kiro real: handshake, listagem de modelos (21), sessao com modelo/esforco e bloqueio de modelo invalido.
+- **Interface verificada num navegador real** (Edge via Playwright, `scripts/inspecionar_painel.py --interagir`): 6 vistas renderizam e 18 interacoes passam
+  (abrir tarefa e ver briefing, arrastar para coluna invalida, resolver mensagem do quadro, abrir/editar/salvar nota e navegar por wikilink, buscar no grafo,
+  salvar modelo por parte, pedir revisao sem executar, executar ferramenta, atalhos, nivel simples/avancado). Zero erros de console/CSP.
+- **Bugs reais achados so no navegador/CLI real e corrigidos:** (1) tempestade de requisicoes: o replay do SSE ao conectar disparava um refresh por evento e estourava o rate limit
+  (HTTP 429) -> debounce; (2) colisao de CSS (`.agente` da Oficina deformava as mensagens do agente); (3) render concorrente duplicava o conteudo do painel de conversa;
+  (4) a CSP restritiva bloqueia `eval`, inclusive do Playwright (esperado: o teste usa `expect`); (5) `--model`/`--effort` sao **recusados** pelo engine v3 do Kiro e o agente
+  **aceita modelo inexistente em silencio** -> aplicacao por `session/set_config_option` com validacao e falha fechada; (6) `email.ler_mbox` colocava corpo de e-mail em `dados`
+  sem redigir segredos -> redacao agora em todo texto de `dados`.
+- **Mutacao nas defesas novas:** 22 mutantes, 20 detectados de imediato e 2 depois de novos testes (busca multi-termo no grafo; `\n` escapado em `.ics`).
+- **Limites:** economia em tokens das novas ferramentas nao foi medida no Kiro real; integracoes com rede/OAuth (Gmail API etc.) seguem planejadas e dependem da sua aprovacao;
+  nao ha regressao visual automatizada nem auditoria com leitor de tela (so HTML semantico, foco visivel, ARIA de tabs e `prefers-reduced-motion`); grafo trunca em ~500 nos;
+  a lista de modelos depende do CLI instalado e logado.
+
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -122,7 +141,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - Scanner dedicado de segredos (gitleaks) e CI continuam ausentes. Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 494 passed.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 605 passed.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: itens 4.7-4.9 (ferramentas N0 medidas, precisao em corpus real, embeddings so se ganharem). Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

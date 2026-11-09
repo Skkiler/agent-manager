@@ -11,6 +11,7 @@ import logging
 import os
 import shutil
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ from forja.adapters.kiro_acp.cliente import (
     DecisorPermissao,
 )
 from forja.adapters.kiro_acp.mediador import MediadorPermissoes
+from forja.adapters.kiro_acp.sessao_config import ConfiguracaoIndisponivel, aplicar_configuracao
 from forja.agentes.base import ControleExecucao
 from forja.conversa.briefing import Briefing
 from forja.conversa.briefing import parse as parse_briefing
@@ -162,7 +164,11 @@ class ProvedorKiroAcp:
         id_: str = "kiro.acp.v3",
         timeout_handshake: float = 30.0,
         janela_agrupamento: float = 0.8,
+        modelo_de: Callable[[str], str] | None = None,
+        esforco_de: Callable[[str], str] | None = None,
     ) -> None:
+        self.modelo_de = modelo_de  # parte do sistema -> id de modelo (vazio = padrao); ligado pela configuracao
+        self.esforco_de = esforco_de  # parte do sistema -> --effort (vazio = padrao)
         self.janela_agrupamento = janela_agrupamento
         self.comando = comando
         self.workspace = workspace
@@ -170,6 +176,14 @@ class ProvedorKiroAcp:
         self.timeout_handshake = timeout_handshake
         self._decisor = decisor_permissao
         self.id = id_
+
+    def configuracao_da_execucao(self, tarefa: dict[str, Any]) -> tuple[str, str]:
+        """(modelo, esforco) configurados para a parte da tarefa; tarefas de revisao usam a parte `revisao`."""
+        parte = "revisao" if (tarefa.get("entrada") or {}).get("revisao") else "execucao"
+        try:
+            return (self.modelo_de(parte) if self.modelo_de else ""), (self.esforco_de(parte) if self.esforco_de else "")
+        except Exception:  # noqa: BLE001 - ler a configuracao nunca pode derrubar a execucao
+            return "", ""
 
     # --------------------------------------------------------------------------------
     def executar(self, tarefa: dict[str, Any], checkpoint: dict[str, Any], ctl: ControleExecucao) -> ResultadoAgente:
@@ -224,6 +238,13 @@ class ProvedorKiroAcp:
                 {"agente": cliente.agent_info.get("name"), "versao": cliente.agent_info.get("version")},
             )
             sid = cliente.nova_sessao(str(self.workspace.resolve()), self.timeout_handshake)
+            modelo, esforco = self.configuracao_da_execucao(tarefa)
+            if modelo or esforco:
+                try:
+                    ctl.evento("kiro.configuracao", aplicar_configuracao(cliente, sid, modelo, esforco, self.timeout_handshake))
+                except ConfiguracaoIndisponivel as e:  # falha fechada: nao roda num modelo diferente do escolhido
+                    return self._res("bloqueada", "Modelo configurado indisponivel nesta conta.", t0,
+                                     pendencias=[f"modelo_indisponivel: {e}", "Ajuste a configuracao de modelos no painel."])
             ctl.registrar_checkpoint({"sessao": "criada"})
             prompt = montar_prompt(tarefa)
             tokens_in = estimar_tokens(prompt)

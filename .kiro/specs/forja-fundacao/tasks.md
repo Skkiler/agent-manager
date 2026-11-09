@@ -64,7 +64,15 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.11 Painel de controle do master (`/controle/painel`): urgentes, bloqueadas, aprovacoes, execucoes paradas.
 - [x] 4.12 Propostas de memoria candidata a partir de tarefa concluida (fecha 3.10).
 - [x] 4.13 Refator: `Servico` dividido em mixins (1133 -> 764 linhas) sem mudar a API.
-- [ ] 4.14 Ligar o quadro ao orquestrador (agentes publicam resultado/pergunta automaticamente) e ao painel web.
+- [ ] 4.14 Ligar o quadro ao orquestrador (agentes publicam resultado/pergunta automaticamente). O quadro no painel web ja existe (4.17).
+- [x] 4.15 Configuracao por parte do sistema (modelo e esforco), lista de modelos da conta, aplicada por sessao ACP v3 com falha fechada. ADR-012.
+- [x] 4.16 Revisao do esquema sob demanda (`POST /revisoes`) com fatos medidos.
+- [x] 4.17 Painel estilo IDE: Kanban, quadro de comunicacao, grafo/notas (Obsidian), ferramentas, integracoes e configuracao; CSP e a11y basica; verificado no navegador.
+- [x] 4.18 Ferramentas de servicos locais: `vault.indexar`, `agenda.ler_ics`, `email.ler_mbox`; registro de integracoes (`/integracoes`).
+- [x] 4.19 Refator de `Servico` em mixins; testes de migracoes (ciclo completo, sem deriva) e do painel estatico.
+- [ ] 4.20 Integracoes com rede/OAuth (Gmail API, Google Agenda, GitHub, quadros): dependem da aprovacao do operador.
+- [ ] 4.21 Teste visual automatizado em CI (Playwright) e auditoria com leitor de tela.
+- [ ] 4.22 Edicao/arrastar de arestas no grafo e criacao de arestas tipadas pela UI.
 - [ ] 4.8 Precisao em linguagem natural sobre corpus real (exige rotulagem manual pelo usuario).
 - [ ] 4.9 Embeddings somente se superarem o baseline lexical no benchmark.
 ## Gate Fase 1

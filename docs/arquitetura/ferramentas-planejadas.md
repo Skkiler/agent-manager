@@ -33,6 +33,12 @@ via MCP **somente em loopback** e com a mesma ACL de namespace da memoria. Saida
 |---|---|
 | `texto.amostra` | trecho numerado de arquivo; e o **fallback** automatico do `codigo.outline` quando nao ha simbolos |
 | `dados.converter` | json/jsonl/csv/tabela markdown, conversao exata; neutraliza formulas (`=`, `+`, `-`, `@`) no CSV |
+| `vault.indexar` | cofre de notas Markdown (Obsidian): links, backlinks, tags, orfas e links quebrados |
+| `agenda.ler_ics` | eventos de um `.ics` local por periodo (Google Agenda/Outlook/Apple exportam `.ics`); recorrencia nao expandida |
+| `email.ler_mbox` | mensagens de uma exportacao `.mbox` local (Gmail via Google Takeout); enderecos mascarados, corpo opt-in |
+
+Conectores com rede/OAuth (Gmail API, Google Agenda, GitHub, Notion/Trello/Jira, avisos de saida) estao **planejados** no registro
+`GET /api/v1/integracoes`, cada um com o que o operador precisa aprovar antes de ativar.
 
 ## Como o agente as usa hoje
 `GET /api/v1/ferramentas` lista o catalogo (contrato, risco, fallback, disponibilidade); `POST /api/v1/ferramentas/{id}/executar`

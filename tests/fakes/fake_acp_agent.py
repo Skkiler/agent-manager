@@ -38,6 +38,20 @@ if cenario == "ruido":
 print("aviso de debug no stderr", file=sys.stderr, flush=True)
 
 sid = "sess-fake-1"
+escolha: dict = {}
+MODELOS = ["auto", "claude-haiku-5.5", "claude-opus-5.5", "deepseek-3.2"]
+
+
+def opcoes_modelos() -> list[dict]:
+    """Esforco so existe para modelos claude-* (como no agente real)."""
+    ops = [{"type": "select", "id": "model", "currentValue": escolha.get("model", "auto"),
+            "options": [{"value": v, "name": v} for v in MODELOS]}]
+    if str(escolha.get("model", "")).startswith("claude"):
+        ops.append({"type": "select", "id": "effortLevel", "currentValue": escolha.get("effortLevel", "medium"),
+                    "options": [{"value": v, "name": v} for v in ("low", "medium", "high", "xhigh", "max")]})
+    return ops
+
+
 while True:
     msg = ler()
     if msg is None:
@@ -55,8 +69,21 @@ while True:
         if cenario == "auth":
             enviar({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000,
                     "message": "Authentication required. Not logged in. Run `kiro-cli login` first."}})
+        elif cenario == "modelos":  # imita o kiro-cli 3.1.0 real (engine v3)
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "configOptions": opcoes_modelos()}})
         else:
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid}})
+    elif m == "session/set_config_option" and cenario == "modelos":
+        p = msg.get("params") or {}
+        if p.get("configId") == "model":
+            escolha["model"] = p.get("value")  # o agente real ACEITA qualquer valor em silencio
+            escolha.pop("effortLevel", None)
+        elif p.get("configId") == "effortLevel" and p.get("value") in ("low", "medium", "high", "xhigh", "max"):
+            escolha["effortLevel"] = p["value"]
+        enviar({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": opcoes_modelos()}})
+    elif m == "session/prompt" and cenario == "modelos":
+        chunk(sid, f"configuracao model={escolha.get('model', 'auto')} effort={escolha.get('effortLevel', '-')}")
+        enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
     elif m == "session/prompt":
         if cenario == "crash":
             chunk(sid, "parcial")

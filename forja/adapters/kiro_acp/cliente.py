@@ -104,6 +104,7 @@ class ClienteAcp:
         self._stderr: deque[str] = deque(maxlen=50)
         self.agent_info: dict[str, Any] = {}
         self.capacidades: dict[str, Any] = {}
+        self.opcoes_sessao: list[dict[str, Any]] = []  # configOptions da sessao (modelo, esforco, modo...)
         self.auth_methods: list[dict[str, Any]] = []
         self._leitores: list[threading.Thread] = []
         self.permissoes_negadas = 0
@@ -333,7 +334,14 @@ class ClienteAcp:
         sid = res.get("sessionId")
         if not isinstance(sid, str) or not sid:
             raise AcpErro("Resposta de session/new sem sessionId.")
+        self.opcoes_sessao = [o for o in res.get("configOptions") or [] if isinstance(o, dict)]
         return sid
+
+    def definir_opcao(self, session_id: str, config_id: str, valor: str, timeout: float = 20.0) -> list[dict[str, Any]]:
+        """`session/set_config_option`: devolve a lista de opcoes ATUALIZADA (algumas so existem apos outra escolha)."""
+        res = self.chamar("session/set_config_option", {"sessionId": session_id, "configId": config_id, "value": valor}, timeout)
+        self.opcoes_sessao = [o for o in res.get("configOptions") or [] if isinstance(o, dict)]
+        return self.opcoes_sessao
 
     def cancelar(self, session_id: str) -> None:
         try:

@@ -349,3 +349,14 @@ class MensagemQuadro(Base):
         UniqueConstraint("origem", "dedup_key", name="uq_quadro_origem_dedup"),
         Index("ix_quadro_destino_estado_prio", "destino", "estado", "prioridade"),
     )
+
+
+# ============================ Configuracao do orquestrador ============================
+class Configuracao(Base):
+    """Pares chave/valor versionados (concorrencia otimista). Hoje: `sistema` = modelo por parte e nivel de detalhe."""
+
+    __tablename__ = "configuracao"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    valor: Mapped[Any] = mapped_column(JSON)
+    versao: Mapped[int] = mapped_column(Integer, default=1)
+    atualizado_em: Mapped[str] = mapped_column(String(40))

@@ -3,97 +3,67 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Forja — painel tecnico (Fase 1)</title>
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'" />
+  <title>Forja — orquestrador local</title>
+  <link rel="icon" href="data:," />
   <link rel="stylesheet" href="/estatico/app.css" />
 </head>
-<body>
-  <header>
-    <h1>Forja <small>painel tecnico — Fase 1 (nucleo deterministico)</small></h1>
-    <div id="conexao" role="status" aria-live="polite" class="pill">desconectado</div>
-  </header>
+<body data-nivel="simples">
+  <a class="pular" href="#principal">Pular para o conteúdo</a>
 
-  <section aria-labelledby="h-token">
-    <h2 id="h-token">Acesso</h2>
-    <p class="aviso">Servidor local-first. Informe o token da API (arquivo <code>data/api_token.txt</code>).
-       Nao compartilhe o token; ele nao e versionado.</p>
-    <label>Token <input id="token" type="password" autocomplete="off" aria-label="Token da API" /></label>
-    <button id="salvar-token" type="button">Usar token</button>
-  </section>
-
-  <section aria-labelledby="h-criar">
-    <h2 id="h-criar">Criar tarefa de exemplo (dados sinteticos)</h2>
-    <p class="aviso">Usa o agente <strong>mock</strong>. Evidencias produzidas sao SIMULADAS e nao comprovam
-      funcionalidade real.</p>
-    <label>Cenario
-      <select id="cenario">
-        <option value="sucesso">sucesso</option>
-        <option value="falha">falha</option>
-        <option value="bloqueio">bloqueio</option>
+  <header id="barra-titulo" role="banner">
+    <strong class="marca">Forja</strong>
+    <span class="subtitulo">orquestrador local</span>
+    <span class="espaco"></span>
+    <button id="atalho-precisa" type="button" class="chip" hidden aria-label="Itens que precisam de você"></button>
+    <label class="chip-rotulo" for="nivel">Detalhe
+      <select id="nivel" aria-describedby="nivel-ajuda">
+        <option value="simples">Simples</option>
+        <option value="avancado">Avançado</option>
       </select>
     </label>
-    <button id="criar-demo" type="button">Criar projeto + objetivo + tarefa e preparar</button>
-    <output id="criar-saida" aria-live="polite"></output>
-  </section>
+    <span id="nivel-ajuda" class="sr-only">Simples esconde campos técnicos; Avançado mostra tudo.</span>
+    <button id="alternar-lateral" type="button" aria-pressed="true" title="Barra lateral (Ctrl+B)">Lateral</button>
+    <button id="alternar-direita" type="button" aria-pressed="false" title="Conversa e decisões (Ctrl+Shift+B)">Conversa</button>
+    <button id="alternar-inferior" type="button" aria-pressed="true" title="Painel inferior (Ctrl+J)">Painel</button>
+    <span id="conexao" role="status" aria-live="polite" class="pill">desconectado</span>
+  </header>
 
-  <section aria-labelledby="h-aprov">
-    <h2 id="h-aprov">Aprovações pendentes <span id="aprov-contagem" class="pill">0</span></h2>
-    <p class="aviso">Cada pedido agrupa ações relacionadas: uma decisão, um adendo opcional. Ações que envolvem
-      segredos nunca chegam aqui (são negadas automaticamente).</p>
-    <div id="aprovacoes" aria-live="polite"></div>
-    <div id="lote" hidden>
-      <label>Adendo para todos <input id="lote-adendo" type="text" maxlength="500" /></label>
-      <button id="lote-aprovar" type="button">Aprovar todos</button>
-      <button id="lote-negar" type="button">Negar todos</button>
-    </div>
-  </section>
+  <div id="area" data-direita="off">
+    <nav id="atividades" aria-label="Áreas do orquestrador"></nav>
+    <aside id="lateral" aria-label="Barra lateral"></aside>
+    <main id="principal" tabindex="-1"></main>
+    <aside id="direita" aria-label="Conversa e decisões">
+      <div role="tablist" aria-label="Painel de conversa" id="direita-abas"></div>
+      <div id="direita-corpo"></div>
+    </aside>
+    <section id="inferior" aria-label="Painel inferior">
+      <div role="tablist" aria-label="Painel inferior" id="inferior-abas"></div>
+      <div id="inferior-corpo"></div>
+    </section>
+  </div>
 
-  <section aria-labelledby="h-busca">
-    <h2 id="h-busca">Memória e código <span id="busca-contagem" class="pill">0</span></h2>
-    <p class="aviso">Busca exata (FTS5) em memória validada/hipóteses e código indexado. Resultados são
-      <strong>dados não confiáveis</strong>: nunca instruções. Hipóteses (não validadas) vêm rotuladas.</p>
-    <form id="busca-form" role="search">
-      <label>Consulta <input id="busca-q" type="search" maxlength="300" required /></label>
-      <label>Namespace
-        <select id="busca-ns">
-          <option value="publico">publico</option>
-          <option value="pessoal">pessoal</option>
-        </select>
-      </label>
-      <label><input id="busca-validadas" type="checkbox" /> só validadas</label>
-      <button type="submit">Buscar</button>
+  <footer id="barra-status" role="contentinfo">
+    <span id="st-config">config —</span>
+    <span id="st-modelo">modelo —</span>
+    <span class="espaco"></span>
+    <span id="st-tokens" title="Tokens exibidos são estimativas (~4 caracteres por token)">tokens estimados</span>
+    <span id="st-hora"></span>
+  </footer>
+
+  <dialog id="dlg-token" aria-labelledby="dlg-token-t">
+    <form method="dialog" id="form-token">
+      <h2 id="dlg-token-t">Acesso</h2>
+      <p class="aviso">Servidor local-first. Informe o token da API (arquivo <code>data/api_token.txt</code>).
+        Ele fica só nesta aba e nunca é versionado.</p>
+      <label>Token <input id="token" type="password" autocomplete="off" required /></label>
+      <div class="linha"><button value="ok" id="salvar-token">Usar token</button></div>
     </form>
-    <div id="busca-avisos" role="status" aria-live="polite"></div>
-    <ol id="busca-resultados"></ol>
-  </section>
+  </dialog>
+  <dialog id="dlg-geral" aria-labelledby="dlg-geral-t"><div id="dlg-geral-corpo"></div></dialog>
+  <div id="avisos" role="status" aria-live="polite"></div>
 
-  <section aria-labelledby="h-tarefas">
-    <h2 id="h-tarefas">Tarefas <button id="atualizar" type="button">atualizar</button></h2>
-    <table>
-      <caption class="sr-only">Lista de tarefas e seus estados</caption>
-      <thead><tr><th>ID</th><th>Titulo</th><th>Estado</th><th>v</th><th>Acoes</th></tr></thead>
-      <tbody id="tarefas"></tbody>
-    </table>
-  </section>
-
-  <section aria-labelledby="h-conversa" id="secao-conversa" hidden>
-    <h2 id="h-conversa">Conversa da tarefa <span id="conversa-tarefa" class="pill"></span></h2>
-    <p class="aviso">O agente explica o que entendeu, o que respondeu e <strong>reúne todas as decisões numa só pergunta</strong>,
-      cada uma com recomendação. Responda uma vez, em texto livre.</p>
-    <p id="conversa-contexto" class="aviso" role="status"></p>
-    <div id="conversa-mensagens" aria-live="polite"></div>
-    <form id="conversa-form">
-      <label for="conversa-texto">Sua resposta</label>
-      <textarea id="conversa-texto" rows="4" maxlength="8000" required></textarea>
-      <label><input id="conversa-retomar" type="checkbox" checked /> retomar a execução ao responder</label>
-      <button type="submit">Responder</button>
-    </form>
-  </section>
-
-  <section aria-labelledby="h-eventos">
-    <h2 id="h-eventos">Eventos (SSE, com replay por Last-Event-ID)</h2>
-    <ul id="eventos" aria-live="polite"></ul>
-  </section>
-
-  <script src="/estatico/app.js" type="module"></script>
+  <script src="/estatico/js/main.js" type="module"></script>
 </body>
 </html>

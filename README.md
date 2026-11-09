@@ -91,6 +91,14 @@ O conteúdo da memória fica em `data\forja.sqlite3` (**ignorado pelo Git**); PI
 resultados são sempre *dados não confiáveis* (nunca instruções). Evidências simuladas (mock) não validam memória.
 Detalhes e limites em `docs/adr/0007-memoria-fts5-namespaces-acl.md`.
 
+### Painel (interface estilo IDE)
+Abra `http://127.0.0.1:8787/` com o servidor local rodando. Areas: **Tarefas** (Kanban), **Quadro** (comunicacao entre master, operador
+e agentes), **Memoria** (grafo do segundo cerebro com busca, leitura/edicao e backlinks, estilo Obsidian), **Ferramentas**,
+**Integracoes** e **Config** (modelo e esforco de IA por parte do sistema, nivel de detalhe e pedido de revisao do esquema).
+Atalhos: Ctrl+B (lateral), Ctrl+Shift+B (conversa), Ctrl+J (painel inferior). Para ver o painel com dados ficticios:
+`python scripts\semear_demo.py` (servidor local) e, opcionalmente, `python scripts\inspecionar_painel.py --interagir`
+(requer `pip install playwright`; confere erros de console/CSP e fluxos de usuario num navegador real).
+
 ### Contexto economico e conversa com o desenvolvedor (Fase 4)
 Com `APP_CONTEXT_ENABLED=true`, a Forja anexa ao prompt **so** memorias relevantes (portoes de relevancia, cobertura e
 orcamento de `APP_CONTEXT_BUDGET_TOKENS`) dos namespaces em `APP_CONTEXT_NAMESPACES` (padrao `publico`). O agente responde em

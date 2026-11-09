@@ -14,10 +14,12 @@ from typing import Annotated, Any
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from forja.dominio.erros import ErroDominio, NaoEncontrado, ValidacaoDominio
+from forja.ferramentas.agenda import ler_agenda
 from forja.ferramentas.amostra import amostra_arquivo
 from forja.ferramentas.contrato import ResultadoFerramenta
 from forja.ferramentas.conversor import converter
 from forja.ferramentas.diff import resumir_diff
+from forja.ferramentas.email_mbox import ler_mbox
 from forja.ferramentas.esquema import inspecionar_sqlite
 from forja.ferramentas.logs import agrupar_falhas
 from forja.ferramentas.mapa import mapa_repositorio
@@ -25,6 +27,7 @@ from forja.ferramentas.orcamento import orcar_tokens
 from forja.ferramentas.outline import outline_arquivo
 from forja.ferramentas.segredos import varrer
 from forja.ferramentas.testes import resumir_pytest
+from forja.ferramentas.vault import indexar_vault
 
 log = logging.getLogger("forja.ferramentas")
 TEXTO_MAX = 2_000_000
@@ -61,6 +64,22 @@ class EntAmostra(_Base):
     caminho: Caminho
     inicio: int = Field(1, ge=1)
     linhas: int = Field(60, ge=1, le=200)
+
+
+class EntAgenda(_Base):
+    caminho: Caminho
+    de: str = ""
+    ate: str = ""
+    limite: int = Field(50, ge=1, le=500)
+
+
+class EntMbox(_Base):
+    caminho: Caminho
+    de: str = ""
+    assunto: str = ""
+    limite: int = Field(20, ge=1, le=100)
+    incluir_corpo: bool = False
+    mascarar_enderecos: bool = True
 
 
 class EntLogs(_Base):
@@ -164,6 +183,9 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
     Ferramenta("segredos.varrer", "Possiveis segredos (arquivo:linha, sem o valor).", EntMapa, _arquivo(varrer), True),
     Ferramenta("sql.inspecionar", "Esquema de um banco SQLite (somente leitura, sem linhas).", EntCaminho,
                _arquivo(inspecionar_sqlite), True),
+    Ferramenta("vault.indexar", "Notas Markdown (estilo Obsidian): links, backlinks, tags, orfas.", EntMapa, _arquivo(indexar_vault), True),
+    Ferramenta("agenda.ler_ics", "Eventos de um arquivo .ics local, por periodo.", EntAgenda, _arquivo(ler_agenda), True),
+    Ferramenta("email.ler_mbox", "Mensagens de uma exportacao .mbox local (enderecos mascarados).", EntMbox, _arquivo(ler_mbox), True),
     Ferramenta("testes.resumir_saida", "Veredito e causa das falhas a partir da saida do pytest.", EntPytest,
                lambda e, c: resumir_pytest(e.texto, e.limite)),
     Ferramenta("git.diff_analisar", "Arquivos, areas e riscos de um diff unificado.", EntTexto,

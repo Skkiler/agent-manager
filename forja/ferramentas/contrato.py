@@ -30,6 +30,17 @@ class ResultadoFerramenta(BaseModel):
         return 0.0 if self.tokens_origem <= 0 else max(0.0, 1 - self.tokens_resumo / self.tokens_origem)
 
 
+def _redigir(valor: Any) -> Any:
+    """Redige segredos em TODO texto de `dados` (nao so no resumo): o agente pode ler qualquer um dos dois."""
+    if isinstance(valor, str):
+        return redigir_segredos(valor)
+    if isinstance(valor, list):
+        return [_redigir(v) for v in valor]
+    if isinstance(valor, dict):
+        return {k: _redigir(v) for k, v in valor.items()}
+    return valor
+
+
 def tokens_de_bytes(n: int) -> int:
     """Estimativa (~4 bytes/token) sem materializar o texto."""
     return max(0, (n + 3) // 4)
@@ -42,7 +53,7 @@ def montar(ferramenta: str, bruto: str, resumo: str, dados: dict[str, Any], trun
     return ResultadoFerramenta(
         ferramenta=ferramenta,
         resumo=resumo,
-        dados=dados,
+        dados=_redigir(dados),
         tokens_origem=estimar_tokens(bruto) if tokens_origem is None else tokens_origem,
         tokens_resumo=estimar_tokens(resumo),
         truncado=truncado,
