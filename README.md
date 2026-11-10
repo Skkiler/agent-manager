@@ -7,7 +7,7 @@ Este **não é** o programa concluído. É um **bootstrap de engenharia** para i
 1. Verifique permissão do administrador para usar Kiro empresarial no seu projeto futuro open source.
 2. Instale o Kiro IDE via https://kiro.dev/downloads/ e autentique usando **Your organization**.
 3. Abra esta pasta como projeto no Kiro. Verifique a disponibilidade de Workflows. Não habilite autoaprovação universal.
-4. Leia `ORIENTACAO_MESTRA_ECOSSISTEMA_KIRO.md` e cole o conteúdo de `PROMPT_INICIAL_KIRO.md` no chat do Kiro.
+4. (Opcional, arquivos locais que nao sobem ao Git) Leia `ORIENTACAO_MESTRA_ECOSSISTEMA_KIRO.md` e cole `PROMPT_INICIAL_KIRO.md` no chat do Kiro.
 5. O agente iniciará pelas fases 0 e 1, criando código e testes reais antes de avançar. As integrações ACP/MCP dependem da versão, conta e políticas efetivamente disponíveis.
 
 ## Proteção de dados
@@ -109,7 +109,7 @@ Atalhos: Ctrl+B (lateral), Ctrl+Shift+B (conversa), Ctrl+J (painel inferior). Pa
 Com `APP_CONTEXT_ENABLED=true`, a Forja anexa ao prompt **so** memorias relevantes (portoes de relevancia, cobertura e
 orcamento de `APP_CONTEXT_BUDGET_TOKENS`) dos namespaces em `APP_CONTEXT_NAMESPACES` (padrao `publico`). O agente responde em
 secoes e agrupa decisoes; voce responde uma vez em `POST /api/v1/tarefas/{id}/conversa` e a execucao retoma com prompt compacto.
-Tokens exibidos sao **estimados**. Ver `docs/adr/0008`, `0009` e `0010`; ferramentas planejadas em `docs/arquitetura/ferramentas-planejadas.md`.
+Tokens exibidos sao **estimados**. Ver `docs/adr/0008`, `0009` e `0010`.
 
 Indexar uma pasta **local** (banco proprio, nunca versionado) e consultar:
 

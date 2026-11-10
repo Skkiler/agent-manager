@@ -26,5 +26,5 @@
     ausente, a execução é **bloqueada** (falha fechada, 0 chamadas ao modelo) em vez de rodar num modelo diferente do escolhido.
 - Limites: a UI foi verificada num navegador real (Edge via Playwright: 6 vistas e 18 interações), mas não há teste de regressão visual
   automático nem de leitor de tela; `origem` do quadro é declarada (token único); grafo com mais de ~500 nós é truncado.
-- Integrações: ver ADR-011 e `docs/arquitetura/ferramentas-planejadas.md`. Nada com rede/OAuth foi implementado; ficam planejadas
+- Integrações: ver ADR-011. Nada com rede/OAuth foi implementado; ficam planejadas
   até o operador aprovar escopo e onde guardar credenciais.

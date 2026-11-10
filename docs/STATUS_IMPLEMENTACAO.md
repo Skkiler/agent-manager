@@ -147,7 +147,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
 - `memoria_fts` ainda varre na remocao (aceitavel para poucas memorias).
-- Economia das ferramentas planejadas **nao medida** (`docs/arquitetura/ferramentas-planejadas.md`).
+- Economia das ferramentas planejadas **nao medida**.
 - `session/load` do ACP e pool de processos continuam abertos (2.9).
 ## Limitacoes e pendencias (honestas)
 - **Sem embeddings/vetores, sem Tree-sitter (AST so para Python; regex leve para md/js/ts/ps1/sql), sem OCR/PDF.** Watcher existe so no script de ingestao.

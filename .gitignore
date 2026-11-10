@@ -89,3 +89,8 @@ capturas-painel/
 # Perfis de usuario caso APP_USER_HOME aponte para dentro do projeto
 /perfis/
 /capturas-painel/
+
+# Documentos de orientacao: so locais, fora do Git
+/AGENTS.md
+/ORIENTACAO_MESTRA_ECOSSISTEMA_KIRO.md
+/PROMPT_INICIAL_KIRO.md

@@ -1,3 +1,0 @@
-# Referência estética privada
-
-O proprietário forneceu cinco imagens de personagens 8/16/32-bit, sprites pequenos e animações laterais como inspiração **privada**. Algumas contêm marcas d'água ou personagens reconhecíveis; por isso não acompanham este pacote redistribuível. Colocar imagens autorizadas apenas em `referencias-visuais-privadas/`, ignorada por Git e Kiro. A partir das descrições, desenvolver um universo visual original: taverna-forja subterrânea/fantasia técnica, side-scroller 2D com parallax discreto e 16x16 a 32x32 por personagem. Não reproduzir assets de Undertale ou terceiros.
