@@ -8,7 +8,21 @@ Use com um servidor semeado por scripts/semear_demo.py (dados sinteticos).
 from __future__ import annotations
 
 import argparse
+import os
+import sys
+import tempfile
+import traceback
 from pathlib import Path
+
+PROIBIDA = str(Path(tempfile.gettempdir()) / "pasta-ficticia-proibida")  # absoluta em qualquer SO (Windows e CI Linux)
+INEXISTENTE = str(Path(tempfile.gettempdir()) / "nao-existe-xyz-forja")
+NO_CI = bool(os.environ.get("GITHUB_ACTIONS"))
+
+
+def anotar(titulo: str, msg: str) -> None:
+    """No GitHub Actions, falhas viram anotacoes legiveis sem login."""
+    if NO_CI:
+        print(f"::error title={titulo[:80]}::{' '.join(msg.split())[:300]}")
 
 VISTAS = {
     "tarefas": ".kanban .coluna",
@@ -123,6 +137,8 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
         nonlocal falhas
         print(f"  [{'OK' if condicao else 'FALHA'}] {nome}")
         falhas += 0 if condicao else 1
+        if not condicao:
+            anotar("passo do painel", nome)
 
     erros.clear()
     pagina.goto(base + "#/tarefas")
@@ -226,13 +242,13 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.get_by_role("button", name="Privacidade").click()
     pagina.get_by_role("tab", name="Gerais", exact=False).click()
     passo("leitura de arquivos nasce desativada", not pagina.locator('[data-pref="ferramentas_arquivos_ativas"] input[type=checkbox]').is_checked())
-    pagina.locator('[data-pref="pastas_proibidas"] textarea').fill("C:/pasta-ficticia-proibida")
+    pagina.locator('[data-pref="pastas_proibidas"] textarea').fill(PROIBIDA)
     pagina.get_by_role("button", name="Salvar alterações").click()
     pagina.wait_for_selector(".toast.ok", timeout=6000)
     passo("pasta proibida salva pela tela", "pasta-ficticia-proibida" in pagina.locator('[data-pref="pastas_proibidas"] textarea').input_value())
     pagina.locator('[data-pref="pastas_proibidas"]').get_by_role("button", name="Restaurar padrão").click()
     expect(pagina.locator('[data-pref="pastas_proibidas"] textarea')).to_have_value("", timeout=6000)
-    pagina.locator('[data-pref="pastas_permitidas"] textarea').fill("C:/nao-existe-xyz")
+    pagina.locator('[data-pref="pastas_permitidas"] textarea').fill(INEXISTENTE)
     pagina.get_by_role("button", name="Salvar alterações").click()
     pagina.wait_for_selector(".toast.erro", timeout=6000)
     passo("pasta permitida inexistente e recusada com mensagem", True)
@@ -335,6 +351,8 @@ def main() -> int:
             pagina.wait_for_timeout(600)
             pagina.screenshot(path=str(saida / f"{vista}.png"))
             problemas += len(erros)
+            for e in erros[:3]:
+                anotar(f"vista {vista}", e)
             print(f"{vista:<12} {estado:<17} {seletor!r}={n} erros={len(erros)}")
             for e in erros[:5]:
                 print("   ", e[:200])
@@ -349,4 +367,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001 - no CI, a excecao vira anotacao; localmente o traceback continua
+        anotar("inspecao do painel", f"{type(e).__name__}: {str(e).splitlines()[0] if str(e) else ''}")
+        traceback.print_exc()
+        sys.exit(1)
