@@ -212,15 +212,6 @@ def memorias_com_refs(t: Tx, namespaces: list[str]) -> list[tuple[str, list[str]
     return saida
 
 
-def contar(t: Tx, tabela: str, match: str, namespaces: list[str]) -> int:
-    """Frequencia de documento (quantas linhas casam) dentro da ACL. Base da relaxacao por raridade."""
-    if tabela not in ("memoria_fts", "codigo_fts"):
-        raise ValueError("tabela invalida")
-    filtro, params = _filtro_ns(namespaces)
-    sql = f"SELECT count(*) FROM {tabela} WHERE {tabela} MATCH :m AND {filtro}"  # noqa: S608 - tabela validada acima
-    return int(t.s.execute(text(sql), {"m": match, **params}).scalar() or 0)
-
-
 def ids_casados(t: Tx, tabela: str, match: str, namespaces: list[str], limite: int = 2000) -> set[tuple]:
     """Chaves dos documentos que casam `match` (memoria: (id,); codigo: (arquivo_id, linha_ini)). Dentro da ACL."""
     colunas = {"memoria_fts": "memoria_id", "codigo_fts": "arquivo_id, linha_ini"}

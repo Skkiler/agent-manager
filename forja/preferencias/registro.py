@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from forja.agentes import estilo as _estilo
+
 
 @dataclass(frozen=True)
 class Exemplo:
@@ -45,9 +47,12 @@ class Preferencia:
     reinicia: bool = False
     persistida: bool = True  # False = so exibicao/atalho (modelos, revisao, perfil, info)
     texto: str = field(default="", compare=False)  # conteudo fixo dos tipos 'info'
+    detalhes: tuple[dict[str, Any], ...] = ()  # tipo 'tags': o que cada tag faz (mostrado na tela)
+    max_texto: int = 0  # tipo 'texto'
 
 
 CATEGORIAS: tuple[Categoria, ...] = (
+    Categoria("agentes", "Agentes", "Quanta liberdade os agentes têm e como eles trabalham. Combine métodos como tags e escreva suas regras."),
     Categoria("cosmetica", "Aparência", "Como a interface se parece e quanto detalhe ela mostra. Não muda o que o sistema faz."),
     Categoria("eficiencia", "Eficiência", "Quanto contexto os agentes recebem. Mais contexto ajuda a acertar, mas custa tokens."),
     Categoria("consumo", "Consumo", "Qual modelo de IA cada parte usa. É aqui que o custo em créditos mais muda."),
@@ -57,7 +62,29 @@ CATEGORIAS: tuple[Categoria, ...] = (
 )
 
 PREFERENCIAS: tuple[Preferencia, ...] = (
-    # ------------------------------------------------------------------ aparencia
+    # ------------------------------------------------------------------ agentes
+    Preferencia(
+        "nivel_autonomia", "agentes", "geral", "Nível de autonomia", "selecao",
+        "Quanto o agente faz sozinho. Em qualquer nível: segredos nunca são lidos, e excluir, publicar, descartar alterações, instalar "
+        "dependências, acessar a rede, agir fora da pasta de trabalho ou ações não identificadas sempre perguntam.",
+        "restrito", tuple(Exemplo(n.rotulo, n.id, n.descricao) for n in _estilo.NIVEIS),
+        se_ligar="Mais autonomia: menos interrupções e tarefas mais longas sem você; toda aprovação automática fica registrada nos eventos.",
+        se_desligar="Restrito: você aprova cada ação; mais seguro e mais lento.", risco="alto",
+        opcoes=tuple((n.id, n.rotulo) for n in _estilo.NIVEIS)),
+    Preferencia(
+        "metodos_acao", "agentes", "geral", "Métodos de ação (tags)", "tags",
+        "Marque quantas quiser: cada tag acrescenta UMA característica ao modo de trabalho do agente (uma linha curta no pedido). "
+        "Tags que se contradizem não podem ser marcadas juntas.",
+        [], se_ligar="Cada tag custa poucas dezenas de tokens por tarefa.", se_desligar="Sem tags, o agente usa o comportamento padrão.",
+        opcoes=tuple((m.id, m.rotulo) for m in _estilo.METODOS),
+        detalhes=tuple({"id": m.id, "descricao": m.descricao, "instrucao": m.instrucao, "conflitos": list(m.conflitos), "efeito": m.efeito}
+                       for m in _estilo.METODOS)),
+    Preferencia(
+        "observacoes_guia", "agentes", "geral", "Observações guia", "texto",
+        "Regras, boas práticas e observações escritas por você, enviadas ao agente em toda tarefa (ex.: 'use português nos commits', "
+        "'prefira pytest', 'nunca altere a pasta migrations sem perguntar'). Não coloque segredos: o texto vai ao provedor de IA.",
+        "", se_ligar="O agente segue suas regras; cada caractere conta no custo da tarefa.", se_desligar="Vazio: nenhum texto extra.",
+        max_texto=_estilo.MAX_OBSERVACOES),    # ------------------------------------------------------------------ aparencia
     Preferencia(
         "nivel_detalhe", "cosmetica", "geral", "Nível de detalhe da interface", "selecao",
         "Quantos detalhes técnicos a interface mostra: IDs, número de tentativas, JSON dos dados, estados internos.",

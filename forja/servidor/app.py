@@ -147,6 +147,18 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.state.rotulagem = RotulagemServico(provedor_servico.repo, app.state.memoria)
     app.state.integracoes = IntegracaoServico(provedor_servico.repo)
     app.state.prefs = _criar_preferencias(cfg, provedor_servico, app)
+    fixas = [r.resolve() for r in cfg.memoria_raizes]  # APP_MEMORY_INGEST_ROOTS continua valendo; a tela soma as pastas permitidas
+
+    def _raizes_ingestao(_v: object = None) -> None:
+        pol = app.state.prefs.politica_pastas()
+        app.state.memoria.raizes = list(dict.fromkeys(fixas + ([p.resolve() for p in pol.permitidas] if pol.ativa else [])))
+
+    for pref in ("ferramentas_arquivos_ativas", "pastas_permitidas"):
+        app.state.prefs.registrar_aplicador(pref, _raizes_ingestao)
+    _raizes_ingestao()
+    provedor_servico.perfil_de = app.state.prefs.perfil_trabalho  # autonomia/metodos/observacoes lidos a cada execucao
+    if isinstance(provedor_servico.provedor, ProvedorKiroAcp):
+        provedor_servico.provedor.perfil_de = app.state.prefs.perfil_trabalho
     app.state.quadro = provedor_servico.quadro = QuadroServico(provedor_servico.repo)  # orquestrador avisa o quadro
     app.state.acoes_externas = AcoesExternasServico(provedor_servico.repo, app.state.integracoes, app.state.quadro)
     app.state.ferramentas = Catalogo((), app.state.integracoes, app.state.acoes_externas, politica=app.state.prefs.politica_pastas)

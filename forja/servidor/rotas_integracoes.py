@@ -31,7 +31,7 @@ Svc = Annotated[IntegracaoServico, Depends(_svc)]
 
 @ri.get("/integracoes")
 def integracoes(request: Request, s: Svc) -> list[dict[str, Any]]:
-    from forja.integracoes.conectores import CONECTORES
+    from forja.integracoes.catalogo_conectores import CONECTORES
 
     estados = {i: s.estado(i) for i in CONECTORES}
     prontas = {i for i, e in estados.items() if e["pronta"]}

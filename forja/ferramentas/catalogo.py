@@ -161,6 +161,15 @@ class EntTrelloCartao(_Base):
     descricao: Annotated[str, StringConstraints(max_length=4000)] = ""
 
 
+class EntBuscaWeb(_Base):
+    consulta: Annotated[str, StringConstraints(min_length=2, max_length=300)]
+    limite: int | None = Field(None, ge=1, le=20)
+
+
+class EntLerPagina(_Base):
+    url: Annotated[str, StringConstraints(min_length=10, max_length=2000)]
+
+
 class EntLogs(_Base):
     texto: Texto
     limite: int = Field(10, ge=1, le=30)
@@ -311,6 +320,10 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
                lambda e, c: c.propor("github", "comentar", e.model_dump()), risco="escrita_aprovada", integracao="github"),
     Ferramenta("trello.propor_cartao", "PROPOE criar um cartao no Trello; so e criado se o operador aprovar.", EntTrelloCartao,
                lambda e, c: c.propor("trello", "criar_cartao", e.model_dump()), risco="escrita_aprovada", integracao="trello"),
+    Ferramenta("web.buscar", "Busca na web (titulo, endereco e trecho) para achar documentacao, boas praticas e bugs conhecidos.", EntBuscaWeb,
+               lambda e, c: c.integracao("busca_web", "buscar", e.model_dump(exclude_none=True)), integracao="busca_web"),
+    Ferramenta("web.ler_pagina", "Texto de uma pagina que veio de web.buscar (ou de dominio liberado), sem scripts, limitado.", EntLerPagina,
+               lambda e, c: c.integracao("busca_web", "ler_pagina", e.model_dump()), integracao="busca_web"),
     Ferramenta("testes.resumir_saida", "Veredito e causa das falhas a partir da saida do pytest.", EntPytest,
                lambda e, c: resumir_pytest(e.texto, e.limite)),
     Ferramenta("git.diff_analisar", "Arquivos, areas e riscos de um diff unificado.", EntTexto,

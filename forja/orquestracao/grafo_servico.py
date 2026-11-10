@@ -1,6 +1,7 @@
 """Grafo do segundo cerebro para visualizacao (estilo Obsidian): memorias, nos tipados, [[wikilinks]], refs e backlinks.
 
-Respeita a ACL de namespaces ANTES de montar qualquer no. So leitura; a edicao usa as rotas de memoria existentes.
+Respeita a ACL de namespaces ANTES de montar qualquer no. Edicao: ligacoes tipadas criadas/removidas pela tela (4.22), com a
+mesma ontologia das arestas de conhecimento; o conteudo das notas continua sendo editado pelas rotas de memoria.
 """
 
 from __future__ import annotations
@@ -8,9 +9,10 @@ from __future__ import annotations
 from typing import Any
 
 from forja.adapters.sqlite import tabelas as T
-from forja.adapters.sqlite.repositorio import RepositorioSqlite
-from forja.dominio.erros import NaoEncontrado
-from forja.memoria.modelo import Principal
+from forja.adapters.sqlite.repositorio import RepositorioSqlite, novo_id
+from forja.dominio.erros import Conflito, NaoEncontrado, ValidacaoDominio
+from forja.dominio.tempo import RelogioSistema, iso
+from forja.memoria.modelo import ARESTAS, Principal
 from forja.memoria.wikilinks import extrair_wikilinks
 
 INATIVOS = frozenset({"revogado", "substituido"})
@@ -19,8 +21,9 @@ MAX_FANTASMAS = 40
 
 
 class GrafoServico:
-    def __init__(self, repo: RepositorioSqlite) -> None:
+    def __init__(self, repo: RepositorioSqlite, relogio: Any | None = None) -> None:
         self.repo = repo
+        self.relogio = relogio or RelogioSistema()
 
     # ------------------------------------------------------------------ carga com ACL
     def _carregar(self, p: Principal, namespaces: list[str], incluir_inativas: bool):
@@ -30,6 +33,7 @@ class GrafoServico:
                         and (incluir_inativas or m["estado"] not in INATIVOS)]
             nos = [n for n in t.listar(T.NoConhecimento, limite=5000) if n["namespace"] in alvo]
             arestas = [a for a in t.listar(T.ArestaConhecimento, limite=10000) if a["namespace"] in alvo]
+            arestas += [{**lg, "editavel": True} for lg in t.listar(T.LigacaoGrafo, limite=10000) if lg["namespace"] in alvo]
         return memorias, nos, arestas
 
     @staticmethod
@@ -61,7 +65,8 @@ class GrafoServico:
               incluir_inativas: bool = False) -> dict[str, Any]:
         memorias, nos, arestas_k = self._carregar(p, namespaces, incluir_inativas)
         arestas, fantasmas = self._arestas_de_memorias(memorias)
-        arestas += [{"origem": a["origem"], "destino": a["destino"], "tipo": a["tipo"]} for a in arestas_k]
+        arestas += [{"origem": a["origem"], "destino": a["destino"], "tipo": a["tipo"],
+                     **({"id": a["id"], "editavel": True, "nota": a.get("nota", "")} if a.get("editavel") else {})} for a in arestas_k]
         todos: dict[str, dict] = {}
         for m in memorias:
             todos[m["id"]] = {"id": m["id"], "rotulo": m["titulo"], "grupo": "memoria", "tipo": m["tipo"],
@@ -109,6 +114,38 @@ class GrafoServico:
                     novos.add(a["origem"])
             escolhidos |= novos
         return escolhidos
+
+    # ------------------------------------------------------------------ edicao (4.22)
+    def _ponta(self, t: Any, p: Principal, id_: str) -> dict[str, Any]:
+        item = t.obter(T.Memoria, id_) or t.obter(T.NoConhecimento, id_)
+        if item is None or not p.pode(item["namespace"]):
+            raise NaoEncontrado(f"Item {id_} nao encontrado.")  # sem oraculo de existencia fora da ACL
+        return item
+
+    def ligar(self, p: Principal, origem: str, destino: str, tipo: str, nota: str = "", ator: str = "operador") -> dict[str, Any]:
+        if tipo not in ARESTAS:
+            raise ValidacaoDominio(f"tipo de ligacao fora da ontologia: {tipo!r}")
+        if origem == destino:
+            raise ValidacaoDominio("Uma ligacao nao pode ligar um item a si mesmo.")
+        agora = iso(self.relogio.agora())
+        with self.repo.escrita() as t:
+            a, b = self._ponta(t, p, origem), self._ponta(t, p, destino)
+            ns = b["namespace"] if a["namespace"] == "publico" else a["namespace"]  # fica no escopo mais privado das pontas
+            if t.listar(T.LigacaoGrafo, origem=origem, destino=destino, tipo=tipo, limite=1):
+                raise Conflito("Essa ligacao ja existe.")
+            lg = t.inserir(T.LigacaoGrafo, id=novo_id("LIG"), origem=origem, destino=destino, tipo=tipo, namespace=ns,
+                           nota=(nota or "").strip()[:300], criado_por=ator[:100], criado_em=agora)
+            t.emitir_evento("memoria.ligacao_criada", agora, {"id": lg["id"], "tipo": tipo})
+        return lg
+
+    def desligar(self, p: Principal, ligacao_id: str) -> None:
+        agora = iso(self.relogio.agora())
+        with self.repo.escrita() as t:
+            lg = t.obter(T.LigacaoGrafo, ligacao_id)
+            if lg is None or not p.pode(lg["namespace"]):
+                raise NaoEncontrado(f"Ligacao {ligacao_id} nao encontrada.")
+            t.s.delete(t.s.get(T.LigacaoGrafo, ligacao_id))
+            t.emitir_evento("memoria.ligacao_removida", agora, {"id": ligacao_id})
 
     def links(self, p: Principal, memoria_id: str) -> dict[str, Any]:
         """Saida e entrada (backlinks) de uma memoria, no estilo do painel de backlinks do Obsidian."""

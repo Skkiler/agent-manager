@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from forja.agentes.base import ControleExecucao
+from forja.agentes.estilo import PADRAO, PerfilTrabalho
 from forja.seguranca.acoes import descrever_acao
 
 log = logging.getLogger("forja.mediador")
@@ -48,7 +49,9 @@ class _Lote:
 
 
 class MediadorPermissoes:
-    def __init__(self, ctl: ControleExecucao, workspace: Path, janela: float = 0.8, espera_max: float = 1800.0) -> None:
+    def __init__(self, ctl: ControleExecucao, workspace: Path, janela: float = 0.8, espera_max: float = 1800.0,
+                 perfil: PerfilTrabalho = PADRAO) -> None:
+        self.perfil = perfil  # nivel de autonomia: quais acoes reversiveis dentro do workspace dispensam pergunta
         self.ctl = ctl
         self.workspace = workspace
         self.janela = janela
@@ -75,6 +78,9 @@ class MediadorPermissoes:
             return rejeitar
         if permitir is None:  # sem como permitir uma vez: nao arrisca allow_always
             return rejeitar
+        if self.perfil.aprova_sozinho(item):  # auditavel: toda aprovacao automatica vira evento
+            self.ctl.evento("kiro.permissao_automatica", {"nivel": self.perfil.nivel, "categoria": item["categoria"], "descricao": item["descricao"]})
+            return permitir
         if self._chave(item) in self._lembradas:
             self.ctl.evento("kiro.permissao_reutilizada", {"descricao": item["descricao"]})
             return permitir

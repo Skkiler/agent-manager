@@ -139,6 +139,12 @@ Detalhes em `docs/adr/0011-catalogo-de-ferramentas-quadro-e-propostas.md`.
 - Jira, GitHub e Trello aceitam escrita SO como proposta: ligue `permitir escrita` na integracao; cada acao aparece em Integracoes > Acoes aguardando voce.
 - Memoria > Avaliar a busca: rotule perguntas reais e veja recall/MRR/nDCG no seu corpus (rotulos ficam no seu perfil). Detalhes no ADR-015.
 
+### Como abrir (app local instalavel)
+- `python -m forja --abrir` sobe o servidor em loopback e abre a interface. No Edge/Chrome use "Instalar Forja" para ter janela e icone de aplicativo.
+- Configuracoes > Agentes: nivel de autonomia (restrito/liberado/total), metodos como tags (ex.: Cauteloso + Orientado a testes) e observacoes guia.
+- Integracoes > Busca web: Brave Search API (chave no .env) ou SearXNG proprio; o agente le so paginas que vieram da busca.
+- Avaliar a busca no seu codigo: `python scripts\avaliar_busca_codigo.py --raiz <pasta> [--embeddings]` (copia temporaria, so numeros na saida). Detalhes no ADR-016.
+
 ### Limites desta fase
 O agente e um **mock** deterministico: as evidencias que ele produz sao **simuladas** e nao comprovam
 funcionalidade real. Integracao Kiro (ACP), memoria/grafos, multiagentes e o painel pixel art chegam nas Fases 2+.

@@ -52,7 +52,8 @@ class ConversaContextoMixin:
                 if uso:
                     tarefa["contexto_texto"] = self.construtor_contexto.so_uteis(uso[0]["itens"], uso[0]["uteis"] or [])
                 return None
-            pacote = self.construtor_contexto.construir(tarefa)
+            fator = self.perfil_de().fator_contexto() if getattr(self, "perfil_de", None) else 1.0  # tag 'Economico' corta pela metade
+            pacote = self.construtor_contexto.construir(tarefa, max(100, int(self.construtor_contexto.orcamento * fator)) if fator != 1.0 else None)
             tarefa["contexto_texto"] = pacote.texto
             with self.repo.escrita() as t:
                 t.inserir(

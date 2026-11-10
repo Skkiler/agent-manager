@@ -23,13 +23,15 @@ from forja.orquestracao.memoria_servico import ServicoMemoria  # noqa: E402
 RAIZ = Path(__file__).resolve().parents[1]
 
 
-def executar(k: int = 5) -> dict:
+def executar(k: int = 5, glossario: bool = False) -> dict:
     db = Path(tempfile.mkdtemp(prefix="forja-bench-")) / "b.sqlite3"
     migrar(db)
     w, r = criar_engines(db)
     repo = RepositorioSqlite(w, r)
     try:
-        servico = ServicoMemoria(repo)
+        from forja.memoria.linguagem import caminho_sinonimos
+
+        servico = ServicoMemoria(repo, sinonimos=caminho_sinonimos() if glossario else None)
         memorias, casos = carregar_benchmark(RAIZ / "knowledge" / "modelos_publicos" / "benchmark_busca.json")
         return comparar(servico, Principal("bench", frozenset({"publico"})), memorias, casos, k)
     finally:
@@ -40,8 +42,9 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--k", type=int, default=5)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--glossario", action="store_true", help="inclui a extensao opcional de sinonimos")
     args = ap.parse_args()
-    res = executar(args.k)
+    res = executar(args.k, args.glossario)
     if args.json:
         print(json.dumps(res, indent=2, ensure_ascii=False))
         sys.exit(0)

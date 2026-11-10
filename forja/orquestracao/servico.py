@@ -88,6 +88,7 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
         self.construtor_contexto = (
             construtor_contexto  # ConstrutorContexto (opcional): memoria -> prompt, com orcamento
         )
+        self.perfil_de: Any | None = None  # () -> PerfilTrabalho (preferencias): autonomia, metodos e observacoes
         self.contexto_ativo = True  # preferencia do usuario (menu de configuracoes): False = nenhum contexto de memoria
         self.espera_aprovacao_s = espera_aprovacao_s
         self.quadro: Any | None = None  # QuadroServico (opcional): o orquestrador avisa o master/operador, sem depender dele

@@ -3,7 +3,7 @@
 - Status: aceito (Fase 4)
 - Decisoes de busca:
   1. Termos viram grupos (termo, radical PT/EN com prefixo, sinonimos) com stopwords (`forja/memoria/linguagem.py`).
-     Sinonimos extras vem de `knowledge/ontologias/sinonimos.json`.
+     Sinonimos extras podem vir de `knowledge/ontologias/sinonimos.json` (extensao OPCIONAL, nao carregada por padrao: medida em 2026-11, piorou o benchmark publico e nao melhorou o corpus real; ver ADR-016).
   2. AND primeiro; se nada, **OR ponderado por cobertura** (idf dos grupos). Termo ausente do indice conta com peso maximo,
      entao reduz a cobertura em vez de sumir do calculo. Cobertura de simbolo = grupos casados / total de grupos.
   3. Ranker de grafo (no por nome -> vizinhos 1 salto -> memorias via `refs`), fator 0,8.

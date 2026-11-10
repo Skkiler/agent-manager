@@ -11,7 +11,8 @@ import pytest
 from forja.adapters.sqlite import tabelas as T
 from forja.dominio.erros import ConflitoVersao, NaoEncontrado, ValidacaoDominio
 from forja.integracoes import ambiente
-from forja.integracoes.conectores import CONECTORES, Github, IcsUrl, Jira, _texto_adf
+from forja.integracoes.catalogo_conectores import CONECTORES
+from forja.integracoes.conectores import Github, IcsUrl, Jira, _texto_adf
 from forja.integracoes.config import ConfigIntegracao
 from forja.integracoes.rede import ClienteSeguro, ErroRede, LimiteExcedido, RedeBloqueada, ip_publico, validar_base
 from forja.orquestracao.integracao_servico import IntegracaoServico

@@ -28,6 +28,7 @@ from forja.adapters.kiro_acp.cliente import (
 from forja.adapters.kiro_acp.mediador import MediadorPermissoes
 from forja.adapters.kiro_acp.sessao_config import ConfiguracaoIndisponivel, aplicar_configuracao
 from forja.agentes.base import ControleExecucao
+from forja.agentes.estilo import PADRAO, PerfilTrabalho
 from forja.conversa.briefing import Briefing
 from forja.conversa.briefing import parse as parse_briefing
 from forja.dominio.contratos import (
@@ -44,7 +45,7 @@ log = logging.getLogger("forja.kiro")
 MAX_RESPOSTA = 200_000
 TETO_MENSAGEM = 20_000  # caracteres por mensagem de conversa (o artefato guarda a resposta integral)
 MAX_EVENTOS_TOOL = 100
-MODOS_PERMITIDOS = {"analise", "documentacao"}
+MODOS_PERMITIDOS = set(PADRAO.modos)  # nivel restrito (padrao); niveis liberado/total ampliam (agentes/estilo.py)
 
 
 def resolver_cli(configurado: str = "") -> str | None:
@@ -98,13 +99,26 @@ PROTOCOLO_CURTO = (
 )
 
 
+ESCRITA = (  # cabecalho para modos que alteram codigo (so com nivel de autonomia liberado/total)
+    "Voce e um agente de DESENVOLVIMENTO da plataforma Forja, trabalhando para o desenvolvedor responsavel. "
+    "Altere somente arquivos da pasta de trabalho, nunca acesse segredos e verifique o que fizer.\n"
+)
+
+
+def _protocolo(tarefa: dict[str, Any]) -> str:
+    p = PROTOCOLO
+    if tarefa.get("modo") in ("alteracao_codigo", "verificacao"):
+        p = ESCRITA + p.split("\n", 1)[1]  # troca so a 1a linha (analise somente leitura); o formato da resposta e o mesmo
+    return p + (tarefa.get("perfil_texto") or "")
+
+
 def montar_prompt(tarefa: dict[str, Any], sessao_carregada: bool = False) -> str:
     """Prompt inicial: protocolo curto + tarefa + (se houver acerto relevante) contexto citavel. Nada alem disso."""
     if tarefa.get("retomada"):
         return montar_prompt_retomada(tarefa, sessao_carregada)
     criterios = "\n".join(f"- {c}" for c in tarefa.get("criterios_aceite", []))
     texto = (
-        f"{PROTOCOLO}\n\nTarefa: {tarefa['titulo']}\n"
+        f"{_protocolo(tarefa)}\n\nTarefa: {tarefa['titulo']}\n"
         f"Descricao: {tarefa.get('descricao') or '(sem descricao)'}\n"
         f"Criterios de aceite:\n{criterios}\n"
     )
@@ -122,7 +136,7 @@ def montar_prompt_retomada(tarefa: dict[str, Any], sessao_carregada: bool = Fals
     """Retomada apos o desenvolvedor responder: so o essencial (entendimento curto, decisoes propostas, respostas).
     NAO reenvia a resposta anterior inteira nem contexto que nao foi usado: a sessao ACP e nova, mas o custo e minimo."""
     r = tarefa["retomada"]
-    partes = [PROTOCOLO_CURTO, f"\nRetomada da conversa sobre a tarefa: {tarefa['titulo']}"]
+    partes = [PROTOCOLO_CURTO + (tarefa.get("perfil_texto") or ""), f"\nRetomada da conversa sobre a tarefa: {tarefa['titulo']}"]
     if sessao_carregada:  # o agente ja tem o historico: so a resposta nova e o fio da conversa (economia real)
         partes = [f"Retomada da conversa sobre a tarefa: {tarefa['titulo']}"]
         r = {**r, "entendimento": "", "decisoes": []}
@@ -177,12 +191,14 @@ class ProvedorKiroAcp:
         modelo_de: Callable[[str], str] | None = None,
         esforco_de: Callable[[str], str] | None = None,
         reusar_sessao: bool = True,
+        perfil_de: Callable[[], PerfilTrabalho] | None = None,
         mcp_servers: list[dict[str, Any]] | None = None,
         espera_mcp_s: float = 15.0,
     ) -> None:
         self.espera_mcp_s = espera_mcp_s
         self.mcp_servers = mcp_servers or []  # servidores MCP (stdio) que o Kiro pode iniciar; so valem com usar_mcp
         self.usar_mcp = False  # opt-in do usuario (menu de configuracoes); desligado por padrao
+        self.perfil_de = perfil_de  # preferencias: nivel de autonomia, metodos (tags) e observacoes guia
         self.reusar_sessao = reusar_sessao  # session/load na retomada (so se o agente anunciar loadSession)
         self.modelo_de = modelo_de  # parte do sistema -> id de modelo (vazio = padrao); ligado pela configuracao
         self.esforco_de = esforco_de  # parte do sistema -> --effort (vazio = padrao)
@@ -193,6 +209,12 @@ class ProvedorKiroAcp:
         self.timeout_handshake = timeout_handshake
         self._decisor = decisor_permissao
         self.id = id_
+
+    def _perfil(self) -> PerfilTrabalho:
+        try:
+            return self.perfil_de() if self.perfil_de else PADRAO
+        except Exception:  # noqa: BLE001 - ler preferencias nunca derruba a execucao; cai no perfil mais restrito
+            return PADRAO
 
     def configuracao_da_execucao(self, tarefa: dict[str, Any]) -> tuple[str, str]:
         """(modelo, esforco) configurados para a parte da tarefa; tarefas de revisao usam a parte `revisao`."""
@@ -205,11 +227,13 @@ class ProvedorKiroAcp:
     # --------------------------------------------------------------------------------
     def executar(self, tarefa: dict[str, Any], checkpoint: dict[str, Any], ctl: ControleExecucao) -> ResultadoAgente:
         t0 = time.monotonic()
-        if tarefa.get("modo") not in MODOS_PERMITIDOS:
+        perfil = self._perfil()
+        tarefa = {**tarefa, "perfil_texto": perfil.instrucoes()}
+        if tarefa.get("modo") not in perfil.modos:
             return self._res(
                 "falhou",
-                f"Modo '{tarefa.get('modo')}' nao habilitado no provedor Kiro (Fase 2: somente "
-                f"{sorted(MODOS_PERMITIDOS)}).",
+                f"Modo '{tarefa.get('modo')}' nao habilitado no nivel de autonomia '{perfil.nivel}' (permitidos: "
+                f"{sorted(perfil.modos)}). Ajuste em Configuracoes > Agentes.",
                 t0,
             )
         if self.comando is None:
@@ -247,7 +271,7 @@ class ProvedorKiroAcp:
                     {"titulo": str(upd.get("title", ""))[:200], "tipo": upd.get("kind"), "status": upd.get("status")},
                 )
 
-        mediador = MediadorPermissoes(ctl, self.workspace, janela=self.janela_agrupamento)
+        mediador = MediadorPermissoes(ctl, self.workspace, janela=self.janela_agrupamento, perfil=perfil)
         cliente = ClienteAcp(
             self.comando,
             cwd=str(self.workspace),

@@ -73,10 +73,13 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.19 Refator de `Servico` em mixins; testes de migracoes (ciclo completo, sem deriva) e do painel estatico.
 - [x] 4.20 Integracoes de rede configuraveis pela tela, desligadas por padrao, segredo so no ambiente: Jira, GitHub e agenda por URL .ics (somente leitura). ADR-013.
 - [x] 4.20b Aprovado pelo usuario. Trello, Notion, Google Agenda e Gmail (API, OAuth somente leitura) + escrita como ACAO EXTERNA (Jira comentar/transicionar, GitHub comentar, Trello criar cartao) com aprovacao por acao e adendo. IMAP nao feito (API cobre o caso). Nenhum servico real validado ainda (exige credenciais).
-- [ ] 4.21 Teste visual automatizado em CI (Playwright) e auditoria com leitor de tela.
-- [ ] 4.22 Edicao/arrastar de arestas no grafo e criacao de arestas tipadas pela UI.
-- [~] 4.8 Ferramenta de rotulagem e medicao pronta (Memoria > Avaliar a busca; API /busca/rotulagem). Falta o usuario rotular >= 15 perguntas reais.
-- [ ] 4.9 Embeddings somente se superarem o baseline lexical no benchmark.
+- [x] 4.21 CI (GitHub Actions): lint, testes, painel em navegador real com interacoes, layout estreito e axe-core WCAG 2.1 AA (0 violacoes nas 6 vistas). Teste com leitor de tela de verdade continua manual.
+- [x] 4.22 Ligacoes tipadas pela tela (secao na nota e Shift+arrastar no grafo), ontologia e ACL; migracao 0009.
+- [x] 4.8 Medido no corpus real do usuario sem rotulagem manual (metodo CodeSearchNet, 300 perguntas, ~2.300 arquivos): busca atual 0,137 recall@5 contra 0,067 do baseline. A rotulagem manual (Memoria > Avaliar a busca) segue disponivel para perguntas reais.
+- [~] 4.9 Medido: embeddings sozinhos perdem (0,106); hibrido RRF ganha (0,177, +29%). Adocao como recurso opcional pesado aguarda aprovacao (modelo ~220 MB, ~230 s de indexacao por 2.300 arquivos).
+- [x] 4.24 Perfil de trabalho dos agentes: nivel de autonomia (restrito/liberado/total), metodos como tags combinaveis e observacoes guia. ADR-016.
+- [x] 4.25 Busca web (Brave/SearXNG) e leitura de pagina restrita a resultados recentes ou dominios liberados.
+- [x] 4.26 Hospedagem: app web local instalavel (PWA) e `python -m forja --abrir`; tema estilo IDE, responsivo e com movimento reduzido.
 ## Gate Fase 1
 Atingido: tarefa simulada percorre rascunho -> ... -> concluida com estado consistente, evidencia (simulada),
 artefato integro, eventos via SSE e logs — verificado por testes e pelo smoke contra servidor real.

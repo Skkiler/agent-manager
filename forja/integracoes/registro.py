@@ -80,6 +80,12 @@ REGISTRO: tuple[Conector, ...] = (
              "Para um instantaneo offline, o .mbox continua disponivel.",
              ("e-mail e dado pessoal e nao confiavel (prompt injection)", "refresh token da acesso continuo ate ser revogado"),
              modo="rede", configuravel=True),
+    Conector("busca_web", "Busca web (referencias, boas praticas, bugs conhecidos)", "pesquisa", "implementado",
+             "Brave: plano da API; SearXNG: gratuito (instancia propria)", True, True, ("web.buscar", "web.ler_pagina"),
+             "Desligada por padrao. Escolha o provedor e informe o NOME da variavel da chave (Brave). O agente busca quando achar util "
+             "(ex.: tag Pesquisador) e so le paginas que vieram dessa busca ou de dominios que voce liberar.",
+             ("a consulta sai da sua maquina para o provedor de busca", "paginas da web podem conter instrucoes maliciosas (tratadas como dado)"),
+             modo="rede", configuravel=True),
     Conector("webhook_saida", "Avisos de saida (Slack/Teams/ntfy)", "notificacao", "planejado", "gratuito", True, True, (),
              "Hoje os avisos ficam no painel (SSE).", ("vazamento de conteudo em mensagens",),
              "Destino, conteudo permitido (somente ids/estados) e limite de frequencia."),

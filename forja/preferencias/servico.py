@@ -11,6 +11,7 @@ from typing import Any
 
 from forja.adapters.sqlite import tabelas as T
 from forja.adapters.sqlite.repositorio import RepositorioSqlite
+from forja.agentes.estilo import PerfilTrabalho, validar_metodos, validar_observacoes
 from forja.dominio.erros import ConflitoVersao, ValidacaoDominio
 from forja.dominio.tempo import Relogio, RelogioSistema, iso
 from forja.preferencias.registro import CATEGORIAS, EDITAVEIS, POR_ID, PREFERENCIAS, Preferencia
@@ -37,6 +38,10 @@ def validar_valor(p: Preferencia, valor: Any) -> Any:
         if valor not in {v for v, _ in p.opcoes}:
             raise ValidacaoDominio(f"{p.rotulo}: escolha uma das opcoes ({', '.join(v for v, _ in p.opcoes)})")
         return valor
+    if p.tipo == "tags":
+        return validar_metodos(valor)
+    if p.tipo == "texto":
+        return validar_observacoes(valor)
     if p.tipo == "pastas":
         if not isinstance(valor, list) or not all(isinstance(x, str) for x in valor):
             raise ValidacaoDominio(f"{p.rotulo}: informe uma lista de caminhos")
@@ -70,6 +75,10 @@ class PreferenciasServico:
 
     def _fonte(self, id_: str) -> str:
         return "usuario" if id_ in self._guardados else "ambiente" if id_ in self.sementes else "padrao"
+
+    def perfil_trabalho(self) -> PerfilTrabalho:
+        return PerfilTrabalho(nivel=self.valor("nivel_autonomia"), metodos=tuple(self.valor("metodos_acao")),
+                              observacoes=self.valor("observacoes_guia"))
 
     def politica_pastas(self) -> PoliticaPastas:
         return PoliticaPastas(

@@ -20,6 +20,58 @@ VISTAS = {
 }
 
 
+def _contexto(nav, a, **kw):
+    ctx = nav.new_context(**kw)
+    if a.token:
+        ctx.add_init_script(f"sessionStorage.setItem('forja_token', {a.token!r})")
+    return ctx
+
+
+def auditar_a11y(nav, base: str, a, saida: Path) -> int:
+    """axe-core (WCAG 2.1 A/AA) em cada vista. Falha so em impacto critico/serio; o resto vira relatorio. CSP e contornada SO aqui
+    (o axe e injetado pelo teste); a pagina real continua com a CSP inteira. Nao substitui teste com leitor de tela de verdade."""
+    from axe_playwright_python.sync_playwright import Axe  # import tardio: dependencia de requirements-ui.txt
+
+    ctx = _contexto(nav, a, viewport={"width": a.largura, "height": a.altura}, bypass_csp=True)
+    pagina, axe, falhas, linhas = ctx.new_page(), Axe(), 0, []
+    for vista, seletor in VISTAS.items():
+        pagina.goto(f"{base}#/{vista}")
+        pagina.reload()
+        pagina.wait_for_selector(seletor, timeout=8000)
+        pagina.wait_for_timeout(400)
+        r = axe.run(pagina, options={"runOnly": {"type": "tag", "values": ["wcag2a", "wcag2aa", "wcag21aa"]}})
+        violacoes = r.response.get("violations", [])
+        graves = [v for v in violacoes if v.get("impact") in ("critical", "serious")]
+        falhas += len(graves)
+        print(f"  [a11y] {vista:<12} violacoes={len(violacoes)} graves={len(graves)}")
+        for v in violacoes:
+            alvos = [str(n.get("target")) for n in v.get("nodes", [])[:3]]
+            linhas.append(f"{vista}\t{v.get('impact')}\t{v.get('id')}\t{len(v.get('nodes', []))}\t{'; '.join(alvos)}")
+            if v in graves:
+                print(f"      {v.get('impact')}: {v.get('id')} ({len(v.get('nodes', []))}) {alvos[:2]}")
+    (saida / "a11y.tsv").write_text("vista\timpacto\tregra\tnos\talvos\n" + "\n".join(linhas), encoding="utf-8")
+    ctx.close()
+    return falhas
+
+
+def estreito(nav, base: str, a, saida: Path) -> int:
+    """Layout estreito (celular/janela dividida): nada pode estourar a largura da tela."""
+    ctx = _contexto(nav, a, viewport={"width": 420, "height": 860})
+    pagina, falhas = ctx.new_page(), 0
+    for vista, seletor in VISTAS.items():
+        pagina.goto(f"{base}#/{vista}")
+        pagina.reload()
+        pagina.wait_for_selector(seletor, timeout=8000, state="attached")  # na tela estreita a lateral pode estar recolhida
+        pagina.wait_for_timeout(300)
+        excesso = pagina.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+        ok = excesso <= 2
+        falhas += not ok
+        print(f"  [{'OK' if ok else 'FALHA'}] estreito {vista}: estouro horizontal {excesso}px")
+        pagina.screenshot(path=str(saida / f"estreito-{vista}.png"))
+    ctx.close()
+    return falhas
+
+
 def integracoes(pagina, base: str, saida: Path, expect, passo) -> int:
     """Configura integracoes de rede pela tela. O Jira usa dados ficticios (host .example nunca resolve); o GitHub faz UMA
     chamada real de leitura (GET /rate_limit em api.github.com, sem token e sem enviar dados) para validar TLS e o fixador de IP."""
@@ -129,12 +181,35 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.fill('input[aria-label="Buscar no grafo"]', "alembic")
     expect(pagina.locator(".grafo-caixa .no")).to_have_count(2, timeout=6000)
     passo("busca filtra o grafo", pagina.locator(".grafo-caixa .no").count() <= 3)
-
+    pagina.locator(".lista-notas button", has_text="Alembic").click()
+    pagina.wait_for_selector(".ligacoes", timeout=6000)
+    pagina.get_by_label("Ligar esta nota a").select_option(label="Guia de migracao")
+    pagina.get_by_role("button", name="Ligar…").click()
+    pagina.get_by_label("Tipo da ligacao").select_option("DOCUMENTADO_EM")
+    pagina.get_by_label("Nota da ligacao").fill("o guia explica o uso")
+    pagina.get_by_role("button", name="Ligar", exact=True).click()
+    expect(pagina.locator(".ligacoes h2")).to_contain_text("(1)", timeout=6000)
+    passo("criar ligacao tipada pela tela aparece na nota e no grafo (tracejada)", pagina.locator(".grafo-caixa .aresta.tipada").count() >= 1)
+    pagina.screenshot(path=str(saida / "ligacao-tipada.png"))
+    pagina.locator(".ligacoes").get_by_role("button", name="remover", exact=False).first.click()
+    expect(pagina.locator(".ligacoes h2")).to_contain_text("(0)", timeout=6000)
+    passo("remover ligacao tipada", pagina.locator(".grafo-caixa .aresta.tipada").count() == 0)
     pagina.goto(base + "#/config")
     pagina.reload()
     pagina.wait_for_selector(".opcao")
     passo("menu lista categorias na lateral", pagina.get_by_role("button", name="Privacidade").count() == 1)
     passo("abas Gerais e Avancadas separadas", pagina.get_by_role("tab", name="Avançadas", exact=False).count() == 1)
+    passo("categoria Agentes abre primeiro com nivel, tags e observacoes", pagina.locator('[data-pref="metodos_acao"] .tag-opcao').count() >= 6)
+    pagina.locator('[data-pref="metodos_acao"]').get_by_role("button", name="Direto").click()
+    passo("tag contraditoria fica bloqueada", pagina.locator('[data-pref="metodos_acao"]').get_by_role("button", name="Pesquisador").is_disabled())
+    passo("cada tag mostra o texto exato enviado ao agente", "Enviado ao agente: Direto:" in pagina.locator('[data-pref="metodos_acao"]').inner_text())
+    pagina.locator('[data-pref="observacoes_guia"] textarea').fill("Prefira pytest. Commits em portugues.")
+    pagina.locator('[data-pref="nivel_autonomia"]').get_by_role("button", name="Acesso liberado").click()
+    pagina.get_by_role("button", name="Salvar alterações").click()
+    pagina.wait_for_selector(".toast.ok", timeout=6000)
+    passo("perfil de trabalho salvo (nivel + tags + observacoes)", pagina.locator('[data-pref="nivel_autonomia"] select').input_value() == "liberado")
+    pagina.screenshot(path=str(saida / "config-agentes.png"))
+    pagina.get_by_role("button", name="Aparência").click()
     pagina.screenshot(path=str(saida / "config-aparencia.png"))
     pagina.locator('[data-pref="tema"]').get_by_role("button", name="Claro").click()
     pagina.get_by_role("button", name="Salvar alterações").click()
@@ -223,6 +298,8 @@ def main() -> int:
     ap.add_argument("--interagir", action="store_true", help="executa fluxos de usuario (altera os dados sinteticos)")
     ap.add_argument("--largura", type=int, default=1440)
     ap.add_argument("--altura", type=int, default=900)
+    ap.add_argument("--navegador", choices=("msedge", "chromium"), default="msedge", help="chromium = o do Playwright (CI)")
+    ap.add_argument("--a11y", action="store_true", help="auditoria axe-core em cada vista (falha em violacao critica/seria)")
     a = ap.parse_args()
     from playwright.sync_api import sync_playwright  # import tardio: dependencia opcional
 
@@ -232,7 +309,7 @@ def main() -> int:
     problemas = 0
     with sync_playwright() as p:
         try:
-            nav = p.chromium.launch(channel="msedge")
+            nav = p.chromium.launch(channel="msedge") if a.navegador == "msedge" else p.chromium.launch()
         except Exception:  # noqa: BLE001 - cai para o Chromium do Playwright se o Edge nao existir
             nav = p.chromium.launch()
         ctx = nav.new_context(viewport={"width": a.largura, "height": a.altura})
@@ -261,6 +338,9 @@ def main() -> int:
             print(f"{vista:<12} {estado:<17} {seletor!r}={n} erros={len(erros)}")
             for e in erros[:5]:
                 print("   ", e[:200])
+        if a.a11y:
+            problemas += auditar_a11y(nav, base, a, saida)
+        problemas += estreito(nav, base, a, saida)
         if a.interagir:
             problemas += interagir(pagina, base, saida, erros)
         nav.close()

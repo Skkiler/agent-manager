@@ -1,0 +1,16 @@
+{
+  "name": "Forja — orquestrador local",
+  "short_name": "Forja",
+  "description": "Orquestrador local de agentes Kiro (roda so no seu computador).",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1f1f1f",
+  "theme_color": "#181818",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "/estatico/icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/estatico/icone-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/estatico/icone-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

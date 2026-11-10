@@ -42,3 +42,35 @@ def grafo(g: Annotated[GrafoServico, Depends(_grafo)], p: Pr,
 def links(id_: ID, g: Annotated[GrafoServico, Depends(_grafo)], p: Pr) -> dict[str, Any]:
     return g.links(p, id_)
 
+
+
+# ------------------------------------------------------------------ 4.22: ligacoes tipadas criadas pela tela
+from fastapi import Response  # noqa: E402
+from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
+
+from forja.memoria.modelo import ARESTAS  # noqa: E402
+from forja.servidor.rotas import ATOR  # noqa: E402
+
+
+class LigacaoIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    origem: Annotated[str, Field(min_length=1, max_length=64)]
+    destino: Annotated[str, Field(min_length=1, max_length=64)]
+    tipo: Annotated[str, Field(min_length=1, max_length=32)]
+    nota: Annotated[str, Field(max_length=300)] = ""
+
+
+@rv.get("/conhecimento/tipos-de-ligacao")
+def tipos_ligacao() -> list[str]:
+    return sorted(ARESTAS)
+
+
+@rv.post("/conhecimento/ligacoes", status_code=201)
+def criar_ligacao(d: LigacaoIn, request: Request, p: Pr) -> dict[str, Any]:
+    return request.app.state.grafo.ligar(p, d.origem, d.destino, d.tipo, d.nota, ATOR)
+
+
+@rv.delete("/conhecimento/ligacoes/{id_}", status_code=204)
+def remover_ligacao(id_: ID, request: Request, p: Pr) -> Response:
+    request.app.state.grafo.desligar(p, id_)
+    return Response(status_code=204)

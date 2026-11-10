@@ -99,3 +99,22 @@ def test_servidor_entrega_shell_css_e_todos_os_modulos(cli: TestClient):
 def test_shell_e_estatico_nao_exigem_token_mas_a_api_exige(cli: TestClient):
     assert cli.get("/").status_code == 200
     assert cli.get("/api/v1/kanban").status_code in (401, 403)
+
+
+def test_todos_os_modulos_js_tem_sintaxe_valida_como_esm():
+    """`node --check arquivo.js` aceita modulo ESM invalido (falso positivo observado no Node 24); so a checagem por stdin com
+    --input-type=module detecta. Regressao: uma template string corrompida passou pelo node --check e quebrou o painel."""
+    import shutil
+    import subprocess
+
+    import pytest
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node nao instalado")
+    ruins = []
+    for js in JS:
+        r = subprocess.run([node, "--input-type=module", "--check"], input=js.read_bytes(), capture_output=True, timeout=30)  # noqa: S603
+        if r.returncode != 0:
+            ruins.append(f"{js.name}: {r.stderr.decode('utf-8', 'replace').splitlines()[:3]}")
+    assert not ruins, ruins

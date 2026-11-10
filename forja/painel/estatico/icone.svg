@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Forja">
+  <rect width="512" height="512" rx="96" fill="#1f1f1f"/>
+  <path d="M136 356h240l-28 44H164z" fill="#0078d4"/>
+  <path d="M168 132h176v56h-112v40h96v52h-96v76h-64z" fill="#e7e7e7"/>
+  <circle cx="356" cy="156" r="20" fill="#e2b340"/>
+</svg>

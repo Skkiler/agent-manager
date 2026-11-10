@@ -21,7 +21,8 @@ from forja.dominio.erros import ConflitoVersao, NaoEncontrado, ValidacaoDominio
 from forja.dominio.tempo import Relogio, RelogioSistema, iso
 from forja.ferramentas.contrato import ResultadoFerramenta
 from forja.integracoes import ambiente
-from forja.integracoes.conectores import CONECTORES, Conector
+from forja.integracoes.catalogo_conectores import CONECTORES
+from forja.integracoes.conectores import Conector
 from forja.integracoes.config import ConfigIntegracao
 from forja.integracoes.rede import ErroRede, LimiteExcedido, Resolvedor, resolver_dns
 

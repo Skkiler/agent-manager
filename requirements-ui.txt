@@ -1,0 +1,4 @@
+# Testes de interface (navegador real + auditoria de acessibilidade). Opcional: so CI/inspecao visual.
+-r requirements-dev.txt
+playwright==1.52.0
+axe-playwright-python==0.1.8

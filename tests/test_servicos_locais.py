@@ -18,7 +18,7 @@ from forja.ferramentas.agenda import ler_agenda, parse_ics
 from forja.ferramentas.catalogo import FERRAMENTAS, Catalogo
 from forja.ferramentas.email_mbox import ler_mbox, mascarar
 from forja.ferramentas.vault import indexar_vault
-from forja.integracoes.conectores import CONECTORES
+from forja.integracoes.catalogo_conectores import CONECTORES
 from forja.integracoes.registro import REGISTRO, listar
 from forja.memoria.wikilinks import extrair_tags, extrair_wikilinks
 from forja.servidor.app import criar_app

@@ -72,7 +72,7 @@ class ServicoMemoria:
         raizes_ingestao: list[Path] | None = None,
         sinonimos: str | None = None,
     ) -> None:
-        self.sinonimos = sinonimos  # caminho opcional de knowledge/ontologias/sinonimos.json (estende os embutidos)
+        self.sinonimos = sinonimos  # glossario extra opcional (ex.: knowledge/ontologias/sinonimos.json); padrao: so os embutidos
         self.repo = repo
         self.relogio = relogio or RelogioSistema()
         self.raizes = [r.resolve() for r in (raizes_ingestao or [])]

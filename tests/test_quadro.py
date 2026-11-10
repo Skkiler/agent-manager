@@ -1,4 +1,4 @@
-﻿"""Quadro de comunicacao (blackboard) e painel de controle do master."""
+"""Quadro de comunicacao (blackboard) e painel de controle do master."""
 
 from __future__ import annotations
 

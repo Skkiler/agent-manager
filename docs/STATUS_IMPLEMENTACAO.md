@@ -161,6 +161,18 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   `docs/arquitetura/ferramentas-planejadas.md`); `AGENTS.md`, `ORIENTACAO_MESTRA_ECOSSISTEMA_KIRO.md` e `PROMPT_INICIAL_KIRO.md` foram **retirados de todo o historico**
   (git filter-repo + force-push com lease; backup em bundle feito antes, fora do repositorio) e entraram no `.gitignore`; continuam so locais.
 
+## Autonomia, metodos, busca web, grafo editavel, CI e avaliacao real (itens 4.8, 4.9, 4.21, 4.22, 4.24-4.26) — resultados reais
+- **Novos:** `agentes/estilo.py`, categoria Agentes nas preferencias (nivel, tags, observacoes), `integracoes/busca_web.py`, `integracoes/catalogo_conectores.py`
+  (quebra de ciclo de import), `tabelas.LigacaoGrafo` + migracao 0009, `views/rotulagem.js`, `tema.css`, PWA (`manifest.webmanifest`, icones), `--abrir`,
+  `.github/workflows/ci.yml`, `requirements-ui.txt`, `scripts/avaliar_busca_codigo.py`. ADR-016.
+- **Seus dados:** `./data` migrado para o perfil (`%LOCALAPPDATA%\Forja\perfis\<usuario>`, banco integro, esquema atualizado; a pasta antiga ficou intacta com MIGRADO.txt).
+  A pasta de codigos foi liberada (leitura + ingestao), sempre com `.git`, perfil e credenciais protegidos.
+- **Git:** e-mail do autor reescrito em todo o historico para o endereco noreply do GitHub (force-push com lease; backup em bundle feito antes).
+- **Verificado:** 881 testes passando (suite completa), Ruff limpo, benchmark publico inalterado (0,94/0,87/0,89); navegador real: 47 passos, 0 problemas, axe 0 violacoes
+  nas 6 vistas, 6 vistas sem estouro horizontal a 420 px. Avaliacao no corpus real: ver ADR-016 (numeros e decisao do 4.9).
+- **Nao validado com servico real:** busca web (Brave/SearXNG) e os conectores do 4.20b; o CI so roda depois do push (resultado no GitHub).
+- **Pendente de decisao:** busca hibrida com embeddings (4.9); pasta de trabalho do agente para os niveis liberado/total (hoje um diretorio isolado do perfil).
+
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -179,7 +191,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - Scanner dedicado de segredos (gitleaks) e CI continuam ausentes. Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 834 passed.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 881 passed.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

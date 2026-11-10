@@ -350,7 +350,7 @@ def test_github_comentar_envia_corpo_simples():
 
 
 def test_registro_de_conectores_inclui_novos():
-    from forja.integracoes.conectores import CONECTORES
+    from forja.integracoes.catalogo_conectores import CONECTORES
 
     assert {"trello", "notion", "google_agenda", "gmail"} <= set(CONECTORES)
     assert isinstance(CONECTORES["gmail"], Gmail) and isinstance(CONECTORES["google_agenda"], GoogleAgenda)

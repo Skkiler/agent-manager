@@ -73,8 +73,11 @@ def propor_memoria(tarefa_id: ID, d: PropostaIn, request: Request, p: Pr, respos
 
 
 @rm.post("/memorias/ingerir")
-def ingerir(d: IngerirIn, s: Mem, p: Pr) -> dict[str, Any]:
-    return s.ingerir_diretorio(p, d)
+def ingerir(d: IngerirIn, s: Mem, p: Pr, request: Request) -> dict[str, Any]:
+    from forja.seguranca.pastas import aplicar
+
+    with aplicar(request.app.state.prefs.politica_pastas()):  # pastas proibidas da tela valem tambem para o segundo cerebro
+        return s.ingerir_diretorio(p, d)
 
 
 @rm.get("/memorias/estatisticas")

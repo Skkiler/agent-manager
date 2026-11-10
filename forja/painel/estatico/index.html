@@ -4,10 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'" />
+        content="default-src 'self'; connect-src 'self'; img-src 'self' data:; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'" />
   <title>Forja — orquestrador local</title>
-  <link rel="icon" href="data:," />
+  <link rel="icon" href="/estatico/icone.svg" type="image/svg+xml" />
+  <link rel="manifest" href="/estatico/manifest.webmanifest" />
+  <meta name="theme-color" content="#181818" />
   <link rel="stylesheet" href="/estatico/app.css" />
+  <link rel="stylesheet" href="/estatico/tema.css" />
 </head>
 <body data-nivel="simples">
   <a class="pular" href="#principal">Pular para o conteúdo</a>
@@ -36,11 +39,11 @@
     <main id="principal" tabindex="-1"></main>
     <aside id="direita" aria-label="Conversa e decisões">
       <div role="tablist" aria-label="Painel de conversa" id="direita-abas"></div>
-      <div id="direita-corpo"></div>
+      <div id="direita-corpo" tabindex="0" aria-label="Conteudo da conversa"></div>
     </aside>
     <section id="inferior" aria-label="Painel inferior">
       <div role="tablist" aria-label="Painel inferior" id="inferior-abas"></div>
-      <div id="inferior-corpo"></div>
+      <div id="inferior-corpo" tabindex="0" aria-label="Conteudo do painel inferior"></div>
     </section>
   </div>
 

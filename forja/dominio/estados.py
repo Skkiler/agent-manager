@@ -38,7 +38,6 @@ class EstadoExecucao(StrEnum):
 E = EstadoTarefa
 
 TERMINAIS = frozenset({E.CONCLUIDA, E.FALHOU, E.CANCELADA, E.EXPIRADA})
-_ATIVOS = {E.ATRIBUIDA, E.EXECUTANDO, E.BLOQUEADA, E.AGUARDANDO_APROVACAO, E.VALIDANDO}
 
 TRANSICOES: dict[EstadoTarefa, frozenset[EstadoTarefa]] = {
     E.RASCUNHO: frozenset({E.CLASSIFICADA, E.CANCELADA}),
@@ -78,10 +77,6 @@ RESERVADAS_AO_ORQUESTRADOR = frozenset(
 
 def eh_terminal(estado: EstadoTarefa) -> bool:
     return estado in TERMINAIS
-
-
-def ocupa_recursos(estado: EstadoTarefa) -> bool:
-    return estado in _ATIVOS
 
 
 def validar_transicao(atual: EstadoTarefa, destino: EstadoTarefa) -> None:

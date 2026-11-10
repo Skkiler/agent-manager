@@ -8,7 +8,7 @@ const ESCOPOS = [["arquitetura", "Arquitetura"], ["busca_e_memoria", "Busca e me
   ["interface", "Interface"], ["seguranca", "Seguranca"], ["custo_e_modelos", "Custo e modelos"]];
 const ESFORCOS = [["", "padrao"], ["low", "baixo"], ["medium", "medio"], ["high", "alto"], ["xhigh", "muito alto"], ["max", "maximo"]];
 const RISCO = { baixo: "ok", medio: "aviso", alto: "erro" };
-const ctx = { raiz: null, prefs: null, rascunho: {}, categoria: "cosmetica", aba: "geral" };
+const ctx = { raiz: null, prefs: null, rascunho: {}, categoria: "agentes", aba: "geral" };
 
 export async function recarregar() {
   const c = await api("GET", "/configuracao");
@@ -62,6 +62,42 @@ function controle(p) {
     c.value = v;
     return { no: c, aplicar: (x) => { c.value = x; } };
   }
+  if (p.tipo === "tags") {
+    // Tags combinaveis: cada uma acrescenta uma caracteristica. O texto exato enviado ao agente fica visivel na tela.
+    const det = new Map(p.detalhes.map((d) => [d.id, d]));
+    const rot = new Map(p.opcoes);
+    let atual = new Set(v || []);
+    const caixa = el("div", { className: "tags", role: "group", "aria-label": rotulo });
+    const explica = el("ul", { className: "tags-explicadas" });
+    const desenharTags = () => {
+      limpar(caixa); limpar(explica);
+      const bloqueadas = new Set([...atual].flatMap((id) => det.get(id)?.conflitos || []));
+      for (const [id, r] of p.opcoes) {
+        const d = det.get(id);
+        const on = atual.has(id), bloq = !on && bloqueadas.has(id);
+        caixa.append(el("button", { type: "button", className: `tag-opcao${on ? " ativa" : ""}`, "aria-pressed": String(on), disabled: bloq,
+          title: bloq ? `Contradiz ${[...atual].filter((a) => det.get(a)?.conflitos.includes(id)).map((a) => rot.get(a)).join(", ")}` : d.descricao,
+          textContent: r, onclick: () => { on ? atual.delete(id) : atual.add(id); definir([...atual]); desenharTags(); } }));
+      }
+      for (const id of atual) {
+        const d = det.get(id);
+        explica.append(el("li", {}, el("strong", { textContent: `${rot.get(id)}: ` }), d.descricao,
+          d.efeito ? el("div", { className: "mudo", textContent: `Efeito: ${d.efeito}` }) : null,
+          el("div", { className: "mono mudo", textContent: `Enviado ao agente: ${d.instrucao}` })));
+      }
+      if (!atual.size) explica.append(el("li", { className: "mudo", textContent: "Nenhuma tag: o agente usa o comportamento padrao." }));
+    };
+    desenharTags();
+    return { no: el("div", {}, caixa, explica), aplicar: (x) => { atual = new Set(x || []); desenharTags(); } };
+  }
+  if (p.tipo === "texto") {
+    const c = el("textarea", { rows: 6, maxLength: p.max_texto, "aria-label": rotulo, placeholder: "Ex.: Commits em portugues. Prefira pytest. Nunca altere migrations sem perguntar." });
+    const cont = el("span", { className: "mudo", role: "status" });
+    const contar = () => { cont.textContent = `${c.value.length} / ${p.max_texto} caracteres (~${Math.ceil(c.value.length / 4)} tokens por tarefa)`; };
+    c.value = v || "";
+    c.addEventListener("input", () => { definir(c.value); contar(); }); contar();
+    return { no: el("div", {}, c, cont), aplicar: (x) => { c.value = x || ""; contar(); } };
+  }
   if (p.tipo === "pastas") {
     const c = el("textarea", { rows: 4, spellcheck: false, "aria-label": `${rotulo} (um caminho por linha)`, placeholder: "Um caminho completo por linha",
       oninput: () => definir(c.value.split("\n").map((s) => s.trim()).filter(Boolean)) });
@@ -94,6 +130,8 @@ function cartao(p) {
 function padraoTexto(p) {
   if (p.tipo === "bool") return p.padrao ? "ativado" : "desativado";
   if (p.tipo === "pastas") return "nenhuma pasta";
+  if (p.tipo === "tags") return "nenhuma tag";
+  if (p.tipo === "texto") return "vazio";
   if (p.tipo === "selecao") return (p.opcoes.find(([v]) => v === p.padrao) || [null, p.padrao])[1];
   return `${p.padrao} ${p.unidade}`.trim();
 }

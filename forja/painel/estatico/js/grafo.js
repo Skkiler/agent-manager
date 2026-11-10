@@ -28,7 +28,7 @@ export function simular(nos, arestas, largura, altura, passos = 220) {
   }
 }
 
-export function desenhar(caixa, grafo, { aoSelecionar, selecionado }) {
+export function desenhar(caixa, grafo, { aoSelecionar, selecionado, aoLigar }) {
   caixa.replaceChildren();
   const L = caixa.clientWidth || 640, A = caixa.clientHeight || 420;
   const nos = grafo.nos.map((n) => ({ ...n })); // copia: o layout escreve x/y
@@ -38,7 +38,9 @@ export function desenhar(caixa, grafo, { aoSelecionar, selecionado }) {
   const g = svg("g"); raiz.append(g);
   const idx = new Map(nos.map((n) => [n.id, n]));
   const linhas = grafo.arestas.map((a) => {
-    const l = svg("line", { class: "aresta" }); l.dataset.o = a.origem; l.dataset.d = a.destino; g.append(l); return [l, a];
+    const l = svg("line", { class: a.editavel ? "aresta tipada" : "aresta" }); l.dataset.o = a.origem; l.dataset.d = a.destino;
+    if (a.editavel) { const tt = svg("title"); tt.textContent = a.tipo + (a.nota ? ` — ${a.nota}` : ""); l.append(tt); }
+    g.append(l); return [l, a];
   });
   const raio = (n) => 5 + Math.min(n.grau, 12) * 1.1;
   const grupos = nos.map((n) => {
@@ -49,7 +51,8 @@ export function desenhar(caixa, grafo, { aoSelecionar, selecionado }) {
     gn.addEventListener("click", () => aoSelecionar(n));
     gn.addEventListener("mouseenter", () => linhas.forEach(([l, a]) => l.classList.toggle("destaque", a.origem === n.id || a.destino === n.id)));
     gn.addEventListener("mouseleave", () => linhas.forEach(([l]) => l.classList.remove("destaque")));
-    gn.addEventListener("pointerdown", (ev) => arrastarNo(ev, n, atualizar, raiz));
+    gn.dataset.id = n.id;
+    gn.addEventListener("pointerdown", (ev) => (ev.shiftKey && aoLigar && n.grupo !== "fantasma" ? puxarLigacao(ev, n, raiz, aoLigar) : arrastarNo(ev, n, atualizar, raiz)));
     return [gn, n];
   });
   function atualizar() {
@@ -63,10 +66,25 @@ export function desenhar(caixa, grafo, { aoSelecionar, selecionado }) {
   for (const [rot, cor] of [["candidato", CORES.candidato], ["verificado", CORES.verificado], ["validado", CORES.validado], ["no tipado", CORES.no], ["link nao resolvido", CORES.fantasma]]) {
     const s = document.createElement("span"); s.textContent = `● ${rot}`; s.style.color = cor; leg.append(s);
   }
+  const dica = document.createElement("span"); dica.className = "mudo"; dica.textContent = aoLigar ? "Shift + arrastar de um no a outro cria uma ligacao tipada" : ""; leg.append(dica);
   caixa.append(leg);
 }
 
 function pontoSvg(raiz, ev) { const p = raiz.createSVGPoint(); p.x = ev.clientX; p.y = ev.clientY; return p.matrixTransform(raiz.getScreenCTM().inverse()); }
+
+// Shift + arrastar de um no a outro: propoe uma ligacao tipada (o tipo e escolhido depois, na tela).
+function puxarLigacao(ev, n, raiz, aoLigar) {
+  ev.stopPropagation();
+  const g = raiz.firstChild; const m = g.getScreenCTM().inverse();
+  const linha = svg("line", { class: "aresta puxando", x1: n.x, y1: n.y, x2: n.x, y2: n.y }); g.append(linha);
+  const mover = (e) => { const p = raiz.createSVGPoint(); p.x = e.clientX; p.y = e.clientY; const q = p.matrixTransform(m); linha.setAttribute("x2", q.x); linha.setAttribute("y2", q.y); };
+  const soltar = (e) => {
+    removeEventListener("pointermove", mover); removeEventListener("pointerup", soltar); linha.remove();
+    const alvo = document.elementFromPoint(e.clientX, e.clientY)?.closest(".no");
+    if (alvo && alvo.dataset.id && alvo.dataset.id !== n.id && !alvo.classList.contains("fantasma")) aoLigar(n.id, alvo.dataset.id);
+  };
+  addEventListener("pointermove", mover); addEventListener("pointerup", soltar);
+}
 
 function arrastarNo(ev, n, atualizar, raiz) {
   ev.stopPropagation();

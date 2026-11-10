@@ -405,8 +405,3 @@ class IcsUrl(Conector):
     def eventos(self, cliente: ClienteSeguro, c: ConfigIntegracao, de: str = "", ate: str = "", limite: int | None = None) -> ResultadoFerramenta:
         r = cliente.get(cliente.recurso)
         return resumir_eventos(r.texto, de, ate, min(limite or c.limite_resultados, c.limite_resultados), "agenda.ler_ics_url")
-
-
-from forja.integracoes.produtividade import Gmail, GoogleAgenda, Notion, Trello  # noqa: E402 - usa Conector/Campo acima
-
-CONECTORES: dict[str, Conector] = {c.id: c for c in (Jira(), Github(), IcsUrl(), Trello(), Notion(), GoogleAgenda(), Gmail())}

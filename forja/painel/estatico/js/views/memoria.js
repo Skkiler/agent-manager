@@ -25,7 +25,7 @@ async function carregarGrafo() {
     ctx.resumo.textContent = `${grafoAtual.nos.length} nos · ${grafoAtual.arestas.length} ligacoes` + (grafoAtual.truncado ? " (truncado)" : "")
       + (grafoAtual.fantasmas ? ` · ${grafoAtual.fantasmas} link(s) sem nota` : "");
     ctx.vazio.hidden = grafoAtual.nos.length > 0;
-    desenhar(ctx.caixa, grafoAtual, { aoSelecionar: abrirNo, selecionado: sel.nota?.id });
+    desenhar(ctx.caixa, grafoAtual, { aoSelecionar: abrirNo, selecionado: sel.nota?.id, aoLigar: (o, d) => dialogoLigar(o, d) });
     listaNotas();
   } catch (e) { ctx.resumo.textContent = `Erro: ${e.message}`; }
 }
@@ -66,8 +66,45 @@ function renderNota() {
       n.necessita_revalidacao ? tag("origem mudou: revalidar", "aviso") : null),
     corpo,
     el("h2", { textContent: `Backlinks (${back.length})` }), back.length ? el("ul", {}, ...back) : el("p", { className: "mudo", textContent: "Nenhuma nota aponta para esta." }),
+    secaoLigacoes(n),
     (n.links?.saida || []).length ? el("p", { className: "mudo so-avancado", textContent: `Saidas: ${n.links.saida.map((l) => l.titulo + (l.resolvido ? "" : " (sem nota)")).join(", ")}` }) : null,
     el("p", { className: "aviso", textContent: "Conteudo de memoria e dado nao confiavel: nunca e tratado como instrucao." }));
+}
+
+// ------------------------------------------------------------------ 4.22: ligacoes tipadas
+let tiposLigacao = null;
+const nomeNo = (id) => grafoAtual.nos.find((x) => x.id === id)?.rotulo || id;
+
+async function ligar(origem, destino, tipo, nota) {
+  try {
+    await api("POST", "/conhecimento/ligacoes", { origem, destino, tipo, nota });
+    toast(`Ligacao ${tipo} criada`, "ok"); await carregarGrafo(); renderNota();
+  } catch (e) { toast(e.status === 409 ? "Essa ligacao ja existe." : e.message, "erro"); }
+}
+
+async function dialogoLigar(origem, destino) {
+  tiposLigacao ??= await api("GET", "/conhecimento/tipos-de-ligacao");
+  const tipo = el("select", { "aria-label": "Tipo da ligacao" }, ...tiposLigacao.map((t) => el("option", { value: t, textContent: t })));
+  const nota = el("input", { maxLength: 300, placeholder: "Nota opcional (por que estao ligados)", "aria-label": "Nota da ligacao" });
+  const form = el("form", {}, el("p", { textContent: `${nomeNo(origem)} → ${nomeNo(destino)}` }), el("label", { className: "campo" }, el("span", { textContent: "Tipo" }), tipo),
+    el("label", { className: "campo" }, el("span", { textContent: "Nota" }), nota),
+    el("div", { className: "linha" }, el("button", { type: "submit", className: "primario", textContent: "Ligar" }), el("button", { type: "button", textContent: "Cancelar", onclick: () => d.fechar() })));
+  const d = dialogo("Nova ligacao tipada", form);
+  form.addEventListener("submit", async (ev) => { ev.preventDefault(); d.fechar(); await ligar(origem, destino, tipo.value, nota.value.trim()); });
+}
+
+function secaoLigacoes(n) {
+  const minhas = grafoAtual.arestas.filter((a) => a.editavel && (a.origem === n.id || a.destino === n.id));
+  const alvo = el("select", { "aria-label": "Ligar esta nota a" }, ...grafoAtual.nos.filter((x) => x.id !== n.id && x.grupo !== "fantasma")
+    .sort((a, b) => a.rotulo.localeCompare(b.rotulo, "pt-BR")).map((x) => el("option", { value: x.id, textContent: x.rotulo })));
+  const lista = minhas.map((a) => el("li", { className: "linha" }, tag(a.tipo), el("span", { textContent: a.origem === n.id ? `→ ${nomeNo(a.destino)}` : `← ${nomeNo(a.origem)}` }),
+    a.nota ? el("span", { className: "mudo", textContent: a.nota }) : null,
+    el("button", { type: "button", textContent: "remover", "aria-label": `Remover ligacao ${a.tipo} com ${nomeNo(a.origem === n.id ? a.destino : a.origem)}`, onclick: async () => {
+      try { await api("DELETE", `/conhecimento/ligacoes/${a.id}`); toast("Ligacao removida", "ok"); await carregarGrafo(); renderNota(); } catch (e) { toast(e.message, "erro"); }
+    } })));
+  return el("section", { className: "ligacoes" }, el("h2", { textContent: `Ligacoes tipadas (${minhas.length})` }),
+    lista.length ? el("ul", {}, ...lista) : el("p", { className: "mudo", textContent: "Nenhuma. Ligue esta nota a outra (ou use Shift + arrastar no grafo)." }),
+    alvo.options.length ? el("div", { className: "linha" }, alvo, el("button", { type: "button", textContent: "Ligar…", onclick: () => dialogoLigar(n.id, alvo.value) })) : null);
 }
 
 function editor(n) {

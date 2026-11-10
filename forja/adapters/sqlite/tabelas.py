@@ -385,3 +385,19 @@ class AcaoExterna(Base):
     decidido_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
     executado_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
     __table_args__ = (UniqueConstraint("solicitado_por", "dedup_key", name="uq_acao_externa_dedup"),)
+
+
+class LigacaoGrafo(Base):
+    """Ligacao tipada criada pelo usuario na tela do grafo. Pontas podem ser memoria ou no (validadas no servico, com ACL);
+    o tipo segue a mesma ontologia das arestas de conhecimento. Fica no namespace mais restrito das duas pontas."""
+
+    __tablename__ = "ligacao_grafo"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    origem: Mapped[str] = mapped_column(String(64))
+    destino: Mapped[str] = mapped_column(String(64))
+    tipo: Mapped[str] = mapped_column(String(32))
+    namespace: Mapped[str] = mapped_column(String(200), index=True)
+    nota: Mapped[str] = mapped_column(String(300), default="")
+    criado_por: Mapped[str] = mapped_column(String(100))
+    criado_em: Mapped[str] = mapped_column(String(40))
+    __table_args__ = (UniqueConstraint("origem", "destino", "tipo", name="uq_ligacao_grafo"),)

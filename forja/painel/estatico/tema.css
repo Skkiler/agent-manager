@@ -1,0 +1,108 @@
+/* Forja — camada de tema (carregada depois de app.css). Paleta inspirada no VS Code "Dark/Light Modern" e no JetBrains New UI:
+   superficies em camadas com pouco contraste entre si, um unico acento azul, estados por cor semantica e movimento curto (120-180 ms).
+   Tudo por variaveis: o tema claro/escuro/automatico so troca os valores. Movimento reduzido desliga transicoes e animacoes. */
+:root {
+  --raio: 6px; --raio-p: 4px; --dur: 140ms; --curva: cubic-bezier(.2, .7, .2, 1);
+  --sombra-1: 0 1px 2px #0006; --sombra-2: 0 4px 14px #0008; --anel: 0 0 0 2px var(--acento);
+  --bg: #1f1f1f; --lateral: #181818; --ativ: #181818; --painel: #1f1f1f; --borda: #2b2b2b; --texto: #cccccc; --mudo: #9a9a9a;
+  --acento: #4daafc; --acento-forte: #0078d4; --acento-bg: #0e3a5e; --ok: #4ec27a; --aviso: #e2b340; --erro: #f2716b;
+  --cartao: #252526; --hover: #2a2d2e; --sel: #04395e; --entrada: #313131; --titulo: #e7e7e7;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-tema]) { --bg: #ffffff; --lateral: #f8f8f8; --ativ: #f8f8f8; --painel: #ffffff; --borda: #e5e5e5; --texto: #3b3b3b;
+    --mudo: #6e6e6e; --acento: #005fb8; --acento-forte: #005fb8; --acento-bg: #d6e8fa; --ok: #2e7d32; --aviso: #8a6100; --erro: #c62828;
+    --cartao: #ffffff; --hover: #f0f0f0; --sel: #cce4f7; --entrada: #ffffff; --titulo: #1f1f1f; --sombra-1: 0 1px 2px #0000001a; --sombra-2: 0 4px 14px #0000001f; }
+}
+:root[data-tema="escuro"] { --bg: #1f1f1f; --lateral: #181818; --ativ: #181818; --painel: #1f1f1f; --borda: #2b2b2b; --texto: #cccccc; --mudo: #9a9a9a;
+  --acento: #4daafc; --acento-forte: #0078d4; --acento-bg: #0e3a5e; --cartao: #252526; --hover: #2a2d2e; --sel: #04395e; --entrada: #313131; --titulo: #e7e7e7; }
+:root[data-tema="claro"] { --bg: #ffffff; --lateral: #f8f8f8; --ativ: #f8f8f8; --painel: #ffffff; --borda: #e5e5e5; --texto: #3b3b3b; --mudo: #6e6e6e;
+  --acento: #005fb8; --acento-forte: #005fb8; --acento-bg: #d6e8fa; --ok: #2e7d32; --aviso: #8a6100; --erro: #c62828; --cartao: #ffffff;
+  --hover: #f0f0f0; --sel: #cce4f7; --entrada: #ffffff; --titulo: #1f1f1f; --sombra-1: 0 1px 2px #0000001a; --sombra-2: 0 4px 14px #0000001f; }
+
+/* ---- superficies e tipografia ---- */
+body { background: var(--bg); color: var(--texto); -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { color: var(--titulo); letter-spacing: .01em; }
+h2 { font-size: 12px; text-transform: uppercase; color: var(--mudo); margin: 14px 0 6px; letter-spacing: .06em; }
+#barra-titulo { background: var(--ativ); color: var(--texto); border-bottom: 1px solid var(--borda); }
+#barra-titulo button, #barra-titulo select { border-color: var(--borda); color: var(--texto); }
+#barra-titulo select option { color: initial; }
+#barra-status { background: var(--acento-forte); color: #fff; }
+#barra-status span { padding: 0 6px; border-radius: 3px; transition: background var(--dur) var(--curva); }
+#barra-status span:hover { background: #ffffff26; }
+#atividades { border-right: 1px solid var(--borda); }
+#atividades button { color: var(--mudo); border-radius: 0; transition: color var(--dur) var(--curva), background var(--dur) var(--curva); position: relative; }
+#atividades button:hover { color: var(--titulo); background: var(--hover); }
+#atividades button[aria-current="page"] { color: var(--titulo); background: transparent; border-left-color: var(--acento); }
+#lateral, #direita { background: var(--lateral); }
+#principal { padding: 14px 18px; }
+.titulo-vista { position: sticky; top: -14px; z-index: 2; background: var(--bg); padding: 6px 0 8px; margin: -6px 0 8px; border-bottom: 1px solid var(--borda); }
+
+/* ---- controles ---- */
+button { border-radius: var(--raio-p); transition: background var(--dur) var(--curva), border-color var(--dur) var(--curva), color var(--dur) var(--curva), transform var(--dur) var(--curva); }
+button:hover:not(:disabled) { border-color: var(--acento); }
+button:active:not(:disabled) { transform: translateY(1px); }
+button.primario { background: var(--acento-forte); border-color: var(--acento-forte); color: #fff; }
+button.primario:hover:not(:disabled) { filter: brightness(1.12); }
+input, select, textarea { background: var(--entrada); border-radius: var(--raio-p); transition: border-color var(--dur) var(--curva), box-shadow var(--dur) var(--curva); }
+input:hover, select:hover, textarea:hover { border-color: var(--mudo); }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--acento); box-shadow: var(--anel); }
+:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; border-radius: var(--raio-p); }
+.tag { border: 1px solid var(--borda); background: var(--cartao); }
+
+/* ---- cartoes, colunas e listas ---- */
+.card, .coluna, .cartao { border-radius: var(--raio); transition: border-color var(--dur) var(--curva), box-shadow var(--dur) var(--curva), transform var(--dur) var(--curva), background var(--dur) var(--curva); }
+.card:hover, .cartao:hover { border-color: color-mix(in srgb, var(--acento) 45%, var(--borda)); box-shadow: var(--sombra-1); }
+.cartao:hover { transform: translateY(-1px); }
+.cartao.sel { box-shadow: 0 0 0 1px var(--acento) inset; }
+.lista-notas button, #lateral nav button.bloco { transition: background var(--dur) var(--curva), color var(--dur) var(--curva); border-color: transparent; background: transparent; text-align: left; }
+.lista-notas button:hover, #lateral nav button.bloco:hover { background: var(--hover); }
+#lateral nav button.bloco.primario, .lista-notas button[aria-current="true"] { background: var(--sel); color: var(--titulo); border-color: transparent; }
+[role="tab"] { border: 0; border-bottom: 2px solid transparent; background: transparent; border-radius: 0; }
+[role="tab"][aria-selected="true"] { border-bottom-color: var(--acento); color: var(--titulo); }
+[role="tab"]:hover { background: var(--hover); }
+
+/* ---- dialogos e avisos ---- */
+dialog { border: 1px solid var(--borda); border-radius: 8px; background: var(--painel); color: var(--texto); box-shadow: var(--sombra-2); max-width: min(720px, 94vw); }
+dialog::backdrop { background: #0007; backdrop-filter: blur(1px); }
+dialog[open] { animation: surgir 160ms var(--curva); }
+.toast { box-shadow: var(--sombra-2); animation: deslizar 180ms var(--curva); border-radius: var(--raio); }
+@keyframes surgir { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes deslizar { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+
+/* ---- rolagem discreta (como nas IDEs) ---- */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--mudo) 45%, transparent) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; } ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--mudo) 40%, transparent); border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
+
+/* ---- grafo ---- */
+.grafo-caixa { border-radius: var(--raio); background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--acento) 6%, var(--bg)), var(--bg) 70%); }
+.grafo-caixa .no circle { transition: r var(--dur) var(--curva), stroke-width var(--dur) var(--curva); }
+.grafo-caixa .no:hover circle { stroke: var(--titulo); stroke-width: 2; }
+.grafo-caixa .aresta.tipada { stroke: var(--acento); stroke-dasharray: 5 3; stroke-width: 1.6; opacity: .9; }
+.grafo-caixa .aresta.puxando { stroke: var(--aviso); stroke-width: 2; stroke-dasharray: 3 3; pointer-events: none; }
+.ligacoes ul { list-style: none; padding: 0; display: grid; gap: 4px; }
+
+/* ---- configuracoes: tags de metodo ---- */
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.tag-opcao { border-radius: 999px; padding: 3px 12px; background: var(--cartao); }
+.tag-opcao.ativa { background: var(--acento-bg); border-color: var(--acento); color: var(--titulo); }
+.tag-opcao:disabled { opacity: .45; text-decoration: line-through; }
+.tags-explicadas { margin: 6px 0; padding-left: 18px; display: grid; gap: 6px; }
+
+/* ---- responsividade: largo (padrao), medio (<1000px, ja em app.css), estreito (<700px) ---- */
+@media (max-width: 700px) {
+  #area { grid-template-columns: 44px 1fr !important; }
+  #atividades button { width: 42px; height: 42px; } #atividades button .rotulo { display: none; }
+  #barra-titulo { flex-wrap: wrap; height: auto; padding: 4px 8px; } #barra-titulo .chip-rotulo { display: none; }
+  #principal { padding: 10px; } .grade { grid-template-columns: 1fr !important; }
+  .kanban { grid-auto-columns: 82%; scroll-snap-type: x mandatory; } .coluna { scroll-snap-align: start; }
+  dialog { width: 96vw; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .cartao:hover { transform: none; } }
+@media (forced-colors: active) { .tag-opcao.ativa, button.primario { border: 2px solid CanvasText; } }
+
+/* ---- acessibilidade (achados do axe-core, WCAG AA 4.5:1) ---- */
+.subtitulo { color: var(--mudo); }
+button[aria-pressed="false"] { opacity: 1; color: var(--mudo); }
+button[aria-pressed="true"] { color: var(--titulo); }
+[role="tab"].primario { background: transparent; color: var(--titulo); border-color: transparent; border-bottom-color: var(--acento); }
+#inferior-corpo:focus-visible, #direita-corpo:focus-visible { outline-offset: -2px; }

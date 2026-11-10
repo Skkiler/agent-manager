@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read  # nenhum segredo e nenhuma escrita: o CI so le o codigo e roda com dados sinteticos
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Dependencias (versoes fixas)
+        run: pip install -r requirements-ui.txt
+      - name: Lint
+        run: python -m ruff check forja tests scripts
+      - name: Testes
+        run: python -m pytest -p no:cacheprovider -q
+      - name: Navegador do Playwright
+        run: python -m playwright install --with-deps chromium
+      - name: Painel em navegador real (interacoes, layout estreito, acessibilidade)
+        env:
+          APP_DATA_DIR: ${{ runner.temp }}/forja/data
+          APP_LOG_DIR: ${{ runner.temp }}/forja/logs
+          APP_REQUIRE_AUTH: "false"
+          APP_PORT: "8799"
+          APP_KIRO_ACP_ENABLED: "false"
+          APP_RATE_LIMIT_PER_MINUTE: "3000"
+          FORJA_INT_DEMO_TRELLO_KEY: chave-ficticia-ci
+          FORJA_INT_DEMO_TRELLO_TOKEN: token-ficticio-ci
+        run: |
+          python -m forja > "$RUNNER_TEMP/servidor.log" 2>&1 &
+          for i in $(seq 1 60); do curl -fs http://127.0.0.1:8799/api/v1/saude > /dev/null && break; sleep 0.5; done
+          python scripts/semear_demo.py --porta 8799
+          python scripts/inspecionar_painel.py --porta 8799 --saida "$RUNNER_TEMP/capturas" --navegador chromium --interagir --a11y
+      - name: Capturas e relatorio de acessibilidade
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: painel
+          path: ${{ runner.temp }}/capturas
+          retention-days: 7

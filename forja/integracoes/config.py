@@ -16,6 +16,7 @@ class ConfigIntegracao(BaseModel):
     ativo: bool = False  # nasce desligada: a funcionalidade existe, mas nada acontece sem o operador ligar
     base_url: Texto = ""
     versao_api: Literal["", "2", "3"] = ""
+    provedor: Literal["", "brave", "searxng"] = ""  # so busca web
     modo_auth: Literal["", "basic", "bearer"] = ""
     variavel_usuario: Texto = ""
     variavel_token: Texto = ""

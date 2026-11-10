@@ -108,7 +108,8 @@ def radical(token: str) -> str:
     return t
 
 
-# Grupos de sinonimos tecnicos embutidos (minimos). O arquivo publico knowledge/ontologias/sinonimos.json os estende.
+# Grupos de sinonimos tecnicos embutidos (minimos). knowledge/ontologias/sinonimos.json e uma EXTENSAO OPCIONAL (nao carregada por
+# padrao): medido em 2026-11, ela piorou o benchmark publico (recall@5 0,94 -> 0,91) e nao melhorou o corpus real de codigo.
 SINONIMOS_PADRAO: tuple[tuple[str, ...], ...] = (
     ("autenticar", "autenticacao", "login", "logar", "entrar", "signin", "authenticate", "authentication"),
     ("erro", "falha", "excecao", "exception", "error", "failure", "bug"),
@@ -125,6 +126,14 @@ SINONIMOS_PADRAO: tuple[tuple[str, ...], ...] = (
     ("fila", "queue", "mensageria"),
     ("permissao", "autorizacao", "acesso", "acl", "permission", "authorization"),
 )
+
+
+# Extensao opcional (ver acima). Ausente em instalacao sem o repositorio: ok.
+ARQUIVO_SINONIMOS = Path(__file__).resolve().parents[2] / "knowledge" / "ontologias" / "sinonimos.json"
+
+
+def caminho_sinonimos() -> str | None:
+    return str(ARQUIVO_SINONIMOS) if ARQUIVO_SINONIMOS.is_file() else None
 
 
 @lru_cache(maxsize=8)
