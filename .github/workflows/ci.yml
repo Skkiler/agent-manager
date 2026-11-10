@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-24.04  # fixo: o Playwright 1.52 so instala dependencias de sistema em versoes conhecidas do Ubuntu
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
           cache: pip
@@ -47,7 +47,7 @@ jobs:
           python scripts/inspecionar_painel.py --porta 8799 --saida "$RUNNER_TEMP/capturas" --navegador chromium --interagir --a11y
       - name: Capturas e relatorio de acessibilidade
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: painel
           path: ${{ runner.temp }}/capturas

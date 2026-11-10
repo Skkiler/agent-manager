@@ -21,16 +21,23 @@ def projeto(tmp_path: Path) -> Path:
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("CREATE TABLE t (v TEXT)")
     con.execute("INSERT INTO t VALUES ('importante')")
-    con.commit()  # com o banco ainda aberto: parte dos dados esta no -wal
-    vazio = sqlite3.connect(":memory:")
-    (raiz / "data" / "segundo-cerebro.sqlite3").write_bytes(vazio.serialize())
-    vazio.close()
-    (raiz / "data" / "artefatos" / "ab" / "abc").write_text("artefato", encoding="utf-8")
-    (raiz / "data" / "api_token.txt").write_text("token-de-teste\n", encoding="utf-8")
-    (raiz / "logs" / "a.log").write_text("log", encoding="utf-8")
-    (raiz / ".env").write_text("APP_PORT=8787\n", encoding="utf-8")
-    yield raiz
-    con.close()
+    try:
+        con.commit()  # com o banco ainda aberto: parte dos dados esta no -wal
+        # Banco pequeno e valido como arquivo real. (Antes: serialize() de um ':memory:' vazio, que algumas builds do SQLite recusam,
+        # e a falha deixava conexoes abertas que viravam ResourceWarning em OUTRO teste. Achado pelo CI.)
+        vazio = sqlite3.connect(raiz / "data" / "segundo-cerebro.sqlite3")
+        try:
+            vazio.execute("CREATE TABLE nota (id INTEGER PRIMARY KEY)")
+            vazio.commit()
+        finally:
+            vazio.close()
+        (raiz / "data" / "artefatos" / "ab" / "abc").write_text("artefato", encoding="utf-8")
+        (raiz / "data" / "api_token.txt").write_text("token-de-teste\n", encoding="utf-8")
+        (raiz / "logs" / "a.log").write_text("log", encoding="utf-8")
+        (raiz / ".env").write_text("APP_PORT=8787\n", encoding="utf-8")
+        yield raiz
+    finally:
+        con.close()  # fecha mesmo se a preparacao falhar no meio
 
 
 def destino(tmp_path: Path) -> PerfilUsuario:
