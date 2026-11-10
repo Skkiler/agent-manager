@@ -1,7 +1,7 @@
 // Integracoes: locais (prontas para usar) e de rede (nascem DESLIGADAS; configuradas aqui, com o segredo so no ambiente).
 // Esta tela NUNCA pede nem mostra o valor de um token: guarda apenas o NOME da variavel de ambiente (FORJA_INT_*).
 import { api } from "../api.js";
-import { dialogo, el, limpar, tag, toast } from "../ui.js";
+import { dataCurta, dialogo, el, limpar, tag, toast } from "../ui.js";
 
 let raizAtual = null;
 
@@ -42,7 +42,7 @@ function formulario(c, aoSalvar) {
     return el("div", { className: "campo" }, el("span", { textContent: f.rotulo + (f.obrigatorio ? " *" : "") }), no, f.ajuda ? el("small", { className: "mudo", textContent: f.ajuda }) : null);
   });
   const form = el("form", {},
-    el("p", { className: "aviso", textContent: "Segredos nunca sao digitados aqui. Coloque o token no arquivo .env (ou na variavel de ambiente) com o nome indicado e informe so o NOME. A integracao e somente leitura e so alcanca o servidor configurado." }),
+    el("p", { className: "aviso", textContent: "Segredos nunca sao digitados aqui. Coloque o token no arquivo .env (ou na variavel de ambiente) com o nome indicado e informe so o NOME. A integracao so alcanca o servidor configurado. Escrita (quando houver e estiver ligada) so acontece depois da sua aprovacao, acao por acao." }),
     el("label", {}, ativo, " Ativar esta integracao"), ...linhas,
     el("div", { className: "linha" }, el("button", { type: "submit", className: "primario", textContent: "Salvar" }), el("button", { type: "button", textContent: "Cancelar", onclick: () => d.fechar() })));
   const d = dialogo(`Configurar ${c.nome}`, form);
@@ -85,10 +85,45 @@ function cartao(c, recarregar) {
     botoes.length ? el("div", { className: "linha" }, ...botoes) : null);
 }
 
+const RISCO = { baixo: "ok", medio: "aviso", alto: "erro" };
+
+function cartaoAcao(a, recarregar) {
+  const adendo = el("textarea", { rows: 2, maxLength: 1000, placeholder: "Adendo opcional (fica registrado com a decisao)", "aria-label": `Adendo para ${a.id}` });
+  const decidir = async (aprovar, botao) => {
+    if (aprovar && a.risco === "alto" && !confirm(`Risco alto: ${a.descricao}\n\nConfirmar e executar agora?`)) return;
+    botao.disabled = true;
+    try {
+      const r = await api("POST", `/acoes-externas/${a.id}/decidir`, { aprovar, expected_version: a.versao, adendo: adendo.value.trim() });
+      toast(r.estado === "executada" ? `Executada: ${r.resultado}` : r.estado === "negada" ? "Acao negada" : `Nao executada: ${r.resultado}`,
+        r.estado === "falhou" ? "erro" : "ok");
+      await recarregar();
+    } catch (e) { toast(e.status === 409 ? "A acao mudou (decidida em outra aba ou expirada). Recarregue." : e.message, "erro"); botao.disabled = false; }
+  };
+  const aprovar = el("button", { type: "button", className: "primario", textContent: "Aprovar e executar" });
+  const negar = el("button", { type: "button", textContent: "Negar" });
+  aprovar.addEventListener("click", () => decidir(true, aprovar));
+  negar.addEventListener("click", () => decidir(false, negar));
+  return el("article", { className: "card acao-externa", "data-acao": a.id },
+    el("div", { className: "linha" }, el("h3", { textContent: a.descricao }), el("span", { className: "espaco" }), tag(`risco ${a.risco}`, RISCO[a.risco] || "")),
+    el("div", { className: "linha mudo" }, tag(a.integracao), el("span", { textContent: `pedido por ${a.solicitado_por} em ${dataCurta(a.criado_em)}` }),
+      el("span", { className: "so-avancado mono", textContent: a.id })),
+    el("details", { className: "so-avancado" }, el("summary", { textContent: "parametros que serao enviados" }), el("pre", { className: "saida", textContent: JSON.stringify(a.parametros, null, 1) })),
+    adendo, el("div", { className: "linha" }, aprovar, negar));
+}
+
+function secaoAcoes(pendentes, historico, recarregar) {
+  const itens = pendentes.length ? pendentes.map((a) => cartaoAcao(a, recarregar))
+    : [el("p", { className: "mudo", textContent: "Nenhuma acao externa aguardando voce. Quando um agente propuser comentar, mudar status ou criar um cartao, a pergunta aparece aqui e no quadro." })];
+  return [el("h2", { id: "acoes-externas", textContent: `Acoes aguardando voce (${pendentes.length})` }), el("div", { className: "grade" }, ...itens),
+    historico.length ? el("details", { className: "so-avancado" }, el("summary", { textContent: `Historico (${historico.length})` }),
+      el("ul", {}, ...historico.map((a) => el("li", {}, tag(a.estado, a.estado === "executada" ? "ok" : a.estado === "falhou" ? "erro" : ""), ` ${a.descricao} `,
+        el("span", { className: "mudo", textContent: a.resultado || a.adendo || "" }))))) : null].filter(Boolean);
+}
+
 export function montarLateral(lat) {
   limpar(lat);
   lat.append(el("h2", { textContent: "Integracoes" }),
-    el("p", { className: "aviso", textContent: "Conectores de rede nascem desligados. Voce liga, escolhe o que pode ser lido e guarda o token no .env. Tudo e somente leitura." }),
+    el("p", { className: "aviso", textContent: "Conectores de rede nascem desligados. Voce liga, escolhe o que pode ser lido e guarda o token no .env. Leitura por padrao; escrita so com 'permitir escrita' ligado e sua aprovacao, acao por acao." }),
     el("p", { className: "mudo", textContent: "Conectores locais nao usam rede nem credencial." }));
 }
 
@@ -97,10 +132,11 @@ export async function montar(raiz) {
   limpar(raiz);
   raiz.append(el("div", { className: "titulo-vista" }, el("h1", { textContent: "Integracoes e servicos" })));
   try {
-    const lista = await api("GET", "/integracoes");
+    const [lista, acoes] = await Promise.all([api("GET", "/integracoes"), api("GET", "/acoes-externas").catch(() => [])]);
     const recarregar = () => montar(raizAtual);
     const grupo = (titulo, itens) => [el("h2", { textContent: titulo }), el("div", { className: "grade" }, ...itens.map((c) => cartao(c, recarregar)))];
-    raiz.append(...grupo("De rede (desligadas ate voce configurar)", lista.filter((c) => c.modo === "rede" && c.estado === "implementado")),
+    raiz.append(...secaoAcoes(acoes.filter((a) => a.estado === "pendente"), acoes.filter((a) => a.estado !== "pendente").slice(0, 20), recarregar),
+      ...grupo("De rede (desligadas ate voce configurar)", lista.filter((c) => c.modo === "rede" && c.estado === "implementado")),
       ...grupo("Locais (gratuitas, sem credencial)", lista.filter((c) => c.modo === "local")),
       ...grupo("Planejadas (dependem da sua aprovacao)", lista.filter((c) => c.estado !== "implementado")));
   } catch (e) { raiz.append(el("p", { className: "aviso", textContent: e.message })); }

@@ -133,6 +133,12 @@ Detalhes em `docs/adr/0011-catalogo-de-ferramentas-quadro-e-propostas.md`.
 - **Configuracoes** (tela): categorias Aparencia, Eficiencia, Consumo, Privacidade, Seguranca e Manutencao, cada uma com abas Gerais/Avancadas;
   toda opcao traz explicacao, exemplos (baixo/medio/alto) e consequencias. API: `GET/PUT /api/v1/preferencias`. Detalhes no ADR-014.
 
+### Ferramentas da Forja dentro do Kiro (MCP) e escrita com aprovacao
+- Em Configuracoes > Eficiencia > Avancadas: `Dar ao Kiro as ferramentas da Forja (MCP)` (desligado por padrao) anexa `python -m forja.mcp` (stdio, sem porta) a cada sessao.
+- Retomadas reabrem a conversa do Kiro (`session/load`) quando ele anuncia o recurso; senao, usam um resumo.
+- Jira, GitHub e Trello aceitam escrita SO como proposta: ligue `permitir escrita` na integracao; cada acao aparece em Integracoes > Acoes aguardando voce.
+- Memoria > Avaliar a busca: rotule perguntas reais e veja recall/MRR/nDCG no seu corpus (rotulos ficam no seu perfil). Detalhes no ADR-015.
+
 ### Limites desta fase
 O agente e um **mock** deterministico: as evidencias que ele produz sao **simuladas** e nao comprovam
 funcionalidade real. Integracao Kiro (ACP), memoria/grafos, multiagentes e o painel pixel art chegam nas Fases 2+.

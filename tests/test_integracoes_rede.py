@@ -454,7 +454,7 @@ def test_salvar_exige_a_versao_atual_e_valida_a_configuracao(svc):
     with pytest.raises(ValidacaoDominio):
         svc.salvar("jira", {**CFG_JIRA, "campo_extra": 1}, 1)
     with pytest.raises(NaoEncontrado):
-        svc.salvar("gmail_api", {}, 0)
+        svc.salvar("webhook_saida", {}, 0)
 
 
 def test_executar_so_com_integracao_pronta_e_acao_valida(svc, env):
@@ -562,7 +562,7 @@ def test_api_registro_mostra_rede_desligada_e_nunca_segredos(cli, env):
     jira = por["jira"]
     assert jira["modo"] == "rede" and jira["configuravel"] and not jira["disponivel"] and jira["rede_estado"]["motivo"] == "desligada"
     assert {c["id"] for c in jira["rede_estado"]["campos"]} >= {"base_url", "variavel_token", "itens_permitidos"}
-    assert por["email_mbox"]["rede_estado"] is None and por["gmail_api"]["estado"] == "planejado"
+    assert por["email_mbox"]["rede_estado"] is None and por["webhook_saida"]["estado"] == "planejado"
     assert TOKEN not in json.dumps(por) and EMAIL not in json.dumps(por)
 
 
@@ -593,7 +593,7 @@ def test_api_recusa_token_no_campo_errado_e_trata_conflito_e_ids_invalidos(cli):
     assert put(cli, "jira", {**CFG_JIRA, "base_url": "http://inseguro.exemplo.com"}, 0).status_code == 422
     assert put(cli, "jira", CFG_JIRA, 0).status_code == 200
     assert put(cli, "jira", CFG_JIRA, 0).status_code == 409
-    assert put(cli, "gmail_api", {}, 0).status_code == 404
+    assert put(cli, "webhook_saida", {}, 0).status_code == 404
     assert cli.get("/api/v1/integracoes/..%2Fx").status_code in (404, 422)
     assert cli.put("/api/v1/integracoes/jira/configuracao", json={"configuracao": {}}).status_code == 422
 

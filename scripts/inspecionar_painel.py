@@ -175,6 +175,34 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     passo("solicitar revisao cria tarefa preparada sem executar", True)
     falhas += integracoes(pagina, base, saida, expect, passo)
 
+    pagina.goto(base + "#/integracoes")
+    pagina.reload()
+    pagina.wait_for_selector("#acoes-externas")
+    pendentes = pagina.locator(".acao-externa").count()
+    passo("acoes externas pendentes aparecem com a frase em linguagem natural",
+          pendentes == 0 or "Posso criar no Trello o cartao" in pagina.locator("#acoes-externas + .grade").inner_text())
+    passo("secao de acoes nao renderiza texto solto (null/undefined)", "null" not in pagina.locator("#principal").inner_text().split("\n"))
+    if pendentes:
+        pagina.screenshot(path=str(saida / "acoes-externas.png"))
+        cartao = pagina.locator(".acao-externa").first
+        cartao.locator("textarea").fill("nao agora, revisar o texto antes")
+        cartao.get_by_role("button", name="Negar").click()
+        expect(pagina.locator(".acao-externa")).to_have_count(pendentes - 1, timeout=6000)
+        passo("negar com adendo remove a acao da fila sem executar", True)
+
+    pagina.goto(base + "#/memoria")
+    pagina.reload()
+    pagina.get_by_role("button", name="Avaliar a busca").click()
+    pagina.get_by_label("Pergunta real").fill("como funciona a autenticacao bearer")
+    pagina.get_by_role("button", name="Ver resultados").click()
+    pagina.wait_for_selector("text=Marque TODOS", timeout=6000)
+    pagina.locator('input[aria-label^="Relevante: Autenticacao Bearer"]').check()
+    pagina.get_by_role("button", name="Salvar rotulos desta pergunta").click()
+    expect(pagina.get_by_text("Busca atual:")).to_be_visible(timeout=6000)
+    passo("rotular uma pergunta real mostra recall/MRR da busca", "MRR" in pagina.locator(".rotulagem").inner_text())
+    pagina.screenshot(path=str(saida / "rotulagem.png"))
+    pagina.get_by_role("button", name="Fechar").click()
+
     pagina.goto(base + "#/ferramentas")
     pagina.reload()
     pagina.locator(".lista-notas button", has_text="tokens.orcar").click()

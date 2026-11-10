@@ -239,9 +239,9 @@ def test_api_integracoes(cli: TestClient):
     r = cli.get("/api/v1/integracoes")
     assert r.status_code == 200
     por = {c["id"]: c for c in r.json()}
-    assert por["email_mbox"]["disponivel"] and not por["gmail_api"]["disponivel"]
+    assert por["email_mbox"]["disponivel"] and not por["gmail"]["disponivel"] and not por["webhook_saida"]["disponivel"]
     assert por["jira"]["modo"] == "rede" and not por["jira"]["disponivel"] and por["jira"]["rede_estado"]["motivo"] == "desligada"
     assert por["email_mbox"]["rede_estado"] is None
-    assert por["gmail_api"]["aprovacao"] and "mbox" in por["gmail_api"]["como_usar"]
+    assert por["webhook_saida"]["aprovacao"] and por["gmail"]["rede_estado"]["motivo"] == "desligada" and "mbox" in por["gmail"]["como_usar"]
     sem = TestClient(cli.app, headers={"Host": "testserver"})
     assert sem.get("/api/v1/integracoes").status_code in (401, 403)

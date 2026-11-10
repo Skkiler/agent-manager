@@ -1,7 +1,7 @@
 """Registro de integracoes: o que funciona hoje e o que depende de aprovacao.
 
 Locais (gratuitos, sem rede nem credencial) funcionam assim que a ferramenta e usada. Conectores de REDE (Jira, GitHub, agenda
-por URL) estao implementados, mas NASCEM DESLIGADOS: o operador os configura na tela, o segredo fica so no ambiente (.env) e a
+por URL, Trello, Notion, Google Agenda, Gmail) estao implementados, mas NASCEM DESLIGADOS: o operador os configura na tela, o segredo fica so no ambiente (.env) e a
 tela guarda apenas o NOME da variavel. Os planejados exigem aprovacao de escopo antes de existirem.
 """
 
@@ -60,23 +60,29 @@ REGISTRO: tuple[Conector, ...] = (
              "Desligada por padrao. Guarde o endereco secreto no .env e informe so o NOME da variavel e o servidor "
              "permitido (ex.: calendar.google.com).",
              ("quem tem o endereco le a agenda inteira", "fusos horarios ignorados"), modo="rede", configuravel=True),
-    Conector("gmail_api", "Gmail (API/IMAP, tempo real)", "email", "planejado", "gratuito na cota; exige OAuth ou senha de app",
-             True, True, (), "Prefira o .mbox acima enquanto isto nao for aprovado.",
-             ("OAuth guarda refresh token", "e-mail sai da maquina para o provedor de IA se for ao prompt"),
-             "Escopo somente leitura, onde guardar o token, rotulos permitidos, retencao."),
-    Conector("google_calendar", "Google Agenda (API)", "agenda", "planejado", "gratuito na cota", True, True, (),
-             "Use o endereco .ics secreto (acima) enquanto isto nao for aprovado.", ("OAuth", "dados de terceiros nos convites"),
-             "Escopo somente leitura e calendarios permitidos."),
-    Conector("notion_trello", "Notion / Trello (quadros)", "organizacao", "planejado", "gratuito em planos basicos", True, True, (),
-             "Use o Kanban da Forja, ou exporte CSV e use `dados.converter`.", ("tokens de API", "dados de empresa"),
-             "Qual servico, quais quadros e se dados de empresa podem ser lidos."),
+    Conector("trello", "Trello (quadros e cartoes)", "organizacao", "implementado", "gratuito em planos basicos", True, True,
+             ("trello.listar_cartoes", "trello.propor_cartao"),
+             "Desligada por padrao. Informe os quadros permitidos e os NOMES das variaveis da chave e do token. Criar cartao e uma "
+             "acao externa: so acontece depois da sua aprovacao, uma a uma.",
+             ("token do Trello da acesso a todos os seus quadros: a lista de quadros e a barreira", "dados podem ir ao prompt do provedor de IA"),
+             modo="rede", configuravel=True),
+    Conector("notion", "Notion (bases de dados, leitura)", "organizacao", "implementado", "gratuito em planos basicos", True, True,
+             ("notion.consultar_base",),
+             "Crie uma integracao interna no Notion (so leitura), compartilhe com ela apenas as bases desejadas e informe os IDs aqui.",
+             ("dados de empresa", "dados podem ir ao prompt do provedor de IA"), modo="rede", configuravel=True),
+    Conector("google_agenda", "Google Agenda (API, leitura)", "agenda", "implementado", "gratuito na cota", True, True,
+             ("google_agenda.eventos",),
+             "OAuth com escopo calendar.readonly: client ID, client secret e refresh token ficam no .env. So titulo e horario dos "
+             "calendarios permitidos; convidados e descricoes ficam de fora.",
+             ("refresh token da acesso continuo ate ser revogado", "dados de terceiros nos convites"), modo="rede", configuravel=True),
+    Conector("gmail", "Gmail (API, leitura)", "email", "implementado", "gratuito na cota", True, True, ("gmail.listar",),
+             "OAuth com escopo gmail.readonly. So cabecalhos e trecho dos rotulos permitidos, remetentes mascarados, no maximo 10 por consulta. "
+             "Para um instantaneo offline, o .mbox continua disponivel.",
+             ("e-mail e dado pessoal e nao confiavel (prompt injection)", "refresh token da acesso continuo ate ser revogado"),
+             modo="rede", configuravel=True),
     Conector("webhook_saida", "Avisos de saida (Slack/Teams/ntfy)", "notificacao", "planejado", "gratuito", True, True, (),
              "Hoje os avisos ficam no painel (SSE).", ("vazamento de conteudo em mensagens",),
              "Destino, conteudo permitido (somente ids/estados) e limite de frequencia."),
-    Conector("escrita_em_servicos", "Escrita em servicos externos (comentar, criar, transicionar)", "organizacao", "planejado",
-             "depende do servico", True, True, (), "Hoje todas as integracoes de rede sao SOMENTE LEITURA.",
-             ("alteracoes irreversiveis em sistemas de terceiros", "vazamento de dados para fora"),
-             "Cada acao de escrita passaria pelas aprovacoes por acao (uma pergunta em linguagem natural por acao)."),
 )
 
 

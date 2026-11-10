@@ -1,6 +1,6 @@
 # Estado da implementacao
 
-**Atualizado:** 2026-11-08. **Fases 0 a 3 testadas; Fase 4 (contexto economico, conversa, busca) implementada, itens 4.7-4.9 abertos.** Padrao de agente continua sendo o **mock SIMULADO**;
+**Atualizado:** 2026-11-10. **Fases 0 a 3 testadas; Fase 4 implementada, incluindo MCP (4.7c), session/load (2.9), escrita com aprovacao (4.20b) e rotulagem (4.8). Abertos: 4.9/3.12 (dependem da sua rotulagem), 4.21, 4.22, 0.6, 2.8.** Padrao de agente continua sendo o **mock SIMULADO**;
 o Kiro real so e usado com `APP_KIRO_ACP_ENABLED=true` (validado em sessao autenticada na etapa anterior).
 
 ## Regra de publicacao (repositorio publico)
@@ -143,6 +143,24 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - **Auditoria do Git remoto (somente leitura):** 11 commits sem banco, `.env`, tokens reais, logs ou caminhos pessoais; unico dado pessoal: e-mail de autor/committer. **Nao foi reescrito** (exige force-push e sua decisao).
 - **Migracao dos seus dados atuais (`./data`) NAO foi executada**: aguarda sua decisao. Enquanto isso o modo legado segue funcionando.
 - **Limites:** o servidor so recusa dados dentro do repo quando o Git nao os ignora; backup do perfil e responsabilidade sua; agentes reais ainda nao publicam respostas proprias no quadro (depende do MCP, 4.7c); `ferramentas adicionais` do perfil tem a pasta, mas nao ha carregador.
+## MCP, sessao reaberta, escrita com aprovacao e rotulagem (itens 4.7c, 2.9, 4.20b, 4.8) — resultados reais
+- **Novos:** `forja/mcp/` (servidor stdio), `integracoes/produtividade.py` (Trello, Notion, Google Agenda, Gmail), `orquestracao/acoes_externas.py`
+  + migracao `0008` (tabela `acao_externa`), `memoria/rotulagem.py`, `painel/.../views/rotulagem.js`, secao "Acoes aguardando voce" em Integracoes,
+  preferencias `kiro_mcp_ativo` (padrao off) e `kiro_reusar_sessao` (padrao on). ADR-015.
+- **Verificado:** 834 testes passando (suite completa), Ruff limpo, benchmark inalterado (GLOBAL 0.94/0.87/0.89); testes novos: `test_mcp.py` (24), `test_acp_sessao.py` (11), `test_integracoes_produtividade.py` (37),
+  `test_rotulagem.py` (4). Mutacao em 32 defesas novas: 28 detectadas de primeira, 3 sobreviveram (validacoes do MCP mascaradas porque a API tambem recusava) e foram mortas com testes que provam que nenhuma requisicao sai; 1 equivalente (revalidacao redundante em `Jira.comentar`). Navegador real: 35 passos, 0 erros de console/CSP; achado e corrigido um `null` renderizado na tela de Integracoes.
+- **Kiro real (kiro-cli 3.1.0, conta empresarial, MCP liberado na politica):** `session/load` reabriu uma sessao em OUTRO processo e o agente lembrou um codigo combinado antes.
+  O MCP conectou e listou as 5 ferramentas (log `mcp.connect.ok`/`mcp.listTools.ok`); o Kiro as carrega sob demanda (`tool_load`). **Bug real achado so no Kiro real:**
+  o prompt saia antes do MCP conectar (~2-4 s apos `session/new`) e o agente dizia que a ferramenta nao existia; corrigido esperando o sinal de prontidao (com teto).
+  Medicao (mesma tarefa, "mapear o repositorio"): sem MCP 0,323/0,415/0,414 creditos (media 0,384); com MCP e uso pedido explicitamente 0,280 (1 chamada a `repo.mapa`);
+  com MCP sem pedir, o agente NAO usou as ferramentas da Forja (0,299-0,412). Conclusao honesta: ha economia quando a ferramenta e usada, mas o agente nao a escolhe
+  sozinho; MCP segue desligado por padrao. Amostra pequena (n=1 a 3).
+- **Nao validado com servico real:** Trello, Notion, Google Agenda, Gmail e as escritas no Jira/GitHub (transporte simulado e dados ficticios). Precisam das suas credenciais.
+- **4.8:** a ferramenta existe (Memoria > "Avaliar a busca"); a medicao sobre o seu corpus depende de voce rotular perguntas reais (>= 15 para decidir algo).
+- **Limpeza do repositorio:** removidos caches (`__pycache__`, `.pytest_cache`, `.ruff_cache`, `.coverage`) e docs excedentes (`docs/REFERENCIAS_VISUAIS.md`,
+  `docs/arquitetura/ferramentas-planejadas.md`); `AGENTS.md`, `ORIENTACAO_MESTRA_ECOSSISTEMA_KIRO.md` e `PROMPT_INICIAL_KIRO.md` foram **retirados de todo o historico**
+  (git filter-repo + force-push com lease; backup em bundle feito antes, fora do repositorio) e entraram no `.gitignore`; continuam so locais.
+
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -161,7 +179,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - Scanner dedicado de segredos (gitleaks) e CI continuam ausentes. Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 757 passed.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 834 passed.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
-3. Proxima tarefa liberada: itens 4.7-4.9 (ferramentas N0 medidas, precisao em corpus real, embeddings so se ganharem). Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
+3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

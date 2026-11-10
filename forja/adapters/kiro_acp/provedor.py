@@ -98,10 +98,10 @@ PROTOCOLO_CURTO = (
 )
 
 
-def montar_prompt(tarefa: dict[str, Any]) -> str:
+def montar_prompt(tarefa: dict[str, Any], sessao_carregada: bool = False) -> str:
     """Prompt inicial: protocolo curto + tarefa + (se houver acerto relevante) contexto citavel. Nada alem disso."""
     if tarefa.get("retomada"):
-        return montar_prompt_retomada(tarefa)
+        return montar_prompt_retomada(tarefa, sessao_carregada)
     criterios = "\n".join(f"- {c}" for c in tarefa.get("criterios_aceite", []))
     texto = (
         f"{PROTOCOLO}\n\nTarefa: {tarefa['titulo']}\n"
@@ -118,11 +118,14 @@ def montar_prompt(tarefa: dict[str, Any]) -> str:
     return texto
 
 
-def montar_prompt_retomada(tarefa: dict[str, Any]) -> str:
+def montar_prompt_retomada(tarefa: dict[str, Any], sessao_carregada: bool = False) -> str:
     """Retomada apos o desenvolvedor responder: so o essencial (entendimento curto, decisoes propostas, respostas).
     NAO reenvia a resposta anterior inteira nem contexto que nao foi usado: a sessao ACP e nova, mas o custo e minimo."""
     r = tarefa["retomada"]
     partes = [PROTOCOLO_CURTO, f"\nRetomada da conversa sobre a tarefa: {tarefa['titulo']}"]
+    if sessao_carregada:  # o agente ja tem o historico: so a resposta nova e o fio da conversa (economia real)
+        partes = [f"Retomada da conversa sobre a tarefa: {tarefa['titulo']}"]
+        r = {**r, "entendimento": "", "decisoes": []}
     if r.get("entendimento"):
         partes.append(f"Seu entendimento anterior: {r['entendimento']}")
     if r.get("decisoes"):
@@ -142,6 +145,13 @@ def montar_prompt_retomada(tarefa: dict[str, Any]) -> str:
     if tarefa.get("contexto_texto"):
         partes.append(tarefa["contexto_texto"])
     return "\n".join(partes) + "\n"
+
+
+# Dica curta (o Kiro carrega ferramentas MCP sob demanda): sem ela o agente costuma nao procurar as ferramentas da Forja.
+DICA_MCP = (
+    "\nFerramentas da Forja (MCP 'forja', carregue com tool_load): forja::forja_listar_ferramentas, forja::forja_executar_ferramenta, "
+    "forja::forja_buscar_memoria, forja::forja_quadro_publicar, forja::forja_quadro_ler. Prefira-as a ler arquivos inteiros.\n"
+)
 
 
 def montar_acompanhamento(adendos: list[str]) -> str:
@@ -166,7 +176,14 @@ class ProvedorKiroAcp:
         janela_agrupamento: float = 0.8,
         modelo_de: Callable[[str], str] | None = None,
         esforco_de: Callable[[str], str] | None = None,
+        reusar_sessao: bool = True,
+        mcp_servers: list[dict[str, Any]] | None = None,
+        espera_mcp_s: float = 15.0,
     ) -> None:
+        self.espera_mcp_s = espera_mcp_s
+        self.mcp_servers = mcp_servers or []  # servidores MCP (stdio) que o Kiro pode iniciar; so valem com usar_mcp
+        self.usar_mcp = False  # opt-in do usuario (menu de configuracoes); desligado por padrao
+        self.reusar_sessao = reusar_sessao  # session/load na retomada (so se o agente anunciar loadSession)
         self.modelo_de = modelo_de  # parte do sistema -> id de modelo (vazio = padrao); ligado pela configuracao
         self.esforco_de = esforco_de  # parte do sistema -> --effort (vazio = padrao)
         self.janela_agrupamento = janela_agrupamento
@@ -206,9 +223,18 @@ class ProvedorKiroAcp:
 
         partes: list[str] = []
         n_tools = 0
+        reproduzindo = False
+        tokens_ferramentas: list[int] = []  # 'breakdown' do Kiro: cresce quando o MCP conecta e registra as ferramentas
 
         def on_update(_sid: str, upd: dict[str, Any]) -> None:
             nonlocal n_tools
+            if upd.get("sessionUpdate") == "session_info_update":
+                quebra = ((upd.get("_meta") or {}).get("kiro") or {}).get("breakdown") or {}
+                n = (quebra.get("tools") or {}).get("tokens")
+                if isinstance(n, int):
+                    tokens_ferramentas.append(n)
+            if reproduzindo:
+                return
             tipo = upd.get("sessionUpdate")
             if tipo == "agent_message_chunk":
                 c = upd.get("content") or {}
@@ -235,9 +261,26 @@ class ProvedorKiroAcp:
             cliente.inicializar(self.timeout_handshake)
             ctl.evento(
                 "kiro.conectado",
-                {"agente": cliente.agent_info.get("name"), "versao": cliente.agent_info.get("version")},
+                {"agente": cliente.agent_info.get("name"), "versao": cliente.agent_info.get("version"), "mcp": self.usar_mcp and bool(self.mcp_servers)},
             )
-            sid = cliente.nova_sessao(str(self.workspace.resolve()), self.timeout_handshake)
+            mcps = list(self.mcp_servers) if self.usar_mcp else []
+            sid, sessao_carregada = None, False
+            anterior = (checkpoint or {}).get("session_id")
+            if self.reusar_sessao and tarefa.get("retomada") and isinstance(anterior, str) and anterior and cliente.suporta_carregar_sessao:
+                reproduzindo = True  # o agente reenvia o historico como notificacoes: nao podem virar resposta nova
+                try:
+                    cliente.carregar_sessao(anterior, str(self.workspace.resolve()), self.timeout_handshake, mcps)
+                    sid, sessao_carregada = anterior, True
+                    ctl.evento("kiro.sessao_carregada", {"reaproveitada": True})
+                except AcpErro as e:  # sessao expirada/inexistente: cai para sessao nova com o prompt completo (falha segura)
+                    ctl.evento("kiro.sessao_carregada", {"reaproveitada": False, "motivo": sanitizar_texto(e.mensagem)[:120]})
+                finally:
+                    reproduzindo = False
+                    partes.clear()
+            if sid is None:
+                sid = cliente.nova_sessao(str(self.workspace.resolve()), self.timeout_handshake, mcps)
+            if mcps:
+                ctl.evento("kiro.mcp", {"pronto": self._aguardar_mcp(tokens_ferramentas, ctl)})
             modelo, esforco = self.configuracao_da_execucao(tarefa)
             if modelo or esforco:
                 try:
@@ -245,8 +288,8 @@ class ProvedorKiroAcp:
                 except ConfiguracaoIndisponivel as e:  # falha fechada: nao roda num modelo diferente do escolhido
                     return self._res("bloqueada", "Modelo configurado indisponivel nesta conta.", t0,
                                      pendencias=[f"modelo_indisponivel: {e}", "Ajuste a configuracao de modelos no painel."])
-            ctl.registrar_checkpoint({"sessao": "criada"})
-            prompt = montar_prompt(tarefa)
+            ctl.registrar_checkpoint({"sessao": "carregada" if sessao_carregada else "criada", "session_id": sid})
+            prompt = montar_prompt(tarefa, sessao_carregada=sessao_carregada) + (DICA_MCP if mcps else "")
             tokens_in = estimar_tokens(prompt)
             ctl.evento(
                 "kiro.prompt_montado",
@@ -254,6 +297,7 @@ class ProvedorKiroAcp:
                     "tokens_estimados": tokens_in,
                     "com_contexto": bool(tarefa.get("contexto_texto")),
                     "retomada": bool(tarefa.get("retomada")),
+                    "sessao_carregada": sessao_carregada,
                 },
             )
             fut = cliente.requisitar("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": prompt}]})
@@ -299,6 +343,16 @@ class ProvedorKiroAcp:
             return self._res("falhou", f"Erro ACP: {e.mensagem}", t0)
         finally:
             cliente.encerrar()
+
+    def _aguardar_mcp(self, tokens: list[int], ctl: ControleExecucao) -> bool:
+        """O Kiro conecta o MCP DEPOIS de responder session/new (~2-4 s). Prompt antes disso = agente sem as ferramentas.
+        Sinal observado no kiro-cli 3.1.0: o custo de ferramentas informado em reakdown aumenta. Sem sinal, segue apos o teto."""
+        limite = time.monotonic() + self.espera_mcp_s
+        while time.monotonic() < limite and not (ctl.cancelado() or ctl.pausado()):
+            if len(tokens) >= 2 and max(tokens[1:]) > tokens[0]:
+                return True
+            time.sleep(0.05)
+        return False
 
     def _aguardar(self, cliente: ClienteAcp, fut, sid: str, ctl: ControleExecucao) -> str:
         """Espera o prompt sem bloquear cancelamento/pausa. Retorna stopReason ou 'interrompido'."""

@@ -26,7 +26,9 @@ from forja.dominio.erros import ErroDominio
 from forja.ferramentas.catalogo import Catalogo
 from forja.integracoes import ambiente
 from forja.memoria.modelo import Principal
+from forja.memoria.rotulagem import RotulagemServico
 from forja.observabilidade.logs import configurar_logging, correlation_id_var
+from forja.orquestracao.acoes_externas import AcoesExternasServico
 from forja.orquestracao.configuracao_servico import ConfiguracaoServico
 from forja.orquestracao.grafo_servico import GrafoServico
 from forja.orquestracao.integracao_servico import IntegracaoServico
@@ -54,12 +56,23 @@ log = logging.getLogger("forja.app")
 ESTATICO = __import__("pathlib").Path(__file__).resolve().parent.parent / "painel" / "estatico"
 
 
+def _mcp_forja(cfg: Configuracoes) -> list[dict]:
+    """Descricao (stdio) do MCP da Forja entregue ao Kiro. Leva so enderecos e nomes de perfil: o token e lido pelo proprio MCP."""
+    import sys
+
+    env = {"FORJA_MCP_URL": f"http://127.0.0.1:{cfg.app_port}"}
+    for nome, valor in (("APP_USER_HOME", cfg.app_user_home), ("APP_PROFILE", cfg.app_profile), ("APP_DATA_DIR", cfg.app_data_dir)):
+        if valor:
+            env[nome] = str(valor)
+    return [{"name": "forja", "command": sys.executable, "args": ["-m", "forja.mcp"], "env": [{"name": k, "value": v} for k, v in env.items()]}]
+
+
 def criar_provedor_kiro(cfg: Configuracoes) -> ProvedorKiroAcp:
     cli = resolver_cli(cfg.app_kiro_cli_path)
     comando = montar_comando(cli, cfg.app_kiro_agent, cfg.app_kiro_model) if cli else None
     if comando is None:
         log.warning("Kiro CLI nao encontrado; execucoes ficarao bloqueadas (kiro_cli_ausente)")
-    return ProvedorKiroAcp(comando, cfg.kiro_workspace_dir, float(cfg.app_kiro_prompt_timeout_seconds))
+    return ProvedorKiroAcp(comando, cfg.kiro_workspace_dir, float(cfg.app_kiro_prompt_timeout_seconds), mcp_servers=_mcp_forja(cfg))
 
 
 def criar_servico(cfg: Configuracoes, provedor: ProvedorAgente | None = None) -> Servico:
@@ -85,6 +98,10 @@ def _criar_preferencias(cfg: Configuracoes, servico: Servico, app: FastAPI) -> P
         if valor != POR_ID[pref].padrao:
             sementes[pref] = valor
     prefs = PreferenciasServico(servico.repo, sementes=sementes)
+    prov = servico.provedor
+    if isinstance(prov, ProvedorKiroAcp):
+        prefs.registrar_aplicador("kiro_mcp_ativo", lambda v: setattr(prov, "usar_mcp", bool(v)))
+        prefs.registrar_aplicador("kiro_reusar_sessao", lambda v: setattr(prov, "reusar_sessao", bool(v)))
     prefs.registrar_aplicador("contexto_ativo", lambda v: setattr(servico, "contexto_ativo", bool(v)))
     prefs.registrar_aplicador("aprovacao_timeout_segundos", lambda v: setattr(servico, "espera_aprovacao_s", float(v)))
     prefs.registrar_aplicador("contexto_orcamento_tokens", lambda v: setattr(servico.construtor_contexto, "orcamento", int(v))
@@ -100,6 +117,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.servico.recuperar()
+        app.state.acoes_externas.recuperar()
         log.info("servidor pronto", extra={"evento": "servidor.pronto"})
         try:
             yield
@@ -126,10 +144,12 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
         provedor_servico.construtor_contexto = ConstrutorContexto(
             app.state.memoria, Principal("contexto", frozenset(ns)), ns, orcamento=cfg.app_context_budget_tokens)
     app.state.propostas = PropostasMemoria(provedor_servico, app.state.memoria)
+    app.state.rotulagem = RotulagemServico(provedor_servico.repo, app.state.memoria)
     app.state.integracoes = IntegracaoServico(provedor_servico.repo)
     app.state.prefs = _criar_preferencias(cfg, provedor_servico, app)
-    app.state.ferramentas = Catalogo((), app.state.integracoes, politica=app.state.prefs.politica_pastas)
     app.state.quadro = provedor_servico.quadro = QuadroServico(provedor_servico.repo)  # orquestrador avisa o quadro
+    app.state.acoes_externas = AcoesExternasServico(provedor_servico.repo, app.state.integracoes, app.state.quadro)
+    app.state.ferramentas = Catalogo((), app.state.integracoes, app.state.acoes_externas, politica=app.state.prefs.politica_pastas)
     app.state.kanban = VisaoKanban(provedor_servico.repo)
     app.state.grafo = GrafoServico(provedor_servico.repo)
     app.state.configuracao = ConfiguracaoServico(provedor_servico.repo, modelo_padrao=cfg.app_kiro_model)

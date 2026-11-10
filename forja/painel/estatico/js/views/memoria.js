@@ -4,6 +4,7 @@ import { agrupar, ouvir } from "../estado.js";
 import { desenhar } from "../grafo.js";
 import { renderizar } from "../markdown.js";
 import { dialogo, el, limpar, tag, toast } from "../ui.js";
+import { abrirRotulagem } from "./rotulagem.js";
 
 const NAMESPACES = ["publico", "pessoal"];
 const sel = { namespaces: new Set(["publico"]), q: "", inativas: false, vizinhos: 1, nota: null, editando: false };
@@ -121,6 +122,8 @@ export function montarLateral(lat) {
     el("label", { className: "campo so-avancado" }, el("span", { textContent: "Saltos de vizinhanca na busca" }), el("select", { onchange: (ev) => { sel.vizinhos = Number(ev.target.value); carregarGrafo(); } },
       ...[0, 1, 2].map((n) => el("option", { value: n, textContent: String(n), selected: n === sel.vizinhos })))),
     el("label", { className: "so-avancado" }, el("input", { type: "checkbox", checked: sel.inativas, onchange: (ev) => { sel.inativas = ev.target.checked; carregarGrafo(); } }), " incluir revogadas/substituidas"),
+    el("button", { type: "button", textContent: "Avaliar a busca", title: "Rotule perguntas reais e meca a precisao da busca no seu corpus",
+      onclick: () => abrirRotulagem(sel.namespaces).catch((e) => toast(e.message, "erro")) }),
     el("h2", { textContent: "Lista de notas" }), lista);
 }
 

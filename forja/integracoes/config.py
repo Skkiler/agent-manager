@@ -20,6 +20,8 @@ class ConfigIntegracao(BaseModel):
     variavel_usuario: Texto = ""
     variavel_token: Texto = ""
     variavel_url: Texto = ""
+    variavel_segredo: Texto = ""  # 2o segredo (ex.: client secret do OAuth do Google)
+    permitir_escrita: bool = False  # acoes de escrita (comentar, criar...) so com isto ligado E aprovacao por acao
     host_permitido: Texto = ""
     itens_permitidos: list[Annotated[str, StringConstraints(min_length=1, max_length=100)]] = Field(default_factory=list, max_length=50)
     permitir_rede_privada: bool = False
@@ -30,7 +32,7 @@ class ConfigIntegracao(BaseModel):
     def _sem_segredo_nem_variavel_arbitraria(self) -> ConfigIntegracao:
         from forja.ferramentas.segredos import suspeita  # import tardio: evita ciclo catalogo <-> integracoes
 
-        for nome in ("variavel_usuario", "variavel_token", "variavel_url"):
+        for nome in ("variavel_usuario", "variavel_token", "variavel_url", "variavel_segredo"):
             valor = getattr(self, nome)
             if valor and not ambiente.nome_valido(valor):
                 raise ValueError(f"{nome}: informe o NOME de uma variavel de ambiente no formato {ambiente.PREFIXO}NOME "

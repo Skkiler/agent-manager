@@ -20,6 +20,7 @@ from forja.memoria.contratos import (
     VincularEvidenciaIn,
 )
 from forja.memoria.modelo import Principal, TipoMemoria
+from forja.memoria.rotulagem import RotulagemServico
 from forja.orquestracao.memoria_servico import ServicoMemoria
 from forja.servidor.rotas import ATOR, ID, autenticar
 
@@ -131,3 +132,54 @@ def criar_aresta(d: ArestaIn, s: Mem, p: Pr) -> dict[str, Any]:
 def vizinhos(id_: ID, s: Mem, p: Pr, saltos: Annotated[int, Query(ge=1, le=2)] = 1,
              tipo: Annotated[list[str] | None, Query(max_length=15)] = None) -> dict[str, Any]:
     return s.vizinhos(p, id_, saltos, tipo)
+
+
+# ------------------------------------------------------------------ 4.8: rotulagem da busca sobre o corpus real
+from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
+
+NomeNs = Annotated[str, Field(min_length=1, max_length=80)]
+
+
+class CandidatosIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    consulta: Annotated[str, Field(min_length=2, max_length=300)]
+    namespaces: list[NomeNs] = Field(default_factory=list, max_length=10)
+
+
+class RotuloIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=0)
+    consulta: Annotated[str, Field(min_length=2, max_length=300)]
+    namespaces: list[NomeNs] = Field(default_factory=list, max_length=10)
+    relevantes: list[Annotated[str, Field(max_length=64)]] = Field(default_factory=list, max_length=50)
+    vistos: list[Annotated[str, Field(max_length=64)]] = Field(min_length=1, max_length=60)
+    categoria: Annotated[str, Field(max_length=40)] = "geral"
+
+
+def _rotulagem(request: Request) -> RotulagemServico:
+    return request.app.state.rotulagem
+
+
+Rot = Annotated[RotulagemServico, Depends(_rotulagem)]
+
+
+@rm.get("/busca/rotulagem")
+def rotulagem(r: Rot, p: Pr, k: Annotated[int, Query(ge=1, le=10)] = 5) -> dict[str, Any]:
+    return r.estado(p, k)
+
+
+@rm.post("/busca/rotulagem/candidatos")
+def candidatos(d: CandidatosIn, r: Rot, p: Pr) -> dict[str, Any]:
+    return r.candidatos(p, d.consulta, d.namespaces or None)
+
+
+@rm.post("/busca/rotulagem/casos", status_code=201)
+def salvar_rotulo(d: RotuloIn, r: Rot, p: Pr) -> dict[str, Any]:
+    ns = r._namespaces(p, d.namespaces or None)
+    return r.salvar(d.consulta, d.relevantes, d.vistos, ns, d.categoria, d.expected_version)
+
+
+@rm.delete("/busca/rotulagem/casos/{id_}", status_code=204)
+def remover_rotulo(id_: Annotated[str, Field(max_length=64)], r: Rot, expected_version: Annotated[int, Query(ge=0)]) -> Response:
+    r.remover(id_, expected_version)
+    return Response(status_code=204)

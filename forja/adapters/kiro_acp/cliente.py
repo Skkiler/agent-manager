@@ -329,13 +329,26 @@ class ClienteAcp:
         ]
         return res
 
-    def nova_sessao(self, cwd: str, timeout: float = 30.0) -> str:
-        res = self.chamar("session/new", {"cwd": cwd, "mcpServers": []}, timeout)
+    def nova_sessao(self, cwd: str, timeout: float = 30.0, mcp_servers: list[dict[str, Any]] | None = None) -> str:
+        res = self.chamar("session/new", {"cwd": cwd, "mcpServers": mcp_servers or []}, timeout)
         sid = res.get("sessionId")
         if not isinstance(sid, str) or not sid:
             raise AcpErro("Resposta de session/new sem sessionId.")
         self.opcoes_sessao = [o for o in res.get("configOptions") or [] if isinstance(o, dict)]
         return sid
+
+    @property
+    def suporta_carregar_sessao(self) -> bool:
+        return self.capacidades.get("loadSession") is True
+
+    def carregar_sessao(self, session_id: str, cwd: str, timeout: float = 30.0, mcp_servers: list[dict[str, Any]] | None = None) -> str:
+        """session/load: reabre uma sessao anterior (o agente reenvia o historico como notificacoes ANTES da resposta).
+        So deve ser chamado se o agente anunciou loadSession; o chamador decide o que fazer com as notificacoes de replay."""
+        if not self.suporta_carregar_sessao:
+            raise AcpMetodoNaoSuportado("O agente nao anunciou loadSession.")
+        res = self.chamar("session/load", {"sessionId": session_id, "cwd": cwd, "mcpServers": mcp_servers or []}, timeout)
+        self.opcoes_sessao = [o for o in res.get("configOptions") or [] if isinstance(o, dict)]
+        return session_id
 
     def definir_opcao(self, session_id: str, config_id: str, valor: str, timeout: float = 20.0) -> list[dict[str, Any]]:
         """`session/set_config_option`: devolve a lista de opcoes ATUALIZADA (algumas so existem apos outra escolha)."""

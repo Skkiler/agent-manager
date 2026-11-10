@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, Validation
 from forja.dominio.erros import ErroDominio, NaoEncontrado, ValidacaoDominio
 from forja.ferramentas.agenda import ler_agenda
 from forja.ferramentas.amostra import amostra_arquivo
-from forja.ferramentas.contrato import ResultadoFerramenta
+from forja.ferramentas.contrato import ResultadoFerramenta, montar
 from forja.ferramentas.conversor import converter
 from forja.ferramentas.diff import resumir_diff
 from forja.ferramentas.email_mbox import ler_mbox
@@ -113,6 +113,54 @@ class EntAgendaUrl(_Base):
     limite: int | None = Field(None, ge=1, le=50)
 
 
+Lim = Annotated[int | None, Field(None, ge=1, le=50)]
+TextoEscrita = Annotated[str, StringConstraints(min_length=1, max_length=4000)]
+
+
+class EntTrelloCartoes(_Base):
+    quadro: Annotated[str, StringConstraints(min_length=24, max_length=24)]
+    limite: Lim = None
+
+
+class EntNotion(_Base):
+    base: Annotated[str, StringConstraints(min_length=32, max_length=36)]
+    limite: Lim = None
+
+
+class EntGoogleAgenda(_Base):
+    calendario: Annotated[str, StringConstraints(min_length=1, max_length=250)] = "primary"
+    de: str = ""
+    ate: str = ""
+    limite: Lim = None
+
+
+class EntGmail(_Base):
+    rotulo: Annotated[str, StringConstraints(min_length=1, max_length=60)] = "INBOX"
+    limite: int | None = Field(None, ge=1, le=10)
+
+
+class EntJiraComentar(_Base):
+    chave: Annotated[str, StringConstraints(min_length=3, max_length=40)]
+    texto: TextoEscrita
+
+
+class EntJiraTransicao(_Base):
+    chave: Annotated[str, StringConstraints(min_length=3, max_length=40)]
+    para: Annotated[str, StringConstraints(min_length=1, max_length=60)]
+
+
+class EntGhComentar(_Base):
+    repo: Annotated[str, StringConstraints(min_length=3, max_length=201)]
+    numero: int = Field(ge=1, le=10_000_000)
+    texto: TextoEscrita
+
+
+class EntTrelloCartao(_Base):
+    lista: Annotated[str, StringConstraints(min_length=24, max_length=24)]
+    nome: Annotated[str, StringConstraints(min_length=1, max_length=300)]
+    descricao: Annotated[str, StringConstraints(max_length=4000)] = ""
+
+
 class EntLogs(_Base):
     texto: Texto
     limite: int = Field(10, ge=1, le=30)
@@ -146,6 +194,17 @@ class EntOrcar(_Base):
 class Contexto:
     raizes: tuple[Path, ...] = ()
     integracoes: Any = None  # IntegracaoServico (opcional): ferramentas de rede so funcionam se a integracao estiver pronta
+    acoes: Any = None  # AcoesExternasServico (opcional): escrita so como PROPOSTA que o operador aprova
+
+    def propor(self, id_: str, acao: str, params: dict[str, Any]) -> ResultadoFerramenta:
+        """Nunca escreve: cria uma acao externa pendente e devolve a frase que o operador vai aprovar ou negar."""
+        if self.acoes is None:
+            raise ValidacaoDominio("acoes externas desligadas neste servidor")
+        a, criada = self.acoes.propor(id_, acao, params, solicitado_por="ferramenta")
+        resumo = (f"Aguardando aprovacao do operador ({a['id']}): {a['descricao']}" if a["estado"] == "pendente"
+                  else f"Proposta {a['id']} ja existe e esta '{a['estado']}'")
+        return montar(f"{id_}.propor_{acao}", "", resumo, {"acao_externa": a["id"], "estado": a["estado"], "nova": criada}, False,
+                      ["nada foi enviado ao servico: a escrita so acontece se o operador aprovar"])
 
     def integracao(self, id_: str, acao: str, params: dict[str, Any]) -> ResultadoFerramenta:
         if self.integracoes is None:
@@ -236,6 +295,22 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
                lambda e, c: c.integracao("github", "obter_issue", e.model_dump()), integracao="github"),
     Ferramenta("agenda.ler_ics_url", "Eventos da agenda por endereco .ics secreto (guardado no ambiente).", EntAgendaUrl,
                lambda e, c: c.integracao("agenda_ics_url", "eventos", e.model_dump(exclude_none=True)), integracao="agenda_ics_url"),
+    Ferramenta("trello.listar_cartoes", "Cartoes abertos de um quadro permitido do Trello.", EntTrelloCartoes,
+               lambda e, c: c.integracao("trello", "listar_cartoes", e.model_dump(exclude_none=True)), integracao="trello"),
+    Ferramenta("notion.consultar_base", "Paginas de uma base permitida do Notion (titulos e datas).", EntNotion,
+               lambda e, c: c.integracao("notion", "consultar_base", e.model_dump(exclude_none=True)), integracao="notion"),
+    Ferramenta("google_agenda.eventos", "Eventos de um calendario permitido do Google Agenda (titulo e horario).", EntGoogleAgenda,
+               lambda e, c: c.integracao("google_agenda", "eventos", e.model_dump(exclude_none=True)), integracao="google_agenda"),
+    Ferramenta("gmail.listar", "Ultimas mensagens de um rotulo permitido do Gmail (cabecalhos e trecho, enderecos mascarados).", EntGmail,
+               lambda e, c: c.integracao("gmail", "listar", e.model_dump(exclude_none=True)), integracao="gmail"),
+    Ferramenta("jira.propor_comentario", "PROPOE um comentario numa issue do Jira; so e enviado se o operador aprovar.", EntJiraComentar,
+               lambda e, c: c.propor("jira", "comentar", e.model_dump()), risco="escrita_aprovada", integracao="jira"),
+    Ferramenta("jira.propor_transicao", "PROPOE mudar o status de uma issue do Jira; so acontece se o operador aprovar.", EntJiraTransicao,
+               lambda e, c: c.propor("jira", "transicionar", e.model_dump()), risco="escrita_aprovada", integracao="jira"),
+    Ferramenta("github.propor_comentario", "PROPOE um comentario numa issue/PR do GitHub; so e enviado se o operador aprovar.", EntGhComentar,
+               lambda e, c: c.propor("github", "comentar", e.model_dump()), risco="escrita_aprovada", integracao="github"),
+    Ferramenta("trello.propor_cartao", "PROPOE criar um cartao no Trello; so e criado se o operador aprovar.", EntTrelloCartao,
+               lambda e, c: c.propor("trello", "criar_cartao", e.model_dump()), risco="escrita_aprovada", integracao="trello"),
     Ferramenta("testes.resumir_saida", "Veredito e causa das falhas a partir da saida do pytest.", EntPytest,
                lambda e, c: resumir_pytest(e.texto, e.limite)),
     Ferramenta("git.diff_analisar", "Arquivos, areas e riscos de um diff unificado.", EntTexto,
@@ -253,6 +328,7 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
 class Catalogo:
     raizes: tuple[Path, ...] = ()
     integracoes: Any = None
+    acoes: Any = None  # AcoesExternasServico: as ferramentas *.propor_* so criam propostas
     politica: Callable[[], PoliticaPastas] | None = None  # preferencias do usuario (ativa/permitidas/proibidas); sem ela, usa `raizes`
     ferramentas: dict[str, Ferramenta] = field(default_factory=lambda: {f.id: f for f in FERRAMENTAS})
     _uso: dict[str, _Uso] = field(default_factory=dict)
@@ -276,7 +352,11 @@ class Catalogo:
 
     def _disponivel(self, f: Ferramenta) -> bool:
         if f.integracao:
-            return self.integracoes is not None and self.integracoes.pronta(f.integracao)
+            if self.integracoes is None or not self.integracoes.pronta(f.integracao):
+                return False
+            if f.risco == "escrita_aprovada":  # propostas so aparecem com a escrita ligada E o servico de acoes presente
+                return self.acoes is not None and bool(self.integracoes.estado(f.integracao)["configuracao"].get("permitir_escrita"))
+            return True
         pol = self._politica()
         return (pol.ativa and bool(pol.permitidas)) or not f.usa_arquivos
 
@@ -313,7 +393,7 @@ class Catalogo:
         pol = self._politica()
         if f.id == "email.ler_mbox" and pol.mascarar_emails:  # privacidade: o agente nao consegue pedir enderecos completos
             dados = dados.model_copy(update={"mascarar_enderecos": True})
-        ctx = Contexto(pol.permitidas if pol.ativa else (), self.integracoes)
+        ctx = Contexto(pol.permitidas if pol.ativa else (), self.integracoes, self.acoes)
         usada, de_fallback = f, None
         while True:
             ini = time.perf_counter()

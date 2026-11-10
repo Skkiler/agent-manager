@@ -32,6 +32,23 @@ _INSTALA = re.compile(
 _REDE = re.compile(r"(?i)\b(curl|wget|invoke-webrequest|iwr|invoke-restmethod|irm|ssh|scp|ftp)\b")
 _MOVE = re.compile(r"(?i)(^|[\s;&|])(mv|move|ren|rename|move-item)(\s|$)")
 
+# Ferramentas do MCP da propria Forja (o Kiro intitula @forja/<nome> e marca _meta.kiro.serverName).
+_FORJA_MCP = {
+    "forja_listar_ferramentas": "consultar quais ferramentas da Forja estão disponíveis",
+    "forja_executar_ferramenta": "usar uma ferramenta de leitura da Forja",
+    "forja_buscar_memoria": "buscar no seu segundo cérebro",
+    "forja_quadro_ler": "ler as mensagens do quadro endereçadas a ele",
+    "forja_quadro_publicar": "publicar uma mensagem no quadro",
+}
+
+
+def _ferramenta_forja(tc: dict[str, Any]) -> str | None:
+    servidor = (((tc.get("_meta") or {}).get("kiro") or {}).get("serverName") or "")
+    titulo = str(tc.get("title") or "")
+    nome = titulo.removeprefix("@forja/") if titulo.startswith("@forja/") else (titulo if servidor == "forja" else "")
+    return nome if nome in _FORJA_MCP else None
+
+
 _CAMPOS_CAMINHO = (
     "path", "file_path", "filePath", "filepath", "file", "target", "dest", "destination", "directory", "dir")
 
@@ -131,8 +148,11 @@ def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None) -> 
     cmd = _comando(tc.get("rawInput")).strip()
     alvos = _caminhos(tc)
     categoria, risco = "outra", "medio"
+    forja = _ferramenta_forja(tc)
 
-    if cmd and _RM.search(cmd):
+    if forja:  # a API da Forja continua decidindo (politica de pastas, integracoes); aqui so se descreve a acao
+        categoria, risco = "ferramenta_forja", ("medio" if forja == "forja_quadro_publicar" else "baixo")
+    elif cmd and _RM.search(cmd):
         alvos = alvos or _alvos_do_comando(cmd)
         forcada = bool(_FORCA.search(cmd))
         categoria, risco = ("excluir_forcado", "critico") if forcada else ("excluir", "alto")
@@ -181,6 +201,7 @@ def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None) -> 
         "executar_comando": f"Posso executar o comando `{cmd_vis or titulo}`?",
         "modificar_arquivos": f"Posso criar ou modificar {_lista(alvos)}?",
         "ler": f"Posso ler {_lista(alvos)}?",
+        "ferramenta_forja": f"O agente pode {_FORJA_MCP.get(forja or '', 'usar uma ferramenta da Forja')}?",
         "outra": f"Posso executar a ação «{titulo or 'não identificada'}»?",
     }
     return {

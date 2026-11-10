@@ -95,6 +95,18 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         se_ligar="Mais alto: mais chance de achar a memória certa, porém mais tokens por tarefa.",
         se_desligar="Mais baixo: economia, com risco de o agente não receber uma memória útil.",
         minimo=100, maximo=20000, unidade="tokens"),
+    Preferencia(
+        "kiro_reusar_sessao", "eficiencia", "avancado", "Reabrir a conversa do Kiro ao retomar uma tarefa", "bool",
+        "Quando você responde a uma decisão pendente, a Forja pede ao Kiro para reabrir a sessão anterior (session/load) em vez de "
+        "reenviar o resumo da conversa. Só funciona se o Kiro anunciar esse recurso; se a sessão não existir mais, volta ao resumo.",
+        True, se_ligar="Prompt de retomada bem menor e o agente mantém o histórico real da conversa.",
+        se_desligar="Cada retomada começa uma sessão nova com um resumo (comportamento anterior); um pouco mais de tokens."),
+    Preferencia(
+        "kiro_mcp_ativo", "eficiencia", "avancado", "Dar ao Kiro as ferramentas da Forja (MCP)", "bool",
+        "Anexa à sessão do Kiro um servidor MCP local (sem rede) com 5 ferramentas: listar/executar as ferramentas da Forja, buscar na memória "
+        "e usar o quadro. Cada uso ainda passa pelas suas aprovações por ação. O MCP só fala com a Forja em loopback e nunca recebe segredos.",
+        False, se_ligar="O agente usa ferramentas baratas e deterministicas em vez de ler arquivos inteiros, e publica no quadro sozinho.",
+        se_desligar="O agente trabalha só com as ferramentas nativas do Kiro; nada da Forja é oferecido a ele.", risco="medio"),
     # ------------------------------------------------------------------ consumo
     Preferencia(
         "modelos", "consumo", "geral", "Modelo de IA por parte do sistema", "modelos",

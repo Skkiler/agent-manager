@@ -360,3 +360,28 @@ class Configuracao(Base):
     valor: Mapped[Any] = mapped_column(JSON)
     versao: Mapped[int] = mapped_column(Integer, default=1)
     atualizado_em: Mapped[str] = mapped_column(String(40))
+
+
+class AcaoExterna(Base):
+    """Escrita em servico externo (comentar, criar, transicionar). Nasce PENDENTE e so executa apos aprovacao do operador.
+    `parametros` guarda apenas o conteudo da acao (ex.: texto do comentario), nunca segredo; `resultado` e um resumo curto."""
+
+    __tablename__ = "acao_externa"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    versao: Mapped[int] = mapped_column(Integer, default=1)
+    integracao: Mapped[str] = mapped_column(String(60))
+    acao: Mapped[str] = mapped_column(String(60))
+    parametros: Mapped[Any] = mapped_column(JSON)
+    descricao: Mapped[str] = mapped_column(String(400))
+    risco: Mapped[str] = mapped_column(String(16))
+    estado: Mapped[str] = mapped_column(String(16), index=True)  # pendente | negada | executando | executada | falhou | expirada
+    solicitado_por: Mapped[str] = mapped_column(String(100))
+    tarefa_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    dedup_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    decidido_por: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    adendo: Mapped[str] = mapped_column(Text, default="")
+    resultado: Mapped[str] = mapped_column(Text, default="")
+    criado_em: Mapped[str] = mapped_column(String(40))
+    decidido_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    executado_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    __table_args__ = (UniqueConstraint("solicitado_por", "dedup_key", name="uq_acao_externa_dedup"),)

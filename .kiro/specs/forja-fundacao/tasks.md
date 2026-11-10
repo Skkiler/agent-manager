@@ -34,7 +34,7 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 2.7 Prompt real autenticado: end_turn em 4,7 s; escrita negada de fato; escrita aprovada de fato (sandbox vazio).
 - [x] 2.10 Aprovacao por acao: descritor, mediador/agrupamento, adendo, parcial, lembrar, lote, timeout/cancel/reinicio, painel, migracao 0002, ADR-006. (REQ-017..019)
 - [ ] 2.8 Agentes/skills/Specs-templates Kiro e primeiro Workflow de producao (Workflows nao confirmado na conta).
-- [ ] 2.9 Pool/reuso de processo ACP e `session/load` (so se o agente anunciar `loadSession`; hoje `false`).
+- [x] 2.9 `session/load` na retomada quando o agente anuncia `loadSession` (kiro-cli 3.1.0 anuncia; validado no Kiro real), replay descartado, queda segura para sessao nova. Pool de processos NAO feito: um processo por execucao continua (sem ganho medido que justifique).
 
 ## Fase 3 — Memoria textual e grafos
 - [x] 3.1 Dominio da memoria: namespaces/ACL, estados epistemologicos, ontologia (REQ-020, REQ-021).
@@ -59,7 +59,7 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.6 Plano de ferramentas para agentes (documento removido na limpeza; o catalogo real esta em ADR-011; economia medida em 4.7).
 - [x] 4.7 Ferramentas N0 3, 5 e 7 (`forja/ferramentas/`) com contrato comum, 17 testes, mutacao 7/7 e `scripts/medir_ferramentas.py`.
 - [x] 4.7b Catalogo de ferramentas (contrato, fallback, custo observado) e rota `/api/v1/ferramentas/*`; 6 ferramentas novas (logs, segredos, mapa, esquema, conversor, orcamento, amostra). ADR-011.
-- [ ] 4.7c Expor via MCP em loopback e medir tokens numa tarefa real do Kiro (a economia no agente real segue nao medida).
+- [x] 4.7c MCP stdio da Forja (5 ferramentas, so fala com a API em loopback), opt-in, espera de prontidao; medido no Kiro real (ADR-015): economia quando usado, mas o agente nao o escolhe sozinho.
 - [x] 4.10 Quadro de comunicacao (blackboard) com prioridade, dedup por origem, validade e entrega unica; migracao 0006.
 - [x] 4.11 Painel de controle do master (`/controle/painel`): urgentes, bloqueadas, aprovacoes, execucoes paradas.
 - [x] 4.12 Propostas de memoria candidata a partir de tarefa concluida (fecha 3.10).
@@ -72,10 +72,10 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.18 Ferramentas de servicos locais: `vault.indexar`, `agenda.ler_ics`, `email.ler_mbox`; registro de integracoes (`/integracoes`).
 - [x] 4.19 Refator de `Servico` em mixins; testes de migracoes (ciclo completo, sem deriva) e do painel estatico.
 - [x] 4.20 Integracoes de rede configuraveis pela tela, desligadas por padrao, segredo so no ambiente: Jira, GitHub e agenda por URL .ics (somente leitura). ADR-013.
-- [ ] 4.20b Gmail API/IMAP, Google Agenda API, Notion/Trello e ESCRITA em servicos (comentar/criar/transicionar via aprovacoes por acao): seguem planejados e dependem da sua aprovacao.
+- [x] 4.20b Aprovado pelo usuario. Trello, Notion, Google Agenda e Gmail (API, OAuth somente leitura) + escrita como ACAO EXTERNA (Jira comentar/transicionar, GitHub comentar, Trello criar cartao) com aprovacao por acao e adendo. IMAP nao feito (API cobre o caso). Nenhum servico real validado ainda (exige credenciais).
 - [ ] 4.21 Teste visual automatizado em CI (Playwright) e auditoria com leitor de tela.
 - [ ] 4.22 Edicao/arrastar de arestas no grafo e criacao de arestas tipadas pela UI.
-- [ ] 4.8 Precisao em linguagem natural sobre corpus real (exige rotulagem manual pelo usuario).
+- [~] 4.8 Ferramenta de rotulagem e medicao pronta (Memoria > Avaliar a busca; API /busca/rotulagem). Falta o usuario rotular >= 15 perguntas reais.
 - [ ] 4.9 Embeddings somente se superarem o baseline lexical no benchmark.
 ## Gate Fase 1
 Atingido: tarefa simulada percorre rascunho -> ... -> concluida com estado consistente, evidencia (simulada),

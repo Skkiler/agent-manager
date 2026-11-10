@@ -1,4 +1,5 @@
-"""Cliente HTTP restrito para integracoes: somente HTTPS, somente GET, somente o host configurado.
+"""Cliente HTTP restrito para integracoes: somente HTTPS, somente o host configurado. Leitura por GET; escrita (POST/PATCH) so
+existe para acoes ja APROVADAS pelo operador (ver orquestracao/acoes_externas) e com corpo JSON limitado.
 
 Defesas (todas testadas): host unico (allowlist), sem credenciais na URL, sem redirecionamentos, DNS resolvido e checado contra
 enderecos nao publicos (SSRF) com o IP FIXADO na conexao (evita DNS rebinding; SNI/certificado validados pelo nome do host),
@@ -20,6 +21,8 @@ import httpx
 from forja.dominio.erros import ErroDominio, ValidacaoDominio
 
 MAX_BYTES = 2_000_000
+MAX_CORPO = 64_000  # corpo de escrita (comentario, cartao): pequeno de proposito
+METODOS_ESCRITA = ("POST", "PATCH", "PUT")
 TIMEOUT_S = httpx.Timeout(15.0, connect=5.0)
 Resolvedor = Callable[[str, int], list[str]]
 
@@ -119,6 +122,22 @@ class ClienteSeguro:
         return enderecos[0]
 
     def get(self, caminho: str, params: dict[str, Any] | None = None) -> Resposta:
+        return self._requisitar("GET", caminho, params, None)
+
+    def enviar(self, metodo: str, caminho: str, corpo: Any, params: dict[str, Any] | None = None, formulario: bool = False) -> Resposta:
+        """Corpo JSON (ou formulario). Usado por leituras que a API exige via POST (ex.: consulta do Notion) e pelas escritas,
+        que so chegam aqui depois de aprovadas (a regra fica no servico de acoes externas, nao neste cliente)."""
+        if metodo not in METODOS_ESCRITA:
+            raise ValidacaoDominio("metodo de escrita nao permitido")
+        import json
+        from urllib.parse import urlencode
+
+        dados = (urlencode(corpo) if formulario else json.dumps(corpo, ensure_ascii=False)).encode("utf-8")
+        if len(dados) > MAX_CORPO:
+            raise ValidacaoDominio(f"conteudo acima do limite de {MAX_CORPO // 1000} KB")
+        return self._requisitar(metodo, caminho, params, dados, "application/x-www-form-urlencoded" if formulario else "application/json")
+
+    def _requisitar(self, metodo: str, caminho: str, params: dict[str, Any] | None, dados: bytes | None, tipo: str = "") -> Resposta:
         caminho_puro, _, consulta = caminho.partition("?")
         if consulta and params:
             raise ValidacaoDominio("use query na URL ou params, nao os dois")
@@ -129,11 +148,13 @@ class ClienteSeguro:
         url = f"https://{ip_url}:{self.porta}{self.prefixo}{caminho_puro}" + (f"?{consulta}" if consulta else "")
         cab = {"Host": self.host if self.porta == 443 else f"{self.host}:{self.porta}", "Accept": "application/json",
                "User-Agent": "forja-orquestrador"}
+        if dados is not None:
+            cab["Content-Type"] = tipo
         cab.update(self._cabecalhos())
         t0 = time.perf_counter()
         try:
             with httpx.Client(transport=self._transporte, timeout=TIMEOUT_S, follow_redirects=False, trust_env=False) as c:
-                with c.stream("GET", url, params=params, headers=cab, extensions={"sni_hostname": self.host}) as r:
+                with c.stream(metodo, url, params=params, headers=cab, content=dados, extensions={"sni_hostname": self.host}) as r:
                     if 300 <= r.status_code < 400:
                         raise ErroRede("o servico respondeu com redirecionamento (nao seguido por seguranca)")
                     pedacos, total = [], 0

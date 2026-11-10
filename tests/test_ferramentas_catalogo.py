@@ -239,7 +239,10 @@ def test_catalogo_lista_com_contrato_e_disponibilidade(repo_falso: Path):
     assert sem["codigo.outline"]["disponivel"] is False and com["codigo.outline"]["disponivel"] is True
     assert sem["logs.agrupar_falhas"]["disponivel"] is True
     assert com["codigo.outline"]["fallback"] == "texto.amostra"
-    assert all(f["risco"] == "leitura" and f["entrada"]["type"] == "object" for f in com.values())
+    assert all(f["risco"] in ("leitura", "escrita_aprovada") and f["entrada"]["type"] == "object" for f in com.values())
+    # escrita so existe como PROPOSTA (o operador aprova); e nenhuma proposta aparece disponivel sem integracao/acoes configuradas
+    assert {i for i, f in com.items() if f["risco"] == "escrita_aprovada"} == {i for i in com if ".propor_" in i}
+    assert not any(f["disponivel"] for f in com.values() if f["risco"] == "escrita_aprovada")
 
 
 def test_catalogo_executa_valida_entrada_e_registra_custo(cat: Catalogo):

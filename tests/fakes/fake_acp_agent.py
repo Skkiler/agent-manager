@@ -14,9 +14,13 @@ sys.stdin.reconfigure(encoding="utf-8")
 cenario = sys.argv[1] if len(sys.argv) > 1 else "ok"
 
 
+_ESCRITA = __import__("threading").Lock()
+
+
 def enviar(o: dict) -> None:
-    sys.stdout.write(json.dumps(o) + "\n")
-    sys.stdout.flush()
+    with _ESCRITA:
+        sys.stdout.write(json.dumps(o) + "\n")
+        sys.stdout.flush()
 
 
 def ler() -> dict | None:
@@ -62,17 +66,54 @@ while True:
             time.sleep(60)
         versao = 99 if cenario == "protocolo" else 1
         enviar({"jsonrpc": "2.0", "id": rid, "result": {
-            "protocolVersion": versao, "agentCapabilities": {"promptCapabilities": {"image": False}},
+            "protocolVersion": versao,
+            "agentCapabilities": {"promptCapabilities": {"image": False}, "loadSession": cenario.startswith("carregavel")},
             "authMethods": [{"id": "kiro-login", "name": "Kiro Login"}],
             "agentInfo": {"name": "Fake ACP Agent", "version": "0.0.1"}}})
     elif m == "session/new":
         if cenario == "auth":
             enviar({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000,
                     "message": "Authentication required. Not logged in. Run `kiro-cli login` first."}})
+        elif cenario in ("mcp", "mcp_mudo"):  # imita o kiro-cli 3.1.0: MCP conecta DEPOIS da resposta de session/new
+            globals()["mcp_recebido"] = (msg.get("params") or {}).get("mcpServers")
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid}})
+
+            def info(tokens: int, sid: str = sid) -> None:
+                update(sid, {"sessionUpdate": "session_info_update", "_meta": {"kiro": {"kind": "context_usage", "breakdown": {"tools": {"tokens": tokens}}}}})
+
+            info(4913)
+            if cenario == "mcp":
+                import threading
+
+                def conectar() -> None:  # em paralelo: um prompt enviado cedo demais chega ANTES desta marca
+                    time.sleep(0.6)
+                    globals()["mcp_conectado_em"] = time.monotonic()
+                    info(5256)
+
+                threading.Thread(target=conectar, daemon=True).start()
         elif cenario == "modelos":  # imita o kiro-cli 3.1.0 real (engine v3)
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "configOptions": opcoes_modelos()}})
         else:
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid}})
+    elif m == "session/load":
+        if cenario == "carregavel_falha":
+            enviar({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "Session not found"}})
+        else:  # como o agente real: reenvia o historico como notificacoes ANTES da resposta
+            sid = (msg.get("params") or {}).get("sessionId", sid)
+            chunk(sid, "HISTORICO-REPRODUZIDO")
+            update(sid, {"sessionUpdate": "tool_call", "toolCallId": "h1", "title": "Ferramenta antiga", "kind": "read", "status": "completed"})
+            carregada = True
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {}})
+    elif m == "session/prompt" and cenario in ("mcp", "mcp_mudo"):
+        pronto = "mcp_conectado_em" in globals()
+        nomes = [s.get("name") for s in globals().get("mcp_recebido") or []]
+        txt = ((msg.get("params") or {}).get("prompt") or [{}])[0].get("text", "")
+        chunk(sid, f"mcp_pronto_no_prompt={pronto} servidores={nomes} dica={'forja::forja_listar_ferramentas' in txt}")
+        enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
+    elif m == "session/prompt" and cenario.startswith("carregavel"):
+        txt = ((msg.get("params") or {}).get("prompt") or [{}])[0].get("text", "")
+        chunk(sid, f"sessao={sid} carregada={globals().get('carregada', False)}\n<<PROMPT>>\n{txt}\n<<FIM>>")
+        enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
     elif m == "session/set_config_option" and cenario == "modelos":
         p = msg.get("params") or {}
         if p.get("configId") == "model":

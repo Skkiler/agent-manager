@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 import urllib.error
 import urllib.request
@@ -77,7 +78,16 @@ def main() -> int:
 
     cfg = c("GET", "/configuracao")
     c("PUT", "/configuracao", {"expected_version": cfg["versao"], "configuracao": {"partes": {"execucao": {"modelo": "modelo-economico"}, "revisao": {"modelo": "modelo-profundo"}}}})
-    print("semeado: 6 tarefas, 8 notas, 5 mensagens no quadro e configuracao de modelos")
+    extra = ""
+    if os.environ.get("FORJA_INT_DEMO_TRELLO_TOKEN"):  # so com variaveis FICTICIAS no ambiente do servidor demo (o inspetor usa o Jira desligado)
+        trello = c("GET", "/integracoes/trello")
+        c("PUT", "/integracoes/trello/configuracao", {"expected_version": trello["versao"], "configuracao": {
+            "ativo": True, "variavel_usuario": "FORJA_INT_DEMO_TRELLO_KEY", "variavel_token": "FORJA_INT_DEMO_TRELLO_TOKEN",
+            "itens_permitidos": ["5f2b1c3d4e5f60718293a4b5"], "permitir_escrita": True}})
+        for nome in ("Revisar PR da migracao", "Atualizar documentacao do MCP"):
+            c("POST", "/acoes-externas", {"integracao": "trello", "acao": "criar_cartao", "parametros": {"lista": "6a7b8c9d0e1f20314253a4b5", "nome": nome}})
+        extra = ", 2 acoes externas pendentes (Trello ficticio)"
+    print(f"semeado: 6 tarefas, 8 notas, 5 mensagens no quadro e configuracao de modelos{extra}")
     return 0
 
 

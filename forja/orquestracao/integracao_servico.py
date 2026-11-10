@@ -26,6 +26,7 @@ from forja.integracoes.config import ConfigIntegracao
 from forja.integracoes.rede import ErroRede, LimiteExcedido, Resolvedor, resolver_dns
 
 PREFIXO_ID = "integracao."
+INTERNOS = frozenset({"normalizar", "cliente", "testar", "host", "cabecalhos", "usadas", "preparar_escrita", "escritas"})
 
 
 class IntegracaoServico:
@@ -117,10 +118,30 @@ class IntegracaoServico:
         return con, ConfigIntegracao.model_validate(e["configuracao"])
 
     def executar(self, id_: str, acao: str, params: dict[str, Any]) -> ResultadoFerramenta:
+        """LEITURA. Acoes de escrita nunca passam por aqui (so por executar_escrita, depois de aprovadas)."""
         con, cfg = self._preparar(id_)
         runner = getattr(con, acao, None)
-        if acao.startswith("_") or acao in ("normalizar", "cliente", "testar", "host", "cabecalhos", "usadas") or not callable(runner):
+        if acao.startswith("_") or acao in INTERNOS or acao in con.escritas or not callable(runner):
             raise NaoEncontrado(f"acao {acao!r} nao existe em {id_}")
+        return self._chamar(id_, con, cfg, acao, runner, params)
+
+    def preparar_escrita(self, id_: str, acao: str, params: dict[str, Any]) -> tuple[dict[str, Any], str, str]:
+        """Valida (sem rede) uma escrita proposta: (parametros, frase da aprovacao, risco)."""
+        con, cfg = self._preparar(id_)
+        if acao not in con.escritas:
+            raise NaoEncontrado(f"{id_} nao tem a acao de escrita {acao!r}")
+        if not cfg.permitir_escrita:
+            raise ValidacaoDominio(f"a escrita esta desligada na integracao {id_}: ligue 'permitir escrita' na tela de Integracoes")
+        normalizados, descricao = con.preparar_escrita(cfg, acao, params)
+        return normalizados, descricao, con.escritas[acao].risco
+
+    def executar_escrita(self, id_: str, acao: str, params: dict[str, Any]) -> str:
+        """ESCRITA ja aprovada pelo operador. Revalida tudo (configuracao pode ter mudado desde a proposta)."""
+        normalizados, _d, _r = self.preparar_escrita(id_, acao, params)
+        con, cfg = self._preparar(id_)
+        return self._chamar(id_, con, cfg, acao, getattr(con, acao), normalizados)
+
+    def _chamar(self, id_: str, con: Conector, cfg: ConfigIntegracao, acao: str, runner: Callable[..., Any], params: dict[str, Any]) -> Any:
         self._limitar(id_, cfg)
         t0 = time.perf_counter()
         try:
