@@ -27,7 +27,7 @@ jobs:
       - name: Lint
         run: python -m ruff check forja tests scripts
       - name: Testes
-        run: python -m pytest -p no:cacheprovider -q
+        run: python -m pytest -p no:cacheprovider -q --junitxml="$RUNNER_TEMP/junit.xml" || { python scripts/ci_anotar.py "$RUNNER_TEMP/junit.xml"; exit 1; }
       - name: Navegador do Playwright
         run: python -m playwright install --with-deps chromium
       - name: Painel em navegador real (interacoes, layout estreito, acessibilidade)
