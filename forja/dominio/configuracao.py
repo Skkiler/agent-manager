@@ -1,4 +1,4 @@
-"""Configuracao do orquestrador por parte do sistema (modelo de IA de cada parte) e nivel de detalhe da interface.
+"""Configuracao do orquestrador por parte do sistema (modelo e esforco de IA de cada parte).
 
 So entra aqui o que tem EFEITO real. Partes deterministicas (busca, contexto) nao usam modelo e recusam um.
 """
@@ -39,7 +39,6 @@ class ParteConfig(BaseModel):
 
 class ConfiguracaoSistema(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    nivel_detalhe: Literal["simples", "avancado"] = "simples"
     partes: dict[str, ParteConfig] = Field(default_factory=dict)
 
     @model_validator(mode="after")

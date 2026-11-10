@@ -16,7 +16,7 @@ VISTAS = {
     "memoria": ".grafo-caixa svg .no",
     "ferramentas": ".lista-notas button",
     "integracoes": ".grade .card",
-    "config": "table input",
+    "config": ".opcao",
 }
 
 
@@ -132,15 +132,47 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
 
     pagina.goto(base + "#/config")
     pagina.reload()
+    pagina.wait_for_selector(".opcao")
+    passo("menu lista categorias na lateral", pagina.get_by_role("button", name="Privacidade").count() == 1)
+    passo("abas Gerais e Avancadas separadas", pagina.get_by_role("tab", name="Avançadas", exact=False).count() == 1)
+    pagina.screenshot(path=str(saida / "config-aparencia.png"))
+    pagina.locator('[data-pref="tema"]').get_by_role("button", name="Claro").click()
+    pagina.get_by_role("button", name="Salvar alterações").click()
+    expect(pagina.locator("html")).to_have_attribute("data-tema", "claro", timeout=6000)
+    passo("tema claro e salvo e aplicado na hora", True)
+    pagina.locator('[data-pref="tema"]').get_by_role("button", name="Restaurar padrão").click()
+    expect(pagina.locator("html")).not_to_have_attribute("data-tema", "claro", timeout=6000)
+    passo("restaurar padrao devolve o tema automatico", True)
+    pagina.get_by_role("button", name="Eficiência").click()
+    pagina.get_by_role("tab", name="Avançadas", exact=False).click()
+    pagina.locator('[data-pref="contexto_orcamento_tokens"]').get_by_role("button", name="Alto").click()
+    passo("exemplo aplica valor no campo", pagina.locator('[data-pref="contexto_orcamento_tokens"] input[type=number]').input_value() != "2000")
+    pagina.get_by_role("button", name="Descartar").click()
+    pagina.get_by_role("button", name="Privacidade").click()
+    pagina.get_by_role("tab", name="Gerais", exact=False).click()
+    passo("leitura de arquivos nasce desativada", not pagina.locator('[data-pref="ferramentas_arquivos_ativas"] input[type=checkbox]').is_checked())
+    pagina.locator('[data-pref="pastas_proibidas"] textarea').fill("C:/pasta-ficticia-proibida")
+    pagina.get_by_role("button", name="Salvar alterações").click()
+    pagina.wait_for_selector(".toast.ok", timeout=6000)
+    passo("pasta proibida salva pela tela", "pasta-ficticia-proibida" in pagina.locator('[data-pref="pastas_proibidas"] textarea').input_value())
+    pagina.locator('[data-pref="pastas_proibidas"]').get_by_role("button", name="Restaurar padrão").click()
+    expect(pagina.locator('[data-pref="pastas_proibidas"] textarea')).to_have_value("", timeout=6000)
+    pagina.locator('[data-pref="pastas_permitidas"] textarea').fill("C:/nao-existe-xyz")
+    pagina.get_by_role("button", name="Salvar alterações").click()
+    pagina.wait_for_selector(".toast.erro", timeout=6000)
+    passo("pasta permitida inexistente e recusada com mensagem", True)
+    pagina.get_by_role("button", name="Descartar").click()
+    pagina.screenshot(path=str(saida / "config-privacidade.png"))
+    pagina.get_by_role("button", name="Consumo").click()
     pagina.wait_for_selector("table input")
     pagina.get_by_label("Modelo de Execucao de tarefas").fill("modelo-rapido")
-    pagina.get_by_role("button", name="Salvar configuracao").click()
+    pagina.get_by_role("button", name="Salvar modelos").click()
     expect(pagina.locator("#st-modelo")).to_contain_text("modelo-rapido", timeout=6000)
     passo("salvar modelo por parte atualiza a barra de status", True)
+    pagina.get_by_role("button", name="Manutenção").click()
     pagina.get_by_role("button", name="Solicitar revisao").click()
     pagina.wait_for_selector("text=Revisao criada e preparada", timeout=8000)
     passo("solicitar revisao cria tarefa preparada sem executar", True)
-
     falhas += integracoes(pagina, base, saida, expect, passo)
 
     pagina.goto(base + "#/ferramentas")
@@ -149,7 +181,7 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.get_by_role("button", name="Executar").click()
     pagina.wait_for_selector("pre.saida", timeout=6000)
     passo("executar ferramenta mostra resumo e custo", pagina.locator(".tag", has_text="reducao").count() >= 1)
-    passo("nenhum erro de console/CSP durante as interacoes", not [e for e in erros if "404" not in e])
+    passo("nenhum erro de console/CSP durante as interacoes", not [e for e in erros if "404" not in e and "422" not in e])
     for e in erros[:5]:
         print("   ", e[:200])
     return falhas

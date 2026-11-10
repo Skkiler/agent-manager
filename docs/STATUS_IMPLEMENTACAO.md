@@ -134,8 +134,15 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   ambiente padrao em vez do injetado (corrigido antes de commitar).
 - **Dependencia:** `httpx==0.28.1` passou de dev para runtime (fixa).
 - **Limites/pendencias:** sem escrita em servicos; Gmail API/IMAP, Google Agenda API, Notion/Trello seguem planejados; Jira Cloud real, Server/DC e o `.ics` secreto precisam de validacao com credenciais reais suas;
-  a lista de projetos/repositorios e a unica barreira de escopo (use tokens somente leitura); o limite de 240 req/min conta tambem os arquivos estaticos do painel (cada carga de pagina gasta ~18) — decisao pendente.
+  a lista de projetos/repositorios e a unica barreira de escopo (use tokens somente leitura); o limite de requisicoes agora e configuravel (menu Seguranca) e os arquivos estaticos do painel nao contam por padrao.
 
+## Dados do usuario, menu de configuracoes e politica de pastas (itens 4.14, 4.23) — resultados reais
+- **Novos:** `usuario/{layout,migracao}.py`, `scripts/migrar_dados_usuario.py`, `seguranca/pastas.py`, `preferencias/{registro,servico}.py`, `servidor/rotas_preferencias.py`, tela de Configuracoes reescrita (6 categorias x Gerais/Avancadas), `_avisar_quadro` no orquestrador. ADR-014.
+- **Verificado:** 757 testes passando, cobertura 94 %, Ruff limpo; benchmark de busca inalterado (GLOBAL 0.94/0.87/0.89 com sinonimos); mutacao manual em 22 defesas novas (pastas, validacao de preferencias, concorrencia, layout fora do Git, isencao de estaticos, mascara de e-mail): 22 detectadas, 0 vivas;
+  navegador real (Playwright/Edge): menu, abas, exemplo aplica valor, tema claro/automatico, pasta proibida salva, pasta permitida inexistente recusada, modelo por parte, 0 erros de console/CSP.
+- **Auditoria do Git remoto (somente leitura):** 11 commits sem banco, `.env`, tokens reais, logs ou caminhos pessoais; unico dado pessoal: e-mail de autor/committer. **Nao foi reescrito** (exige force-push e sua decisao).
+- **Migracao dos seus dados atuais (`./data`) NAO foi executada**: aguarda sua decisao. Enquanto isso o modo legado segue funcionando.
+- **Limites:** o servidor so recusa dados dentro do repo quando o Git nao os ignora; backup do perfil e responsabilidade sua; agentes reais ainda nao publicam respostas proprias no quadro (depende do MCP, 4.7c); `ferramentas adicionais` do perfil tem a pasta, mas nao ha carregador.
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -150,11 +157,11 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - Heuristicas de PII/injection (regex) reduzem risco, **nao** o eliminam; resultados sao sempre tratados como dados nao confiaveis.
 - `confianca` e informada pelo usuario e **nao calibrada**; nao entra no ranking.
 - A memoria e injetada no prompt apenas para namespaces em `APP_CONTEXT_NAMESPACES` (padrao `publico`).
-- Painel (JS) sem teste de navegador: verificado por revisao, `node --check` e testes de API/SSE.
+- Painel (JS): verificado em navegador real por script (Playwright), nao ha CI; auditoria com leitor de tela pendente.
 - Scanner dedicado de segredos (gitleaks) e CI continuam ausentes. Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 690 passed.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 757 passed.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: itens 4.7-4.9 (ferramentas N0 medidas, precisao em corpus real, embeddings so se ganharem). Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

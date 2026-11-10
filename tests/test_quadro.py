@@ -1,4 +1,4 @@
-"""Quadro de comunicacao (blackboard) e painel de controle do master."""
+﻿"""Quadro de comunicacao (blackboard) e painel de controle do master."""
 
 from __future__ import annotations
 
@@ -152,8 +152,8 @@ def test_listar_destino_todos_nao_duplica_a_difusao(q):
 
 def test_resolver_registra_ator_e_nota_e_nao_resolve_duas_vezes(q):
     m, _ = q.publicar(msg())
-    r = q.resolver(m["id"], "joao", f"feito {FALSO_TOKEN}")
-    assert r["estado"] == "resolvida" and r["resolvida_por"] == "joao" and FALSO_TOKEN not in r["nota_resolucao"]
+    r = q.resolver(m["id"], "operador-teste", f"feito {FALSO_TOKEN}")
+    assert r["estado"] == "resolvida" and r["resolvida_por"] == "operador-teste" and FALSO_TOKEN not in r["nota_resolucao"]
     with pytest.raises(Conflito):
         q.resolver(m["id"])
     with pytest.raises(NaoEncontrado):

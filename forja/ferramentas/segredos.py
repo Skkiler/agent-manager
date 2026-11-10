@@ -11,6 +11,7 @@ from forja.ferramentas.contrato import ResultadoFerramenta, montar, tokens_de_by
 from forja.memoria.indexador import IGNORAR_DIRS, MAX_BYTES
 from forja.observabilidade.sanitizar import PADROES_ALTA_CONFIANCA
 from forja.seguranca.acoes import caminho_sensivel
+from forja.seguranca.pastas import proibido
 
 MAX_ARQUIVOS = 3000
 MAX_ACHADOS = 100
@@ -28,7 +29,7 @@ def _arquivos(base: Path, alvo: Path):
         yield alvo
         return
     for atual, dirs, nomes in os.walk(alvo, followlinks=False):
-        dirs[:] = sorted(d for d in dirs if d not in IGNORAR_DIRS and not d.endswith(".egg-info"))
+        dirs[:] = sorted(d for d in dirs if d not in IGNORAR_DIRS and not d.endswith(".egg-info") and not proibido(Path(atual) / d))
         for nome in sorted(nomes):
             p = Path(atual) / nome
             if not p.is_symlink():

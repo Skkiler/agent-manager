@@ -28,6 +28,7 @@ from forja.ferramentas.outline import outline_arquivo
 from forja.ferramentas.segredos import varrer
 from forja.ferramentas.testes import resumir_pytest
 from forja.ferramentas.vault import indexar_vault
+from forja.seguranca.pastas import PoliticaPastas, aplicar
 
 log = logging.getLogger("forja.ferramentas")
 TEXTO_MAX = 2_000_000
@@ -252,6 +253,7 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
 class Catalogo:
     raizes: tuple[Path, ...] = ()
     integracoes: Any = None
+    politica: Callable[[], PoliticaPastas] | None = None  # preferencias do usuario (ativa/permitidas/proibidas); sem ela, usa `raizes`
     ferramentas: dict[str, Ferramenta] = field(default_factory=lambda: {f.id: f for f in FERRAMENTAS})
     _uso: dict[str, _Uso] = field(default_factory=dict)
     _mu: threading.Lock = field(default_factory=threading.Lock)
@@ -267,10 +269,16 @@ class Catalogo:
             for f in self.ferramentas.values()
         ]
 
+    def _politica(self) -> PoliticaPastas:
+        if self.politica is not None:
+            return self.politica()
+        return PoliticaPastas(ativa=bool(self.raizes), permitidas=self.raizes)
+
     def _disponivel(self, f: Ferramenta) -> bool:
         if f.integracao:
             return self.integracoes is not None and self.integracoes.pronta(f.integracao)
-        return bool(self.raizes) or not f.usa_arquivos
+        pol = self._politica()
+        return (pol.ativa and bool(pol.permitidas)) or not f.usa_arquivos
 
     def estatisticas(self) -> dict[str, dict[str, Any]]:
         with self._mu:
@@ -302,12 +310,16 @@ class Catalogo:
         except ValidationError as e:
             raise ValidacaoDominio("entrada invalida: " + "; ".join(
                 f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors()[:5])) from e
-        ctx = Contexto(self.raizes, self.integracoes)
+        pol = self._politica()
+        if f.id == "email.ler_mbox" and pol.mascarar_emails:  # privacidade: o agente nao consegue pedir enderecos completos
+            dados = dados.model_copy(update={"mascarar_enderecos": True})
+        ctx = Contexto(pol.permitidas if pol.ativa else (), self.integracoes)
         usada, de_fallback = f, None
         while True:
             ini = time.perf_counter()
             try:
-                r = usada.rodar(dados if usada is f else usada.entrada(**_compat(dados)), ctx)
+                with aplicar(pol):
+                    r = usada.rodar(dados if usada is f else usada.entrada(**_compat(dados)), ctx)
             except SemResultado:
                 self._registrar(usada.id, (time.perf_counter() - ini) * 1000, None)
                 alvo = self.ferramentas.get(usada.fallback or "")

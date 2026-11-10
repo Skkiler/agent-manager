@@ -8,6 +8,8 @@ from pathlib import Path
 from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from forja.usuario.layout import PerfilUsuario, nome_do_perfil, resolver_perfil
+
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
@@ -18,8 +20,11 @@ class Configuracoes(BaseSettings):
     app_bind_host: str = "127.0.0.1"
     app_port: int = 8787
     app_log_level: str = "INFO"
-    app_data_dir: Path = Path("./data")
-    app_log_dir: Path = Path("./logs")
+    # Dados do USUARIO (credenciais, banco, memoria, notas...) ficam FORA do repositorio: ver forja/usuario/layout.py.
+    app_user_home: Path | None = None  # base dos dados do usuario (padrao: pasta de dados do sistema)
+    app_profile: str = ""  # perfil (padrao: usuario do sistema); cada perfil tem seus proprios dados
+    app_data_dir: Path | None = None  # sobrescreve a pasta de dados (testes/uso avancado)
+    app_log_dir: Path | None = None
     app_session_ttl_minutes: int = 60
     app_enable_local_llm: bool = False
     app_resource_profile: str = "auto"
@@ -77,9 +82,28 @@ class Configuracoes(BaseSettings):
             raise ValueError("APP_MAX_PARALLEL_CPU_TOOLS deve ser >= 1.")
         return self
 
+    def perfil_usuario(self) -> PerfilUsuario:
+        """Perfil efetivo. Se APP_DATA_DIR foi dado, ele e a pasta de dados (e de credenciais) e o resto deriva dele."""
+        if self.app_data_dir is not None:
+            return PerfilUsuario(Path(self.app_data_dir), nome_do_perfil(self.app_profile), legado=True)
+        env = {k: v for k, v in (("APP_USER_HOME", str(self.app_user_home or "")), ("APP_PROFILE", self.app_profile)) if v}
+        return resolver_perfil(env or None)
+
+    @property
+    def dados_dir(self) -> Path:
+        return Path(self.app_data_dir) if self.app_data_dir is not None else self.perfil_usuario().dados
+
+    @property
+    def credenciais_dir(self) -> Path:
+        return Path(self.app_data_dir) if self.app_data_dir is not None else self.perfil_usuario().credenciais
+
+    @property
+    def logs_dir(self) -> Path:
+        return Path(self.app_log_dir) if self.app_log_dir is not None else self.perfil_usuario().logs
+
     @property
     def db_path(self) -> Path:
-        return self.app_data_dir / "forja.sqlite3"
+        return self.dados_dir / "forja.sqlite3"
 
     @property
     def memoria_namespaces(self) -> frozenset[str]:
@@ -104,13 +128,14 @@ class Configuracoes(BaseSettings):
 
     @property
     def kiro_workspace_dir(self) -> Path:
-        return self.app_kiro_workspace or (self.app_data_dir / "kiro-workspace")
+        return self.app_kiro_workspace or (self.perfil_usuario().pasta("workspace") if self.app_data_dir is None else self.dados_dir / "kiro-workspace")
 
     @property
     def artefatos_dir(self) -> Path:
-        return self.app_data_dir / "artefatos"
+        return self.dados_dir / "artefatos" if self.app_data_dir is not None else self.perfil_usuario().pasta("artefatos")
 
 
 @lru_cache
 def obter_configuracoes() -> Configuracoes:
-    return Configuracoes()
+    # .env do repositorio (legado/desenvolvimento) e depois o .env do USUARIO, que fica fora do Git e tem prioridade
+    return Configuracoes(_env_file=(".env", resolver_perfil().arquivo_env))

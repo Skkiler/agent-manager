@@ -76,7 +76,7 @@ def main() -> int:
         c("POST", "/quadro", {"origem": o, "destino": d, "tipo": tp, "prioridade": pr, "assunto": assunto, "payload": {"texto": texto} if texto else {}, "referencias": refs})
 
     cfg = c("GET", "/configuracao")
-    c("PUT", "/configuracao", {"expected_version": cfg["versao"], "configuracao": {"nivel_detalhe": "simples", "partes": {"execucao": {"modelo": "modelo-economico"}, "revisao": {"modelo": "modelo-profundo"}}}})
+    c("PUT", "/configuracao", {"expected_version": cfg["versao"], "configuracao": {"partes": {"execucao": {"modelo": "modelo-economico"}, "revisao": {"modelo": "modelo-profundo"}}}})
     print("semeado: 6 tarefas, 8 notas, 5 mensagens no quadro e configuracao de modelos")
     return 0
 

@@ -109,7 +109,7 @@ async function iniciar() {
   montarAtividades(); atalhos();
   const nivel = $("#nivel");
   nivel.value = estado.nivel; definirNivel(estado.nivel);
-  nivel.addEventListener("change", () => definirNivel(nivel.value));
+  nivel.addEventListener("change", () => { definirNivel(nivel.value); config.definirPreferencia("nivel_detalhe", nivel.value).catch(() => {}); });
   document.addEventListener("forja:auth", () => { if (!$("#dlg-token").open) autenticarSeNecessario().then(() => location.reload()); });
   ouvir("ir", ir);
   ouvir("evento", (e) => {
@@ -125,6 +125,7 @@ async function iniciar() {
   ir((location.hash.match(/^#\/(\w+)/) || [])[1] || "tarefas");
   conectarSse(); atualizarChip();
   config.recarregar().catch(() => {});
+  config.carregarPreferencias().catch(() => {});
   addEventListener("hashchange", () => { const id = (location.hash.match(/^#\/(\w+)/) || [])[1]; if (id && id !== atual) ir(id); });
 }
 

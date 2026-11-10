@@ -67,7 +67,6 @@ class RevisaoServico:
                                         for k, v in uso.items()},
                             "sem_uso": sorted(set(self.catalogo.ferramentas) - set(uso))},
             "modelos": {p["id"]: p["modelo_efetivo"] for p in cfg["partes"] if p["usa_modelo"]},
-            "nivel_detalhe": cfg["configuracao"]["nivel_detalhe"],
             "tarefas_por_estado": tarefas,
             "memorias_por_estado": memorias,
         }

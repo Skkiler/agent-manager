@@ -39,7 +39,10 @@ def main() -> int:
 
     token = args.token
     if token is None:
-        arq = Path("data/api_token.txt")
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from forja.usuario.layout import resolver_perfil
+
+        arq = resolver_perfil().credenciais / "api_token.txt"
         if arq.exists():
             token = arq.read_text(encoding="utf-8").strip()
 

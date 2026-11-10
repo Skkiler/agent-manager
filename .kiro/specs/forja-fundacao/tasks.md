@@ -64,7 +64,8 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.11 Painel de controle do master (`/controle/painel`): urgentes, bloqueadas, aprovacoes, execucoes paradas.
 - [x] 4.12 Propostas de memoria candidata a partir de tarefa concluida (fecha 3.10).
 - [x] 4.13 Refator: `Servico` dividido em mixins (1133 -> 764 linhas) sem mudar a API.
-- [ ] 4.14 Ligar o quadro ao orquestrador (agentes publicam resultado/pergunta automaticamente). O quadro no painel web ja existe (4.17).
+- [x] 4.14 Orquestrador publica no quadro, sozinho e de forma idempotente: bloqueio -> apontamento ao operador (prio 2), conclusao -> evento ao master, falha/expiracao -> apontamento ao master. Melhor esforco; origem `sistema` so emite evento/apontamento (invariante do dominio). Agentes reais ainda nao publicam respostas proprias (precisa MCP, 4.7c).
+- [x] 4.23 Dados do usuario fora do Git (perfil), migracao nao destrutiva, registro de preferencias, menu de configuracoes (geral/avancado), politica de pastas permitidas/proibidas e limite de requisicoes configuravel. ADR-014.
 - [x] 4.15 Configuracao por parte do sistema (modelo e esforco), lista de modelos da conta, aplicada por sessao ACP v3 com falha fechada. ADR-012.
 - [x] 4.16 Revisao do esquema sob demanda (`POST /revisoes`) com fatos medidos.
 - [x] 4.17 Painel estilo IDE: Kanban, quadro de comunicacao, grafo/notas (Obsidian), ferramentas, integracoes e configuracao; CSP e a11y basica; verificado no navegador.

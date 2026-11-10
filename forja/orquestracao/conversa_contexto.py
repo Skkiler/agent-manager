@@ -43,7 +43,7 @@ class ConversaContextoMixin:
 
     def _montar_contexto(self, execucao_id: str, tarefa: dict) -> Any | None:
         """Monta o pacote de contexto e o grava (o que entrou, quanto custou, o que foi omitido). Nunca derruba a execucao."""
-        if self.construtor_contexto is None:
+        if self.construtor_contexto is None or not self.contexto_ativo:
             return None
         try:
             if tarefa.get("retomada") is not None:  # retomada: so o que foi USADO na rodada anterior

@@ -15,7 +15,7 @@ MIN_TOKEN = 24
 
 
 def carregar_token(cfg: Configuracoes) -> str | None:
-    """Token da API. Prioridade: variavel APP_API_TOKEN; senao arquivo em APP_DATA_DIR (ignorado no Git)."""
+    """Token da API. Prioridade: variavel APP_API_TOKEN; senao arquivo na pasta de credenciais do usuario (fora do Git)."""
     if not cfg.app_require_auth:
         return None
     if cfg.app_api_token is not None:
@@ -23,7 +23,7 @@ def carregar_token(cfg: Configuracoes) -> str | None:
         if len(valor) < MIN_TOKEN:
             raise ValueError(f"APP_API_TOKEN deve ter pelo menos {MIN_TOKEN} caracteres.")
         return valor
-    caminho = Path(cfg.app_data_dir) / ARQUIVO_TOKEN
+    caminho = Path(cfg.credenciais_dir) / ARQUIVO_TOKEN
     if caminho.exists():
         valor = caminho.read_text(encoding="utf-8").strip()
         if len(valor) >= MIN_TOKEN:

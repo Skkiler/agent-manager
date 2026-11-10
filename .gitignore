@@ -85,3 +85,7 @@ Thumbs.db
 *.memoria.json
 # capturas locais do painel (scripts/inspecionar_painel.py)
 capturas-painel/
+
+# Perfis de usuario caso APP_USER_HOME aponte para dentro do projeto
+/perfis/
+/capturas-painel/

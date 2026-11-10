@@ -7,6 +7,7 @@ from pathlib import Path
 
 from forja.dominio.erros import NaoEncontrado, ValidacaoDominio
 from forja.seguranca.acoes import caminho_sensivel
+from forja.seguranca.pastas import proibido
 
 
 def resolver_dentro(raiz: Path, caminho: str, *, diretorio: bool = False) -> Path:
@@ -20,9 +21,12 @@ def resolver_dentro(raiz: Path, caminho: str, *, diretorio: bool = False) -> Pat
     base = raiz.resolve()
     alvo = base / caminho
     try:  # contencao LEXICA primeiro: evita revelar (404 x 422) se existe algo fora da raiz
-        Path(os.path.normpath(alvo)).relative_to(base)
+        candidato = Path(os.path.normpath(alvo))
+        candidato.relative_to(base)
     except ValueError as e:
         raise ValidacaoDominio("caminho fora da raiz autorizada") from e
+    if proibido(candidato):  # pasta proibida/protegida: mesma resposta de "fora da raiz", exista ou nao
+        raise ValidacaoDominio("caminho fora da raiz autorizada")
     if alvo.is_symlink():
         raise ValidacaoDominio("links simbolicos nao sao seguidos")
     try:
@@ -32,6 +36,8 @@ def resolver_dentro(raiz: Path, caminho: str, *, diretorio: bool = False) -> Pat
         raise NaoEncontrado("caminho nao encontrado") from e
     except (ValueError, OSError) as e:
         raise ValidacaoDominio("caminho fora da raiz autorizada") from e
+    if proibido(real):  # symlink/juncao que desvia para uma pasta proibida
+        raise ValidacaoDominio("caminho fora da raiz autorizada")
     if diretorio and not real.is_dir():
         raise ValidacaoDominio("era esperado um diretorio")
     if not diretorio and not real.is_file():

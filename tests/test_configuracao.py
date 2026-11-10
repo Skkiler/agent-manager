@@ -21,7 +21,7 @@ TOKEN = "token-de-teste-com-tamanho-suficiente"
 
 
 def salvar(c: ConfiguracaoServico, versao: int, **partes: str) -> dict:
-    cfg = ConfiguracaoSistema(partes={k: {"modelo": v} for k, v in partes.items()}, nivel_detalhe="avancado")
+    cfg = ConfiguracaoSistema(partes={k: {"modelo": v} for k, v in partes.items()})
     return c.salvar(SalvarConfiguracaoIn(expected_version=versao, configuracao=cfg))
 
 
@@ -36,7 +36,7 @@ def salvar(c: ConfiguracaoServico, versao: int, **partes: str) -> dict:
         {"partes": {"execucao": {"modelo": "com espaco"}}},
         {"partes": {"execucao": {"modelo": "--trust-all-tools"}}},  # nunca vira flag do CLI
         {"partes": {"execucao": {"modelo": "a" * 81}}},
-        {"nivel_detalhe": "medio"},
+        {"nivel_detalhe": "avancado"},  # agora vive nas preferencias, nao mais aqui
         {"extra": 1},
     ],
 )
@@ -55,7 +55,7 @@ def test_partes_que_usam_modelo_sao_so_as_que_realmente_chamam_um():
 def test_padrao_nunca_salvo_tem_versao_zero_e_herda_o_modelo_global(repo, relogio):
     c = ConfiguracaoServico(repo, relogio, modelo_padrao="modelo-global")
     r = c.obter()
-    assert r["versao"] == 0 and r["configuracao"]["nivel_detalhe"] == "simples"
+    assert r["versao"] == 0 and r["configuracao"] == {"partes": {}}
     por = {p["id"]: p for p in r["partes"]}
     assert por["execucao"]["modelo_efetivo"] == "modelo-global" and por["contexto"]["modelo_efetivo"] is None
     assert c.modelo_para("execucao") == "modelo-global"
@@ -64,7 +64,7 @@ def test_padrao_nunca_salvo_tem_versao_zero_e_herda_o_modelo_global(repo, relogi
 def test_modelo_por_parte_tem_prioridade_sobre_o_global_e_e_independente(repo, relogio):
     c = ConfiguracaoServico(repo, relogio, modelo_padrao="global")
     r = salvar(c, 0, execucao="modelo-rapido")
-    assert r["versao"] == 1 and r["configuracao"]["nivel_detalhe"] == "avancado"
+    assert r["versao"] == 1 and set(r["configuracao"]["partes"]) == {"execucao"}
     assert c.modelo_para("execucao") == "modelo-rapido"
     assert c.modelo_para("revisao") == "global"  # outra parte nao e afetada
     salvar(c, 1, execucao="modelo-rapido", revisao="modelo-profundo")
@@ -106,8 +106,7 @@ def cli(tmp_path: Path, _db_migrado: Path) -> Iterator[TestClient]:
 def test_api_le_salva_e_detecta_conflito(cli):
     r = cli.get("/api/v1/configuracao").json()
     assert r["versao"] == 0 and {p["id"] for p in r["partes"]} == {p.id for p in PARTES}
-    corpo = {"expected_version": 0, "configuracao": {"nivel_detalhe": "avancado",
-                                                       "partes": {"execucao": {"modelo": "m1"}}}}
+    corpo = {"expected_version": 0, "configuracao": {                                                       "partes": {"execucao": {"modelo": "m1"}}}}
     ok = cli.put("/api/v1/configuracao", json=corpo)
     assert ok.status_code == 200 and ok.json()["versao"] == 1
     assert cli.put("/api/v1/configuracao", json=corpo).status_code == 409

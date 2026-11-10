@@ -14,6 +14,11 @@ from dotenv import dotenv_values
 
 PREFIXO = "FORJA_INT_"
 _NOME = re.compile(r"^FORJA_INT_[A-Z0-9_]{1,50}$")
+_arquivos: list[Path] = [Path(".env")]  # ordem de busca; o do usuario (fora do Git) vem primeiro, definido pelo app
+
+
+def definir_arquivos(arquivos: list[Path]) -> None:
+    _arquivos[:] = list(arquivos)
 
 
 def nome_valido(nome: str) -> bool:
@@ -25,11 +30,13 @@ def ler(nome: str, arquivo_env: Path | None = None) -> str | None:
     if not nome_valido(nome):
         return None
     valor = os.environ.get(nome)
-    if valor is None:
+    for arq in ([arquivo_env] if arquivo_env is not None else _arquivos) if valor is None else []:
         try:
-            valor = dotenv_values(arquivo_env or Path(".env")).get(nome)
+            valor = dotenv_values(arq).get(nome)
         except OSError:
             valor = None
+        if valor:
+            break
     valor = (valor or "").strip()
     return valor or None
 

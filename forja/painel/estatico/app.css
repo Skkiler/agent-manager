@@ -6,7 +6,7 @@
   --cartao: #2b2b2b; --hover: #2a2d2e; --sel: #37373d; --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
 }
 @media (prefers-color-scheme: light) {
-  :root { --bg: #ffffff; --lateral: #f3f3f3; --ativ: #2c2c2c; --painel: #ffffff; --borda: #d4d4d4; --texto: #333333;
+  :root:not([data-tema]) { --bg: #ffffff; --lateral: #f3f3f3; --ativ: #2c2c2c; --painel: #ffffff; --borda: #d4d4d4; --texto: #333333;
     --mudo: #6b6b6b; --acento: #0066b8; --acento-bg: #cce4f7; --ok: #1a7f37; --aviso: #9a6700; --erro: #cf222e;
     --cartao: #f8f8f8; --hover: #e8e8e8; --sel: #e4e6f1; }
 }
@@ -132,3 +132,13 @@ dialog { background: var(--lateral); color: var(--texto); border: 1px solid var(
 .toast.erro { border-left-color: var(--erro); } .toast.ok { border-left-color: var(--ok); }
 
 @media (max-width: 1000px) { #area { --w-direita: 0px; --w-lateral: 0px; } #lateral, #direita { display: none; } #area[data-lateral="on"] #lateral, #area[data-direita="on"] #direita { display: block; position: fixed; top: 36px; bottom: 24px; width: 86vw; z-index: 40; } #direita { right: 0; } #lateral { left: 52px; } .memoria { grid-template-columns: 1fr; } }
+
+:root[data-tema="claro"] { color-scheme: light; --bg: #ffffff; --lateral: #f3f3f3; --ativ: #2c2c2c; --painel: #ffffff; --borda: #d4d4d4; --texto: #333333;
+  --mudo: #6b6b6b; --acento: #0066b8; --acento-bg: #cce4f7; --ok: #1a7f37; --aviso: #9a6700; --erro: #cf222e; --cartao: #f8f8f8; --hover: #e8e8e8; --sel: #e4e6f1; }
+:root[data-tema="escuro"] { color-scheme: dark; --bg: #1e1e1e; --lateral: #252526; --ativ: #333333; --painel: #1e1e1e; --borda: #3c3c3c; --texto: #cccccc;
+  --mudo: #9d9d9d; --acento: #3794ff; --acento-bg: #094771; --ok: #3fb950; --aviso: #d29922; --erro: #f85149; --cartao: #2b2b2b; --hover: #2a2d2e; --sel: #37373d; }
+button.bloco { display: block; width: 100%; text-align: left; margin: 2px 0; }
+.opcao h3 { margin: 0; } .opcao .exemplo { font-size: 12px; }
+.exemplos-lista { margin: 4px 0; padding-left: 18px; }
+.barra-salvar { position: sticky; bottom: 0; background: var(--painel); border-top: 1px solid var(--borda); padding: 6px 0; margin-top: 8px; }
+dl.perfil { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 4px 0; } dl.perfil dd { margin: 0; overflow-wrap: anywhere; }

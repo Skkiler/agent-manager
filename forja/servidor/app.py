@@ -7,6 +7,7 @@ import threading
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -23,6 +24,7 @@ from forja.config import Configuracoes, obter_configuracoes
 from forja.contexto.construtor import ConstrutorContexto
 from forja.dominio.erros import ErroDominio
 from forja.ferramentas.catalogo import Catalogo
+from forja.integracoes import ambiente
 from forja.memoria.modelo import Principal
 from forja.observabilidade.logs import configurar_logging, correlation_id_var
 from forja.orquestracao.configuracao_servico import ConfiguracaoServico
@@ -34,14 +36,19 @@ from forja.orquestracao.quadro_servico import QuadroServico
 from forja.orquestracao.revisao import RevisaoServico
 from forja.orquestracao.servico import Servico
 from forja.orquestracao.visoes import VisaoKanban
+from forja.preferencias.registro import POR_ID
+from forja.preferencias.servico import PreferenciasServico
 from forja.seguranca.auth import LimitadorTaxa, carregar_token
+from forja.seguranca.pastas import definir_protegidas
 from forja.servidor.rotas import publico, r
 from forja.servidor.rotas_ferramentas import rf
 from forja.servidor.rotas_integracoes import ri
 from forja.servidor.rotas_memoria import rm
+from forja.servidor.rotas_preferencias import rp
 from forja.servidor.rotas_quadro import rq
 from forja.servidor.rotas_sistema import rs
 from forja.servidor.rotas_visoes import rv
+from forja.usuario.layout import validar_fora_do_git
 
 log = logging.getLogger("forja.app")
 ESTATICO = __import__("pathlib").Path(__file__).resolve().parent.parent / "painel" / "estatico"
@@ -68,6 +75,24 @@ def criar_servico(cfg: Configuracoes, provedor: ProvedorAgente | None = None) ->
                    lock_lease_seconds=cfg.app_lock_lease_seconds)
 
 
+def _criar_preferencias(cfg: Configuracoes, servico: Servico, app: FastAPI) -> PreferenciasServico:
+    """Preferencias do usuario. Valores do ambiente (.env) valem como ponto de partida ate o usuario salvar na tela."""
+    sementes: dict = {}
+    if cfg.ferramentas_raizes:  # APP_TOOLS_ROOTS (legado): liga a leitura e permite essas pastas
+        sementes.update(ferramentas_arquivos_ativas=True, pastas_permitidas=[str(p) for p in cfg.ferramentas_raizes])
+    for pref, valor in (("limite_requisicoes_por_minuto", cfg.app_rate_limit_per_minute), ("aprovacao_timeout_segundos", cfg.app_approval_timeout_seconds),
+                        ("contexto_orcamento_tokens", cfg.app_context_budget_tokens), ("contexto_ativo", cfg.app_context_enabled)):
+        if valor != POR_ID[pref].padrao:
+            sementes[pref] = valor
+    prefs = PreferenciasServico(servico.repo, sementes=sementes)
+    prefs.registrar_aplicador("contexto_ativo", lambda v: setattr(servico, "contexto_ativo", bool(v)))
+    prefs.registrar_aplicador("aprovacao_timeout_segundos", lambda v: setattr(servico, "espera_aprovacao_s", float(v)))
+    prefs.registrar_aplicador("contexto_orcamento_tokens", lambda v: setattr(servico.construtor_contexto, "orcamento", int(v))
+                              if servico.construtor_contexto is not None else None)
+    definir_protegidas([app.state.perfil.raiz])  # dados do usuario: nenhuma ferramenta le, com qualquer configuracao
+    return prefs
+
+
 def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None = None) -> FastAPI:
     cfg = cfg or obter_configuracoes()
     configurar_logging(cfg.app_log_level)
@@ -85,6 +110,14 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app = FastAPI(title="Forja", version=__import__("forja").__version__, lifespan=lifespan,
                   docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.config = cfg
+    perfil = cfg.perfil_usuario()
+    if cfg.app_data_dir is None:  # perfil real do usuario (nao e um diretorio explicito de teste)
+        validar_fora_do_git(perfil)
+        perfil.criar()
+        if perfil.legado:
+            log.warning("Dados do usuario em ./data (modo legado). Migre para fora do repositorio: python scripts/migrar_dados_usuario.py")
+    ambiente.definir_arquivos([perfil.arquivo_env, Path(".env")])  # segredos de integracao: .env do usuario primeiro
+    app.state.perfil = perfil
     app.state.servico = provedor_servico = criar_servico(cfg, provedor)
     _ = cfg.memoria_namespaces  # falha cedo se APP_MEMORY_ALLOWED_NAMESPACES for invalido
     app.state.memoria = ServicoMemoria(provedor_servico.repo, raizes_ingestao=cfg.memoria_raizes)
@@ -94,8 +127,9 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
             app.state.memoria, Principal("contexto", frozenset(ns)), ns, orcamento=cfg.app_context_budget_tokens)
     app.state.propostas = PropostasMemoria(provedor_servico, app.state.memoria)
     app.state.integracoes = IntegracaoServico(provedor_servico.repo)
-    app.state.ferramentas = Catalogo(cfg.ferramentas_raizes, app.state.integracoes)
-    app.state.quadro = QuadroServico(provedor_servico.repo)
+    app.state.prefs = _criar_preferencias(cfg, provedor_servico, app)
+    app.state.ferramentas = Catalogo((), app.state.integracoes, politica=app.state.prefs.politica_pastas)
+    app.state.quadro = provedor_servico.quadro = QuadroServico(provedor_servico.repo)  # orquestrador avisa o quadro
     app.state.kanban = VisaoKanban(provedor_servico.repo)
     app.state.grafo = GrafoServico(provedor_servico.repo)
     app.state.configuracao = ConfiguracaoServico(provedor_servico.repo, modelo_padrao=cfg.app_kiro_model)
@@ -106,6 +140,8 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.state.modelos = CatalogoModelos(resolver_cli(cfg.app_kiro_cli_path))  # lista da conta (somente leitura)
     app.state.token = carregar_token(cfg)
     app.state.limitador = LimitadorTaxa(cfg.app_rate_limit_per_minute)
+    app.state.prefs.registrar_aplicador("limite_requisicoes_por_minuto", lambda v: setattr(app.state.limitador, "limite", int(v)))
+    app.state.prefs.aplicar_todos()  # aplica as preferencias salvas aos componentes ja criados
     app.state.encerrando = threading.Event()
     app.state.hosts = {"127.0.0.1", "localhost", "::1", f"127.0.0.1:{cfg.app_port}", f"localhost:{cfg.app_port}"}
     app.state.hosts |= {h.strip() for h in cfg.app_allowed_hosts.split(",") if h.strip()}
@@ -117,6 +153,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.include_router(rm)
     app.include_router(rf)
     app.include_router(ri)
+    app.include_router(rp)
     app.include_router(rq)
     app.include_router(rs)
     app.include_router(rv)
@@ -148,7 +185,8 @@ def _registrar_middleware(app: FastAPI, cfg: Configuracoes) -> None:
                     return JSONResponse(status_code=403, content={"erro": "origem_rejeitada",
                                         "mensagem": "Origin nao permitida (protecao CSRF)."})
             cliente = request.client.host if request.client else "desconhecido"
-            if not app.state.limitador.permitir(cliente):
+            conta = request.url.path.startswith("/api") or app.state.prefs.valor("contar_estaticos_no_limite")
+            if conta and not app.state.limitador.permitir(cliente):
                 return JSONResponse(status_code=429, content={"erro": "rate_limit", "mensagem": "Muitas requisicoes."})
             resposta = await call_next(request)
             resposta.headers["X-Correlation-ID"] = correlation_id_var.get() or ""

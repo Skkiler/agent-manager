@@ -121,11 +121,18 @@ python scripts\memoria_ingerir.py --raiz "C:\minha\pasta" --namespace pessoal --
 ### Ferramentas dos agentes, quadro e segundo cerebro (Fase 4)
 - `GET /api/v1/ferramentas` lista as ferramentas N0 (outline, resumo de pytest/diff/logs, mapa do repositorio, varredura de segredos,
   esquema SQLite, conversor, orcamento de tokens); `POST /api/v1/ferramentas/{id}/executar` as executa. Ferramentas de arquivo so leem
-  as pastas de `APP_TOOLS_ROOTS` (vazio = desligadas). Economia medida: `python scripts\medir_ferramentas.py`.
+  as pastas **permitidas** no menu Configuracoes > Privacidade (desligado por padrao; `APP_TOOLS_ROOTS` e apenas uma semente legada). Economia medida: `python scripts\medir_ferramentas.py`.
 - Quadro de comunicacao entre master, operador e agentes: `POST/GET /api/v1/quadro`, `POST /api/v1/quadro/retirar`, `POST /api/v1/quadro/{id}/resolver`;
   visao do master em `GET /api/v1/controle/painel`.
 - `POST /api/v1/tarefas/{id}/propor-memoria` gera uma memoria **candidata** a partir de uma tarefa concluida (nunca validada sozinha).
 Detalhes em `docs/adr/0011-catalogo-de-ferramentas-quadro-e-propostas.md`.
+### Seus dados ficam fora do Git e o menu de configuracoes
+- Memoria, notas, credenciais, integracoes, preferencias, tarefas e logs vivem no **perfil do usuario**, fora do repositorio:
+  `%LOCALAPPDATA%\Forja\perfis\<usuario>\` (mude com `APP_USER_HOME` / `APP_PROFILE`). So codigo, logica e configuracao padrao sobem ao Git.
+- Quem ja tem `./data` continua funcionando (modo legado, com aviso). Para migrar sem apagar nada: `python scripts\migrar_dados_usuario.py` (simulacao) e depois `--executar`.
+- **Configuracoes** (tela): categorias Aparencia, Eficiencia, Consumo, Privacidade, Seguranca e Manutencao, cada uma com abas Gerais/Avancadas;
+  toda opcao traz explicacao, exemplos (baixo/medio/alto) e consequencias. API: `GET/PUT /api/v1/preferencias`. Detalhes no ADR-014.
+
 ### Limites desta fase
 O agente e um **mock** deterministico: as evidencias que ele produz sao **simuladas** e nao comprovam
 funcionalidade real. Integracao Kiro (ACP), memoria/grafos, multiagentes e o painel pixel art chegam nas Fases 2+.

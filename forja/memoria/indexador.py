@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from forja.seguranca.acoes import caminho_sensivel
+from forja.seguranca.pastas import proibido
 
 MAX_BYTES = 1_000_000
 JANELA_LINHAS = 60
@@ -92,7 +93,8 @@ def listar_arquivos(raiz: Path, extensoes: frozenset[str] | None = None) -> Iter
     permitidas = extensoes or frozenset(LINGUAGENS)
     base = raiz.resolve()
     for atual, dirs, arquivos in os.walk(base, followlinks=False):
-        dirs[:] = sorted(d for d in dirs if d not in IGNORAR_DIRS and not d.endswith(".egg-info"))
+        dirs[:] = sorted(d for d in dirs if d not in IGNORAR_DIRS and not d.endswith(".egg-info")
+                      and not proibido(Path(atual) / d))
         for nome in sorted(arquivos):
             p = Path(atual) / nome
             if p.is_symlink() or p.suffix.lower() not in permitidas or caminho_sensivel(nome):

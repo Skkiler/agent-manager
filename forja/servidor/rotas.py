@@ -66,7 +66,7 @@ def saude() -> dict[str, str]:
 @r.get("/recursos")
 def recursos(request: Request) -> dict[str, Any]:
     cfg = request.app.state.config
-    m = recursos_mod.coletar(cfg.app_data_dir)
+    m = recursos_mod.coletar(cfg.dados_dir)
     return {"metricas": m, **recursos_mod.decidir_perfil(m, cfg.app_reserve_free_ram_gb, cfg.app_resource_profile)}
 
 

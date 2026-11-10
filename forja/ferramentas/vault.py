@@ -11,6 +11,7 @@ from forja.ferramentas.contrato import ResultadoFerramenta, montar, tokens_de_by
 from forja.memoria.indexador import MAX_BYTES
 from forja.memoria.wikilinks import extrair_tags, extrair_wikilinks
 from forja.seguranca.acoes import caminho_sensivel
+from forja.seguranca.pastas import proibido
 
 MAX_NOTAS = 3000
 IGNORAR = frozenset({".git", ".obsidian", ".trash", "node_modules", "__pycache__"})
@@ -45,7 +46,7 @@ def indexar_vault(raiz: Path, caminho: str = ".") -> ResultadoFerramenta:
     bytes_total = 0
     truncado = False
     for atual, dirs, nomes in os.walk(alvo, followlinks=False):
-        dirs[:] = sorted(d for d in dirs if d not in IGNORAR)
+        dirs[:] = sorted(d for d in dirs if d not in IGNORAR and not proibido(Path(atual) / d))
         for nome in sorted(nomes):
             p = Path(atual) / nome
             rel = p.resolve().relative_to(base).as_posix()

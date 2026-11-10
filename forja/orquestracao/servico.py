@@ -41,6 +41,7 @@ from forja.dominio.estados import (
     eh_terminal,
     validar_transicao,
 )
+from forja.dominio.quadro import MensagemIn, TipoMensagem
 from forja.dominio.tempo import Relogio, RelogioSistema, iso, somar
 from forja.observabilidade.sanitizar import sanitizar
 from forja.orquestracao.aprovacoes import AprovacoesMixin, _Espera
@@ -53,6 +54,22 @@ ET, EE = EstadoTarefa, EstadoExecucao
 _EXEC_ABERTAS = (EE.PENDENTE, EE.EXECUTANDO, EE.PAUSADA, EE.AGUARDANDO_APROVACAO)
 _EXEC_ABERTAS_V = frozenset(x.value for x in _EXEC_ABERTAS)
 _FALHA_PROPAGA = (ET.FALHOU, ET.CANCELADA, ET.EXPIRADA)
+
+
+def _aviso_quadro(estado_exec: str, tarefa: dict, execucao_id: str, resumo: str) -> MensagemIn | None:
+    """Traduz o desfecho de uma execucao em mensagem tipada do quadro (None = nada a avisar). Idempotente por execucao+estado."""
+    base: dict[str, Any] = {"origem": "sistema", "tarefa_id": tarefa["id"], "referencias": [f"execucao:{execucao_id}", f"tarefa:{tarefa['id']}"],
+                            "dedup_key": f"exec:{execucao_id}:{estado_exec}"[:100]}
+    titulo = str(tarefa.get("titulo", ""))[:70]
+    resumo = str(sanitizar(resumo))[:300]
+    if estado_exec == EE.PAUSADA.value and tarefa["estado"] == ET.BLOQUEADA.value:
+        return MensagemIn(**base, destino="operador", tipo=TipoMensagem.APONTAMENTO, prioridade=2, assunto=f"Decisao necessaria: {titulo}", payload={"resumo": resumo})
+    if estado_exec == EE.CONCLUIDA.value:
+        return MensagemIn(**base, destino="master", tipo=TipoMensagem.EVENTO, prioridade=3, assunto=f"Concluida: {titulo}", payload={"resumo": resumo})
+    if estado_exec in (EE.FALHOU.value, EE.EXPIRADA.value):
+        return MensagemIn(**base, destino="master", tipo=TipoMensagem.APONTAMENTO, prioridade=1 if estado_exec == EE.FALHOU.value else 2,
+                          assunto=f"{'Falhou' if estado_exec == EE.FALHOU.value else 'Expirou'}: {titulo}", payload={"resumo": resumo})
+    return None
 
 
 class Servico(ConversaContextoMixin, AprovacoesMixin):
@@ -71,7 +88,9 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
         self.construtor_contexto = (
             construtor_contexto  # ConstrutorContexto (opcional): memoria -> prompt, com orcamento
         )
+        self.contexto_ativo = True  # preferencia do usuario (menu de configuracoes): False = nenhum contexto de memoria
         self.espera_aprovacao_s = espera_aprovacao_s
+        self.quadro: Any | None = None  # QuadroServico (opcional): o orquestrador avisa o master/operador, sem depender dele
         self._esperas: dict[str, _Espera] = {}
         self.repo = repo
         self.provedor = provedor
@@ -585,7 +604,23 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
                 self._ev(t, "execucao.falhou", tarefa, execucao_id, {"motivo": motivo})
             else:
                 self._concluir(t, tarefa, execucao_id, res, gravados, fim)
+        self._avisar_quadro(execucao_id)
 
+    def _avisar_quadro(self, execucao_id: str) -> None:
+        """Publica no quadro o desfecho que exige atencao. Melhor esforco: falha aqui nunca altera o resultado da execucao."""
+        if self.quadro is None:
+            return
+        try:
+            with self.repo.leitura() as t:
+                ex = t.obter(T.Execucao, execucao_id)
+                tarefa = t.obter(T.Tarefa, ex["tarefa_id"]) if ex else None
+            if not ex or not tarefa:
+                return
+            aviso = _aviso_quadro(ex["estado"], tarefa, execucao_id, (ex.get("resultado") or {}).get("resumo", ""))
+            if aviso is not None:
+                self.quadro.publicar(aviso, ator="sistema")
+        except Exception:  # noqa: BLE001 - o quadro e informativo
+            log.exception("falha ao publicar no quadro", extra={"execucao_id": execucao_id})
 
     def _concluir(self, t: Tx, tarefa: dict, execucao_id: str, res: ResultadoAgente, gravados: dict, fim: dict) -> None:
         ids_art: dict[str, str] = {}
