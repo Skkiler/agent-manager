@@ -170,7 +170,11 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - **Git:** e-mail do autor reescrito em todo o historico para o endereco noreply do GitHub (force-push com lease; backup em bundle feito antes).
 - **Verificado:** 881 testes passando (suite completa), Ruff limpo, benchmark publico inalterado (0,94/0,87/0,89); navegador real: 47 passos, 0 problemas, axe 0 violacoes
   nas 6 vistas, 6 vistas sem estouro horizontal a 420 px. Avaliacao no corpus real: ver ADR-016 (numeros e decisao do 4.9).
-- **Nao validado com servico real:** busca web (Brave/SearXNG) e os conectores do 4.20b; o CI so roda depois do push (resultado no GitHub).
+- **CI no GitHub (ubuntu-24.04, Python 3.13): verde** (lint, testes, navegador real, layout estreito, axe). Achados SO no Linux e corrigidos:
+  (1) seguranca: caminho `..\x` nao era 'fora da pasta de trabalho' no POSIX (afetava a aprovacao automatica) -> `\` conta como separador em qualquer SO;
+  (2) fixture de teste com `serialize()` de banco vazio recusado por algumas builds do SQLite, que vazava conexoes como ResourceWarning em outro teste;
+  (3) inspetor com caminhos fixos do Windows; (4) Starlette nao fixado (CI instalava versao diferente) -> fixado. Falhas do CI viram anotacoes legiveis sem login.
+- **Nao validado com servico real:** busca web (Brave/SearXNG) e os conectores do 4.20b.
 - **Pendente de decisao:** busca hibrida com embeddings (4.9); pasta de trabalho do agente para os niveis liberado/total (hoje um diretorio isolado do perfil).
 
 ## Limites da Fase 4 (honestos)
