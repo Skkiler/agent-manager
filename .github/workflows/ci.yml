@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   testes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # fixo: o Playwright 1.52 so instala dependencias de sistema em versoes conhecidas do Ubuntu
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
