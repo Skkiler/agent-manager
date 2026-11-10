@@ -110,7 +110,12 @@ def _fora_do_workspace(caminho: str, workspace: Path | None) -> bool:
         return False
     try:
         base = workspace.resolve()
-        alvo = Path(caminho)
+        # Conservador em qualquer SO: "\" conta como separador (no Linux "..\x" e um nome literal, mas um agente que manda isso
+        # esta tentando sair da pasta, e a regra de autonomia depende desta classificacao). Letra de unidade fora do Windows: fora.
+        bruto = caminho.replace("\\", "/")
+        if re.match(r"^[A-Za-z]:/", bruto) and not re.match(r"^[A-Za-z]:", str(base)):
+            return True
+        alvo = Path(bruto)
         alvo = alvo if alvo.is_absolute() else base / alvo
         alvo.resolve().relative_to(base)
         return False

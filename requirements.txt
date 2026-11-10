@@ -7,3 +7,4 @@ SQLAlchemy==2.0.41
 alembic==1.16.5
 psutil==7.2.1
 httpx==0.28.1
+starlette==0.52.1  # transitiva do FastAPI; fixada para o CI instalar a mesma versao validada localmente

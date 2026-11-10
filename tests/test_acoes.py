@@ -113,3 +113,12 @@ def test_acao_desconhecida_nao_quebra_e_e_sanitizada():
 def test_muitos_alvos_sao_resumidos():
     a = descrever_acao(_cmd("rm -rf " + " ".join(f"d{i}" for i in range(10))))
     assert len(a["alvos"]) == 6 and "(+" in a["descricao"]
+
+
+@pytest.mark.parametrize("caminho", ["..\\fora.txt", "sub\\..\\..\\fora.txt", "../fora.txt"])
+def test_barra_invertida_conta_como_separador_em_qualquer_so(tmp_path: Path, caminho: str):
+    """Regressao achada no CI (Linux): '..\\x' nao era 'fora do workspace' porque '\\' nao e separador no POSIX."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    assert descrever_acao({"toolCallId": "x", "kind": "edit", "rawInput": {"path": caminho}}, ws)["fora_do_workspace"] is True
+    assert descrever_acao({"toolCallId": "y", "kind": "edit", "rawInput": {"path": "sub\\ok.txt"}}, ws)["fora_do_workspace"] is False
