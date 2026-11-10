@@ -33,6 +33,7 @@ from forja.orquestracao.configuracao_servico import ConfiguracaoServico
 from forja.orquestracao.grafo_servico import GrafoServico
 from forja.orquestracao.integracao_servico import IntegracaoServico
 from forja.orquestracao.memoria_servico import ServicoMemoria
+from forja.orquestracao.projetos_servico import ProjetosServico
 from forja.orquestracao.propostas import PropostasMemoria
 from forja.orquestracao.quadro_servico import QuadroServico
 from forja.orquestracao.revisao import RevisaoServico
@@ -47,6 +48,7 @@ from forja.servidor.rotas_ferramentas import rf
 from forja.servidor.rotas_integracoes import ri
 from forja.servidor.rotas_memoria import rm
 from forja.servidor.rotas_preferencias import rp
+from forja.servidor.rotas_projetos import rj
 from forja.servidor.rotas_quadro import rq
 from forja.servidor.rotas_sistema import rs
 from forja.servidor.rotas_visoes import rv
@@ -156,6 +158,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     for pref in ("ferramentas_arquivos_ativas", "pastas_permitidas"):
         app.state.prefs.registrar_aplicador(pref, _raizes_ingestao)
     _raizes_ingestao()
+    app.state.projetos = provedor_servico.projetos = ProjetosServico(provedor_servico.repo, cfg.artefatos_dir, politica=app.state.prefs.politica_pastas)
     provedor_servico.perfil_de = app.state.prefs.perfil_trabalho  # autonomia/metodos/observacoes lidos a cada execucao
     if isinstance(provedor_servico.provedor, ProvedorKiroAcp):
         provedor_servico.provedor.perfil_de = app.state.prefs.perfil_trabalho
@@ -189,6 +192,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.include_router(rq)
     app.include_router(rs)
     app.include_router(rv)
+    app.include_router(rj)
     _ = provedor_servico  # servico ja referenciado em app.state
 
     if ESTATICO.exists():

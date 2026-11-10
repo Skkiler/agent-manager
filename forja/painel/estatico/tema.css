@@ -106,3 +106,15 @@ button[aria-pressed="false"] { opacity: 1; color: var(--mudo); }
 button[aria-pressed="true"] { color: var(--titulo); }
 [role="tab"].primario { background: transparent; color: var(--titulo); border-color: transparent; border-bottom-color: var(--acento); }
 #inferior-corpo:focus-visible, #direita-corpo:focus-visible { outline-offset: -2px; }
+
+/* ---- projetos, explorador e anexos ---- */
+.anexos { border: 1px solid var(--borda); border-radius: var(--raio); padding: 6px 8px; margin: 6px 0; background: var(--cartao); }
+.chips { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-anexo { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--borda); border-radius: 999px; padding: 1px 4px 1px 10px; background: var(--bg); }
+.chip-anexo button { border: 0; background: transparent; padding: 0 6px; border-radius: 999px; }
+.chip-anexo button:hover { background: var(--hover); color: var(--erro); }
+label.botao { display: inline-block; border: 1px solid var(--borda); border-radius: var(--raio-p); padding: 2px 9px; cursor: pointer; background: var(--cartao);
+  transition: border-color var(--dur) var(--curva), background var(--dur) var(--curva); }
+label.botao:hover { border-color: var(--acento); } label.botao:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+.pastas-projeto { display: grid; gap: 6px; margin-bottom: 6px; } .pastas-projeto input { flex: 1; min-width: 220px; }
+.escolher-arquivo { display: grid; gap: 6px; min-width: min(560px, 90vw); } .explorador { max-height: 40vh; overflow: auto; }

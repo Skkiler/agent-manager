@@ -19,6 +19,9 @@ class Projeto(Base):
     descricao: Mapped[str] = mapped_column(Text, default="")
     estado: Mapped[str] = mapped_column(String(32), default="ativo")
     criado_em: Mapped[str] = mapped_column(String(40))
+    # [{caminho, papel}] papel: trabalho (agente le e altera, conforme o nivel de autonomia) | consulta (so leitura)
+    pastas: Mapped[Any] = mapped_column(JSON, default=list, server_default="[]")
+    versao: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
 
 class Objetivo(Base):
@@ -401,3 +404,22 @@ class LigacaoGrafo(Base):
     criado_por: Mapped[str] = mapped_column(String(100))
     criado_em: Mapped[str] = mapped_column(String(40))
     __table_args__ = (UniqueConstraint("origem", "destino", "tipo", name="uq_ligacao_grafo"),)
+
+
+class Anexo(Base):
+    """Arquivo anexado ao contexto de uma tarefa. `origem`: projeto (arquivo de uma pasta do projeto; `caminho` relativo a ela)
+    ou envio (escolhido pelo usuario, de qualquer lugar: so ESTE conteudo fica visivel, nunca a pasta de onde veio).
+    `texto` e o conteudo legivel ja redigido (segredos mascarados) e limitado; imagens ficam no armazenamento de artefatos."""
+
+    __tablename__ = "anexo"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tarefa_id: Mapped[str] = mapped_column(ForeignKey("tarefa.id"), index=True)
+    nome: Mapped[str] = mapped_column(String(200))
+    origem: Mapped[str] = mapped_column(String(16))
+    caminho: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    mime: Mapped[str] = mapped_column(String(100))
+    tamanho: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    texto: Mapped[str] = mapped_column(Text, default="")
+    truncado: Mapped[bool] = mapped_column(Boolean, default=False)
+    criado_em: Mapped[str] = mapped_column(String(40))

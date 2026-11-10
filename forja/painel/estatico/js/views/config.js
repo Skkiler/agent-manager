@@ -38,10 +38,26 @@ export async function carregarPreferencias() {
 }
 
 /** Salva UMA preferencia direto (atalhos fora do menu, como o botao da oficina). */
-export async function definirPreferencia(id, valor) {
-  const atual = ctx.prefs ?? await carregarPreferencias();
-  ctx.prefs = await api("PUT", "/preferencias", { expected_version: atual.versao, valores: { [id]: valor } });
-  aplicarPreferencias(ctx.prefs);
+// Gravacoes de atalho em FILA: duas trocas rapidas (ex.: detalhe Simples -> Avancado) saiam em paralelo com a mesma versao e a
+// segunda levava 409 (achado no navegador real). Em fila, cada uma usa a versao devolvida pela anterior.
+let filaPreferencias = Promise.resolve();
+export function definirPreferencia(id, valor) {
+  const p = filaPreferencias.then(() => gravarPreferencia(id, valor));
+  filaPreferencias = p.catch(() => {});
+  return p;
+}
+
+async function gravarPreferencia(id, valor) {
+  // Atalho de UM valor (detalhe, oficina): se OUTRA aba salvou antes, recarrega e tenta de novo uma vez. Nao ha perda de
+  // dado porque so este campo e enviado; o menu de Configuracoes (varios campos) continua avisando o conflito ao usuario.
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
+    const atual = tentativa === 0 && ctx.prefs ? ctx.prefs : await api("GET", "/preferencias");
+    try {
+      ctx.prefs = await api("PUT", "/preferencias", { expected_version: atual.versao, valores: { [id]: valor } });
+      aplicarPreferencias(ctx.prefs);
+      return;
+    } catch (e) { if (e.status !== 409 || tentativa === 1) throw e; }
+  }
 }
 
 // ---------------------------------------------------------------- controles por tipo

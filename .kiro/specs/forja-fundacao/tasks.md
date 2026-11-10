@@ -79,6 +79,9 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [~] 4.9 Medido: embeddings sozinhos perdem (0,106); hibrido RRF ganha (0,177, +29%). Adocao como recurso opcional pesado aguarda aprovacao (modelo ~220 MB, ~230 s de indexacao por 2.300 arquivos).
 - [x] 4.24 Perfil de trabalho dos agentes: nivel de autonomia (restrito/liberado/total), metodos como tags combinaveis e observacoes guia. ADR-016.
 - [x] 4.25 Busca web (Brave/SearXNG) e leitura de pagina restrita a resultados recentes ou dominios liberados.
+- [x] 4.27 Projetos com pastas de trabalho/consulta (estilo Codex) ligados ao provedor e ao mediador. ADR-017.
+- [x] 4.28 Anexos de tarefa (do projeto ou enviados de qualquer pasta; texto redigido, imagens ACP), explorador e @mencao.
+- [~] 4.29 Busca hibrida como fallback: medida (margem < 0,30 = melhor gatilho); implementacao opcional aguarda aprovacao (recurso pesado).
 - [x] 4.26 Hospedagem: app web local instalavel (PWA) e `python -m forja --abrir`; tema estilo IDE, responsivo e com movimento reduzido.
 ## Gate Fase 1
 Atingido: tarefa simulada percorre rascunho -> ... -> concluida com estado consistente, evidencia (simulada),

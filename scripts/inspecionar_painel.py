@@ -17,6 +17,7 @@ from pathlib import Path
 PROIBIDA = str(Path(tempfile.gettempdir()) / "pasta-ficticia-proibida")  # absoluta em qualquer SO (Windows e CI Linux)
 INEXISTENTE = str(Path(tempfile.gettempdir()) / "nao-existe-xyz-forja")
 NO_CI = bool(os.environ.get("GITHUB_ACTIONS"))
+ultimo_passo = ["(inicio)"]  # para dizer DEPOIS de qual passo um erro HTTP aconteceu
 
 
 def anotar(titulo: str, msg: str) -> None:
@@ -135,6 +136,7 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
 
     def passo(nome: str, condicao: bool) -> None:
         nonlocal falhas
+        ultimo_passo[0] = nome
         print(f"  [{'OK' if condicao else 'FALHA'}] {nome}")
         falhas += 0 if condicao else 1
         if not condicao:
@@ -151,6 +153,38 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     largura_msg = pagina.locator("#direita .msg").first.bounding_box()["width"]
     passo("mensagens da conversa ocupam a largura do painel (sem colisao de CSS)", largura_msg > 0.8 * pagina.locator("#direita").bounding_box()["width"] - 30)
     passo("aviso de contexto aparece uma unica vez (sem render concorrente)", pagina.locator("#direita .aviso").count() <= 1)
+    pagina.locator("#direita input[type=file]").set_input_files(files=[{"name": "erro.log", "mimeType": "text/plain", "buffer": b"Traceback: falha na fila\n"}])
+    expect(pagina.locator("#direita .chip-anexo")).to_have_count(1, timeout=6000)
+    passo("anexar arquivo enviado (de qualquer pasta) aparece como chip", "erro.log" in pagina.locator("#direita .anexos").inner_text())
+    pagina.locator("#direita .chip-anexo button").click()
+    expect(pagina.locator("#direita .chip-anexo")).to_have_count(0, timeout=6000)
+    passo("remover anexo", True)
+
+    pasta = Path(tempfile.mkdtemp(prefix="forja-proj-"))
+    (pasta / "src").mkdir()
+    (pasta / "src" / "fila_prioridade.py").write_text("def enfileirar(x):\n    return x\n", encoding="utf-8")
+    (pasta / ".env").write_text("SEGREDO=x", encoding="utf-8")
+    pagina.get_by_role("button", name="+ Projeto").click()
+    pagina.get_by_label("Nome do projeto").fill(f"Projeto da fila {pasta.name}")  # unico: o script pode rodar de novo no mesmo demo
+    pagina.get_by_label("Caminho da pasta").fill(str(pasta))
+    pagina.locator("#dlg-geral").get_by_role("button", name="Salvar").click()
+    expect(pagina.locator("#lateral")).to_contain_text("1 de trabalho, 0 de consulta", timeout=6000)
+    passo("criar projeto com pasta de trabalho", True)
+    pagina.get_by_role("button", name="+ Nova tarefa").click()
+    pagina.get_by_label("Titulo").fill("Revisar a fila")
+    pagina.get_by_label("Criterios de aceite (obrigatorio)").fill("explicar a fila")
+    pagina.get_by_role("button", name="Criar e preparar").click()
+    pagina.locator(".cartao", has_text="Revisar a fila").click()
+    pagina.get_by_role("button", name="@ do projeto").click()
+    pagina.get_by_label("Buscar arquivo do projeto").fill("@fila")
+    pagina.locator(".escolher-arquivo button", has_text="fila_prioridade.py").first.click()
+    expect(pagina.locator("#direita .chip-anexo")).to_have_count(1, timeout=6000)
+    passo("@mencao anexa arquivo da pasta do projeto", "fila_prioridade.py" in pagina.locator("#direita .anexos").inner_text())
+    pagina.get_by_role("button", name="@ do projeto").click()
+    passo("explorador do projeto esconde .env", ".env" not in pagina.locator(".explorador").inner_text())
+    pagina.screenshot(path=str(saida / "projeto-anexos.png"))
+    pagina.locator("#dlg-geral").get_by_role("button", name="Fechar").click()
+    pagina.get_by_label("Filtrar por projeto").select_option("")  # volta a mostrar todas as tarefas para os proximos passos
     pagina.screenshot(path=str(saida / "tarefas-conversa.png"))
 
     pagina.locator(".cartao", has_text="Planejar migracao").drag_to(pagina.locator('.coluna[data-id="concluida"]'))
@@ -335,7 +369,7 @@ def main() -> int:
         erros: list[str] = []
         pagina.on("console", lambda m: erros.append(f"console.{m.type}: {m.text}") if m.type in ("error", "warning") else None)
         pagina.on("pageerror", lambda e: erros.append(f"pageerror: {e}"))
-        pagina.on("response", lambda r: erros.append(f"http {r.status}: {r.url.split('/api/v1')[-1]}") if r.status >= 400 else None)
+        pagina.on("response", lambda r: erros.append(f"http {r.status} {r.request.method}: {r.url.split('/api/v1')[-1]} (apos: {ultimo_passo[0]})") if r.status >= 400 else None)
         base = f"http://127.0.0.1:{a.porta}/"
         for vista, seletor in VISTAS.items():
             erros.clear()

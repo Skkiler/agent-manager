@@ -177,6 +177,12 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - **Nao validado com servico real:** busca web (Brave/SearXNG) e os conectores do 4.20b.
 - **Pendente de decisao:** busca hibrida com embeddings (4.9); pasta de trabalho do agente para os niveis liberado/total (hoje um diretorio isolado do perfil).
 
+## Projetos com pastas, anexos e fallback hibrido (itens 4.27-4.29) — resultados reais
+- **Novos:** `orquestracao/projetos_servico.py`, `servidor/rotas_projetos.py`, `views/projetos.js`, migracao 0010 (`projeto.pastas`, tabela `anexo`), pastas de trabalho/consulta no provedor e no mediador, modo da tarefa na tela. ADR-017.
+- **Verificado:** 897 testes passando, Ruff limpo; navegador real: 52 passos, 0 problemas (projeto com pasta, @mencao, explorador sem `.env`, anexo enviado e removido), axe sem violacao grave.
+- **Medido (ADR-017):** fallback hibrido por margem 1o-2o < 0,30 = recall@5 0,222 (hibrido sempre 0,218; busca atual 0,163), usado em 86% das perguntas; o custo dominante e indexar, nao consultar.
+- **Pendente de decisao:** ativar o hibrido opcional (modelo ~220 MB, ~6 min de CPU na 1a indexacao). Nao validado com o Kiro real: se ele pede permissao para LER dentro da pasta de trabalho (no restrito, a pergunta depende disso).
+
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -195,7 +201,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - Scanner dedicado de segredos (gitleaks) e CI continuam ausentes. Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 881 passed.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 897 passed.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

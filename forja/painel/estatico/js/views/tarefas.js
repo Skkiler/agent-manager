@@ -1,6 +1,7 @@
 // Quadro Kanban de tarefas (estilo Jira). As colunas e as acoes validas vem do servidor: a UI nao inventa transicoes.
 import { api, consulta } from "../api.js";
 import { estado, emitir, ouvir, selecionarTarefa } from "../estado.js";
+import { dialogoProjeto, resumoPastas } from "./projetos.js";
 import { dialogo, el, limpar, tag, toast } from "../ui.js";
 
 let projetoFiltro = "";
@@ -86,11 +87,15 @@ function novaTarefa() {
   const desc = el("textarea", { rows: 3, maxLength: 4000 });
   const crit = el("textarea", { rows: 3, placeholder: "Um criterio por linha", required: true });
   const cenario = el("select", {}, ...["sucesso", "falha", "bloqueio", "conversa"].map((v) => el("option", { value: v, textContent: v })));
+  const modo = el("select", { "aria-label": "Modo da tarefa" }, ...[["analise", "Analise (so leitura)"], ["documentacao", "Documentacao"], ["alteracao_codigo", "Alteracao de codigo"], ["verificacao", "Verificacao (rodar testes)"]]
+    .map(([v, r]) => el("option", { value: v, textContent: r })));
   const prio = el("select", {}, ...[1, 2, 3, 4, 5].map((n) => el("option", { value: n, textContent: `P${n}${n === 1 ? " (mais urgente)" : ""}`, selected: n === 3 })));
   const f = el("form", {},
     el("label", { className: "campo" }, el("span", { textContent: "Titulo" }), titulo),
     el("label", { className: "campo" }, el("span", { textContent: "Descricao" }), desc),
     el("label", { className: "campo" }, el("span", { textContent: "Criterios de aceite (obrigatorio)" }), crit),
+    el("label", { className: "campo" }, el("span", { textContent: "Modo" }), modo),
+    el("p", { className: "mudo", textContent: "Alteracao de codigo e verificacao exigem nivel de autonomia liberado ou total (Configuracoes > Agentes) e uma pasta de trabalho no projeto." }),
     el("label", { className: "campo" }, el("span", { textContent: "Prioridade" }), prio),
     el("label", { className: "campo so-avancado" }, el("span", { textContent: "Cenario do agente simulado (so vale para o mock)" }), cenario),
     el("div", { className: "linha" }, el("button", { type: "submit", className: "primario", textContent: "Criar e preparar" }),
@@ -104,7 +109,7 @@ function novaTarefa() {
       if (!pid) pid = (await api("POST", "/projetos", { nome: `projeto-${sufixo}`, descricao: "criado pelo painel" })).id;
       const o = await api("POST", "/objetivos", { projeto_id: pid, titulo: titulo.value, prioridade: Number(prio.value) });
       const t = await api("POST", "/tarefas", { objetivo_id: o.id, titulo: titulo.value, descricao: desc.value,
-        criterios_aceite: crit.value.split("\n").map((s) => s.trim()).filter(Boolean), entrada: { mock_cenario: cenario.value, mock_passos: 3 } });
+        criterios_aceite: crit.value.split("\n").map((s) => s.trim()).filter(Boolean), modo: modo.value, entrada: { mock_cenario: cenario.value, mock_passos: 3 } });
       await preparar({ id: t.id, versao_estado: t.versao_estado });
       d.fechar(); toast("Tarefa criada e preparada", "ok"); await atualizar();
     } catch (e) { toast(e.message, "erro"); }
@@ -113,11 +118,20 @@ function novaTarefa() {
 
 export async function montarLateral(lat) {
   limpar(lat);
-  const sel = el("select", { "aria-label": "Filtrar por projeto", onchange: () => { projetoFiltro = sel.value; atualizar(); } }, el("option", { value: "", textContent: "Todos os projetos" }));
+  const resumo = el("p", { className: "mudo", role: "status" });
+  const mostrarResumo = (lista) => { const p = lista.find((x) => x.id === sel.value); resumo.textContent = p ? resumoPastas(p) : ""; };
+  let projetos = [];
+  const sel = el("select", { "aria-label": "Filtrar por projeto", onchange: () => { projetoFiltro = sel.value; mostrarResumo(projetos); atualizar(); } }, el("option", { value: "", textContent: "Todos os projetos" }));
   lat.append(el("h2", { textContent: "Tarefas" }), el("button", { type: "button", className: "primario", textContent: "+ Nova tarefa", onclick: novaTarefa }),
     el("label", { className: "campo" }, el("span", { textContent: "Projeto" }), sel),
+    el("div", { className: "linha" }, el("button", { type: "button", textContent: "+ Projeto", onclick: () => dialogoProjeto(null, (p) => { projetoFiltro = p.id; montarLateral(lat); atualizar(); }) }),
+      el("button", { type: "button", textContent: "Pastas…", title: "Pastas de trabalho e consulta do projeto selecionado", onclick: async () => {
+        if (!sel.value) return toast("Escolha um projeto primeiro.");
+        dialogoProjeto(await api("GET", `/projetos/${sel.value}`), () => montarLateral(lat));
+      } })),
+    resumo,
     el("p", { className: "aviso", textContent: "Arraste um cartao para Pronta (preparar) ou para Falhou/cancelada (cancelar). Sem arrastar, use os botoes do cartao." }));
-  try { for (const p of await api("GET", "/projetos")) sel.append(el("option", { value: p.id, textContent: p.nome, selected: p.id === projetoFiltro })); } catch { /* lista de projetos e opcional */ }
+  try { projetos = await api("GET", "/projetos"); for (const p of projetos) sel.append(el("option", { value: p.id, textContent: p.nome, selected: p.id === projetoFiltro })); mostrarResumo(projetos); } catch { /* lista de projetos e opcional */ }
 }
 
 export function montar(raiz) {

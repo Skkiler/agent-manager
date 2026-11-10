@@ -171,12 +171,20 @@ def main() -> int:
         ing = s.ingerir_diretorio(p, IngerirIn(namespace=NS, raiz=str(copia), repositorio="corpus", extensoes=[".py"]))
         t_ing = time.perf_counter() - t0
 
+        sinais: dict[str, tuple[float, bool, float]] = {}  # consulta -> (cobertura do 1o, sem correspondencia exata, margem 1o-2o)
+
         def lexical(expandir: bool):
             def f(q: str) -> list[str]:
                 try:
                     res = s.buscar(p, q, [NS], fontes=("codigo",), limite=10, expandir=expandir)
                 except Exception:  # noqa: BLE001 - consulta sem termos uteis: zero acertos
+                    sinais[q] = (0.0, True, 0.0)
                     return []
+                if expandir:
+                    rs = res["resultados"]
+                    top = rs[0].get("cobertura", 1.0) if rs else 0.0
+                    margem = (rs[0].get("pontuacao", 0) - rs[1].get("pontuacao", 0)) / max(rs[0].get("pontuacao", 0), 1e-9) if len(rs) > 1 else (1.0 if rs else 0.0)
+                    sinais[q] = (float(top), any("sem correspondencia exata" in a for a in res.get("avisos", [])), float(margem))
                 return list(dict.fromkeys(i["caminho"] for i in res["resultados"]))
             return f
 
@@ -191,6 +199,14 @@ def main() -> int:
             ranks_emb, info = _embeddings(textos, casos, a.modelo)
             resultado["embeddings"] = {**avaliar(lambda q: ranks_emb[q], casos, a.k), "info": info}
             resultado["hibrido_rrf"] = avaliar(lambda q: _rrf(ranks_nova[q], ranks_emb[q]), casos, a.k)
+            # Fallback (proposta do usuario): busca atual primeiro; so quando ela parece fraca, recorre ao hibrido.
+            gatilhos = {f"cobertura<{lim}": (lambda q, lim=lim: (not ranks_nova[q]) or sinais[q][0] < lim) for lim in (0.4, 0.6, 0.8)}
+            gatilhos |= {f"margem<{m}": (lambda q, m=m: (not ranks_nova[q]) or sinais[q][2] < m) for m in (0.05, 0.15, 0.3)}
+            gatilhos["vazio"] = lambda q: not ranks_nova[q]
+            for limiar, gatilho in gatilhos.items():
+                acionadas = sum(1 for c in casos if gatilho(c.consulta))
+                resultado[f"fallback_{limiar}"] = {**avaliar(lambda q, g=gatilho: _rrf(ranks_nova[q], ranks_emb[q]) if g(q) else ranks_nova[q], casos, a.k),
+                                                     "acionado_em": round(acionadas / max(1, len(casos)), 3)}
         repo.fechar()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)  # a copia do corpus nunca fica para tras
@@ -199,10 +215,11 @@ def main() -> int:
     fmt = lambda m: f"{m[f'recall@{k}']:.3f} / {m['mrr']:.3f} / {m[f'ndcg@{k}']:.3f}"  # noqa: E731
     print(f"casos={resultado['casos']} arquivos={resultado['arquivos']} latencia={resultado['latencia_ms_por_consulta']} ms/consulta")
     print(f"{'':14}recall@{k} / MRR / nDCG@{k}")
-    for nome in ("baseline", "nova", "embeddings", "hibrido_rrf"):
+    for nome in ("baseline", "nova", "embeddings", "hibrido_rrf", *[k for k in resultado if k.startswith("fallback_")]):
         if nome in resultado:
             m = resultado[nome]
-            print(f"{nome:14}{fmt(m['global'])}   " + "  ".join(f"{c}: {fmt(v)} (n={v['casos']})" for c, v in m["por_categoria"].items()))
+            extra = f" (hibrido em {m['acionado_em']:.0%} das consultas)" if "acionado_em" in m else ""
+            print(f"{nome:14}{fmt(m['global'])}{extra}   " + "  ".join(f"{c}: {fmt(v)} (n={v['casos']})" for c, v in m["por_categoria"].items()))
     if "embeddings" in resultado:
         print("embeddings:", resultado["embeddings"]["info"])
     if a.json:

@@ -50,7 +50,8 @@ class _Lote:
 
 class MediadorPermissoes:
     def __init__(self, ctl: ControleExecucao, workspace: Path, janela: float = 0.8, espera_max: float = 1800.0,
-                 perfil: PerfilTrabalho = PADRAO) -> None:
+                 perfil: PerfilTrabalho = PADRAO, trabalho: list[Path] | None = None, consulta: list[Path] | None = None) -> None:
+        self.trabalho, self.consulta = list(trabalho or []), list(consulta or [])  # pastas do projeto
         self.perfil = perfil  # nivel de autonomia: quais acoes reversiveis dentro do workspace dispensam pergunta
         self.ctl = ctl
         self.workspace = workspace
@@ -69,12 +70,15 @@ class MediadorPermissoes:
     def decidir(self, pedido: dict[str, Any]) -> str | None:
         """Implementa DecisorPermissao. Retorna optionId (ou None => cancelar)."""
         opcoes = pedido.get("options", [])
-        item = descrever_acao(pedido.get("toolCall") or {}, self.workspace)
+        item = descrever_acao(pedido.get("toolCall") or {}, self.workspace, self.trabalho, self.consulta)
         rejeitar = _rejeitar(opcoes)
         permitir = _opcao(opcoes, "allow_once")
         if item["sensivel"]:
             self.ctl.evento("kiro.permissao_negada_automatica",
                             {"motivo": "acao envolve segredo/credencial", "descricao": item["descricao"]})
+            return rejeitar
+        if item.get("em_consulta"):  # pasta de consulta e SO leitura, em qualquer nivel
+            self.ctl.evento("kiro.permissao_negada_automatica", {"motivo": "pasta de consulta e somente leitura", "descricao": item["descricao"]})
             return rejeitar
         if permitir is None:  # sem como permitir uma vez: nao arrisca allow_always
             return rejeitar

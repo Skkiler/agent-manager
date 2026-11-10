@@ -88,6 +88,7 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
         self.construtor_contexto = (
             construtor_contexto  # ConstrutorContexto (opcional): memoria -> prompt, com orcamento
         )
+        self.projetos: Any | None = None  # ProjetosServico: pastas do projeto e anexos entregues ao provedor
         self.perfil_de: Any | None = None  # () -> PerfilTrabalho (preferencias): autonomia, metodos e observacoes
         self.contexto_ativo = True  # preferencia do usuario (menu de configuracoes): False = nenhum contexto de memoria
         self.espera_aprovacao_s = espera_aprovacao_s
@@ -509,6 +510,11 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
                     if a["origem"] == "pre_execucao" and a["adendo"]
                 ]
                 tarefa["retomada"] = self._dados_de_retomada(t, tarefa, execucao_id)
+            if self.projetos is not None:
+                try:
+                    tarefa["projeto_ctx"] = self.projetos.para_execucao(tarefa)
+                except Exception:  # noqa: BLE001 - sem pastas/anexos a execucao segue no workspace isolado
+                    log.exception("falha ao montar projeto e anexos", extra={"execucao_id": execucao_id})
             pacote = self._montar_contexto(execucao_id, tarefa)
             self._emitir_exec(execucao_id, "agente.iniciado", {"agente": self.provedor.id, "mock": self.provedor.mock})
             res = self.provedor.executar(tarefa, ex["checkpoint"] or {}, ctl)

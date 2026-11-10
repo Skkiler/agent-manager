@@ -145,8 +145,17 @@ def _lista(alvos: list[str]) -> str:
     return ", ".join(vis) + extra
 
 
-def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None) -> dict[str, Any]:
-    """Retorna {id, categoria, risco, descricao, alvos, sensivel, fora_do_workspace, tecnico}."""
+ESCRITA = frozenset({"modificar_arquivos", "excluir", "excluir_forcado", "mover"})
+
+
+def _dentro_de_alguma(caminho: str, raizes: list[Path]) -> bool:
+    return any(not _fora_do_workspace(caminho, r) for r in raizes)
+
+
+def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None, trabalho: list[Path] | None = None,
+                   consulta: list[Path] | None = None) -> dict[str, Any]:
+    """Retorna {id, categoria, risco, descricao, alvos, sensivel, fora_do_workspace, em_consulta, tecnico}.
+    trabalho/consulta: pastas do projeto. Ler vale em ambas; escrever, so nas de trabalho (em_consulta = escrita numa de consulta)."""
     tc = tool_call or {}
     kind = str(tc.get("kind") or "").lower()
     titulo = sanitizar_texto(str(tc.get("title") or ""))[:120]
@@ -187,7 +196,13 @@ def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None) -> 
 
     candidatos = alvos + [t.strip("\"';,()") for t in re.split(r"\s+", cmd) if t]  # cada token do comando conta
     sensivel = any(_SENSIVEL.search(c.replace("\\", "/")) for c in candidatos)
-    fora = any(_fora_do_workspace(a, workspace) for a in alvos)  # avaliado ANTES de relativizar
+    raizes_escrita = [r for r in [workspace, *(trabalho or [])] if r is not None]
+    raizes_leitura = raizes_escrita + list(consulta or [])
+    if raizes_escrita:  # avaliado ANTES de relativizar
+        fora = any(not _dentro_de_alguma(a, raizes_leitura if categoria == "ler" else raizes_escrita) for a in alvos)
+    else:
+        fora = False
+    em_consulta = categoria in ESCRITA and any(_dentro_de_alguma(a, list(consulta or [])) and not _dentro_de_alguma(a, raizes_escrita) for a in alvos)
     alvos = _normalizar(alvos, workspace)
     if sensivel:
         risco = "critico"
@@ -217,5 +232,6 @@ def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None) -> 
         "alvos": [sanitizar_texto(a)[:200] for a in alvos[:MAX_ALVOS]],
         "sensivel": sensivel,
         "fora_do_workspace": fora,
+        "em_consulta": em_consulta,
         "tecnico": titulo,
     }

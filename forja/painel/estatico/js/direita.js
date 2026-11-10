@@ -2,6 +2,7 @@
 import { api } from "./api.js";
 import { agrupar, emitir, estado, ouvir } from "./estado.js";
 import { abas, el, limpar, toast } from "./ui.js";
+import { secaoAnexos } from "./views/projetos.js";
 
 const TITULOS = { entendimento: "Entendimento", resposta: "Resposta", premissas: "Premissas", decisoes: "Decisões para você",
   riscos: "Riscos", proximos_passos: "Próximos passos", resposta_operador: "Você" };
@@ -28,6 +29,7 @@ async function conversa(corpo) {
     if (uso) corpo.append(el("p", { className: "aviso", textContent: uso.itens.length
       ? `Contexto enviado: ${uso.itens.length} item(ns), ~${uso.tokens_contexto} tokens (estimativa); usados pelo agente: ${(uso.uteis || []).length}.`
       : "Nenhum contexto foi enviado (0 tokens): nada na memoria era relevante o bastante." }));
+    corpo.append(await secaoAnexos(id, () => renderizar()));
     corpo.append(...(msgs.length ? msgs.map(mensagem) : [el("p", { className: "mudo", textContent: "Sem mensagens ainda. Execute a tarefa para o agente se apresentar." })]));
     const texto = el("textarea", { rows: 4, maxLength: 8000, required: true, "aria-label": "Sua resposta" });
     const retomar = el("input", { type: "checkbox", checked: true });
