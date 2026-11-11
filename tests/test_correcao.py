@@ -124,3 +124,17 @@ def test_python_do_venv_do_projeto_tem_prioridade(projeto):
 def test_resultado_dos_testes_aparece_na_conversa(projeto):
     r, _ = _rodar("corrige", projeto)
     assert any(m.tipo == "verificacao" and "PASSOU" in m.conteudo for m in r.mensagens)
+
+
+def test_correcao_com_mesmo_tamanho_no_mesmo_segundo_nao_usa_bytecode_velho(projeto):
+    """Regressao (achada no CI Linux): o .pyc e validado por mtime em segundos + tamanho. Sem cache novo por rodada, a correcao
+    'a - b' -> 'a + b' (mesmo tamanho, mesmo segundo) carregava o bytecode antigo e o teste continuava falhando."""
+    alvo = projeto / "soma.py"
+    alvo.write_text("def soma(a, b):\n    return a - b\n", encoding="utf-8")
+    c = V.detectar(projeto)
+    assert not V.rodar(c, projeto, 120).ok
+    st = alvo.stat()
+    alvo.write_text("def soma(a, b):\n    return a + b\n", encoding="utf-8")
+    os.utime(alvo, ns=(st.st_atime_ns, st.st_mtime_ns))  # forca o pior caso: mesmo tamanho E mesmo mtime
+    assert V.rodar(c, projeto, 120).ok
+    assert not (projeto / "__pycache__").exists()  # nada gravado na pasta do projeto

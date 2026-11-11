@@ -221,7 +221,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   - Provedor: rodada única de correção, critérios verificáveis, orçamentos rígidos (laço e limite de chamadas), lembrete do objetivo, sinal `_kiro/mcp/status`, modelo de reserva, consumo medido pelo Kiro.
   - MCP compacto e paginado; contexto por referência com MCP; `env.verificar` lê o compose; sugestões de critérios na nova tarefa. ADR-019.
 - **Verificado:**
-  - **1008 testes passando**, Ruff limpo, benchmark inalterado (GLOBAL 0.94/0.87/0.89).
+  - **1009 testes passando**, Ruff limpo, benchmark inalterado (GLOBAL 0.94/0.87/0.89).
   - Navegador real: **63 passos OK, 0 problemas**, axe sem violações, 420 px sem estouro.
   - **Kiro real:** MCP pronto em 1,96 s pelo `_kiro/mcp/status` (modo `forja`).
   - **Kiro real:** correção de código num projeto sintético (o agente corrigiu; a Forja rodou o teste afetado e depois a suíte; PASSOU; os 2 critérios conferidos).
@@ -229,6 +229,9 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - **Achado e corrigido:**
   - O gatilho do fallback tratava "1 único acerto" como dúvida; agora é confiança (só "nenhum resultado" ou margem < 30% aciona).
   - O caminho do arquivo editado não era lido no formato real do Kiro; agora usa o mesmo extrator do mediador.
+  - **Achado pelo CI (Linux):** a nova execução dos testes podia usar *bytecode* velho. O `.pyc` é validado por mtime em segundos mais o tamanho, então uma correção do mesmo tamanho no mesmo segundo carregava o código antigo e o teste "continuava falhando".
+    - Agora cada rodada usa um cache de *bytecode* novo e vazio (`PYTHONPYCACHEPREFIX`) e nunca grava no `__pycache__` do projeto.
+    - Teste de regressão: falhava sem a correção (conferido) e passa com ela.
 - **Pendências:**
   - A rodada de correção só reconhece pytest, npm test, cargo e go.
   - A semântica em `fallback`/`ativo` baixa o modelo na 1ª ativação (rede; aceito ao escolher o nível).
@@ -251,7 +254,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - Scanner dedicado de segredos (gitleaks) e CI continuam ausentes. Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 1008 passed.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 1009 passed.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

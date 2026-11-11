@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -111,8 +112,15 @@ def _resumir(cmd: ComandoTeste, saida: str) -> tuple[str, list[str]]:
 
 def rodar(cmd: ComandoTeste, cwd: Path, timeout: float = 300.0) -> ResultadoTeste:
     t0 = time.monotonic()
+    env = ambiente_limpo()
+    cache_pyc = None
+    if cmd.tipo == "pytest":
+        # Bytecode NOVO a cada rodada: o .pyc e validado por mtime (em segundos) + tamanho; uma correcao do agente com o MESMO
+        # tamanho no mesmo segundo carregaria o codigo antigo e os testes "continuariam falhando". Nunca usa o __pycache__ do projeto.
+        cache_pyc = tempfile.mkdtemp(prefix="forja-pyc-")
+        env["PYTHONPYCACHEPREFIX"] = cache_pyc
     try:
-        p = subprocess.run(list(cmd.args), cwd=str(cwd), env=ambiente_limpo(), capture_output=True, text=True,  # noqa: S603 - lista fixa, sem shell
+        p = subprocess.run(list(cmd.args), cwd=str(cwd), env=env, capture_output=True, text=True,  # noqa: S603 - lista fixa, sem shell
                            encoding="utf-8", errors="replace", timeout=timeout, stdin=subprocess.DEVNULL, check=False)
         saida, codigo, esgotado = (p.stdout or "") + (p.stderr or ""), p.returncode, False
     except subprocess.TimeoutExpired as e:
@@ -120,6 +128,9 @@ def rodar(cmd: ComandoTeste, cwd: Path, timeout: float = 300.0) -> ResultadoTest
         codigo, esgotado = None, True
     except OSError as e:
         saida, codigo, esgotado = f"[nao foi possivel executar: {type(e).__name__}]", None, False
+    finally:
+        if cache_pyc:
+            shutil.rmtree(cache_pyc, ignore_errors=True)
     saida = redigir_segredos(saida[-MAX_SAIDA:])
     resumo, falhas = _resumir(cmd, saida)
     # pytest: 5 = nenhum teste coletado (nao e sucesso nem falha do codigo)

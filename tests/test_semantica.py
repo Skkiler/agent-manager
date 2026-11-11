@@ -12,6 +12,8 @@ from sqlalchemy import text
 
 from forja.adapters.sqlite.repositorio import RepositorioSqlite
 from forja.memoria import semantica as S
+
+pytest.importorskip("numpy")  # dependencia da busca semantica opcional (requirements-dev/-semantica)
 from forja.memoria.contratos import FonteIn, IngerirIn, MemoriaIn
 from forja.memoria.modelo import Principal
 from forja.orquestracao.memoria_servico import ServicoMemoria
