@@ -2,7 +2,7 @@
 // O servidor descreve as opcoes (registro declarativo); aqui so se desenha e se envia o que mudou.
 import { api } from "../api.js";
 import { definirNivel, emitir, estado, selecionarTarefa } from "../estado.js";
-import { el, limpar, tag, toast } from "../ui.js";
+import { el, janela, limpar, recolhivel, tag, toast } from "../ui.js";
 
 const ESCOPOS = [["arquitetura", "Arquitetura"], ["busca_e_memoria", "Busca e memoria"], ["ferramentas", "Ferramentas"],
   ["interface", "Interface"], ["seguranca", "Seguranca"], ["custo_e_modelos", "Custo e modelos"]];
@@ -23,10 +23,34 @@ const itensDe = (prefs) => prefs.categorias.flatMap((c) => c.itens);
 const valorDe = (p) => (p.id in ctx.rascunho ? ctx.rascunho[p.id] : p.valor);
 const igual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-/** Aplica ao painel o que e puramente visual (tema, detalhe, oficina) a partir das preferencias salvas. */
+// ---------------------------------------------------------------- tema e paletas (4 escuras + 4 claras, ver tema.css)
+const CORES_AMOSTRA = { // fundo, cartao, acento, texto: so para desenhar a amostra (os valores reais vivem em tema.css)
+  grafite: ["#1f1f1f", "#252526", "#0078d4", "#cccccc"], meia_noite: ["#0f172a", "#16213a", "#0369a1", "#cbd5e1"],
+  floresta: ["#18201c", "#1f2a24", "#1f7a4d", "#cfd8d2"], brasa: ["#1c1917", "#26211d", "#c2410c", "#d6cfc7"],
+  neve: ["#ffffff", "#f7f7f8", "#005fb8", "#2b2f36"], papel: ["#fbf8f1", "#f3eee3", "#9a4a16", "#3a3226"],
+  nevoa: ["#f4f7f9", "#eaf0f3", "#00695c", "#263238"], lavanda: ["#faf8fd", "#f2eef9", "#6d3fc0", "#2f2a3a"],
+};
+const visual = { tema: "auto", paleta_escura: "grafite", paleta_clara: "neve" };
+const sistemaClaro = matchMedia("(prefers-color-scheme: light)");
+sistemaClaro.addEventListener?.("change", () => pintar());
+
+/** Aplica tema + paleta efetiva no <html>. `extra` = rascunho (previa ao vivo antes de salvar). */
+function pintar(extra = {}) {
+  const v = { ...visual, ...extra };
+  const raiz = document.documentElement;
+  if (v.tema === "claro" || v.tema === "escuro") raiz.dataset.tema = v.tema; else delete raiz.dataset.tema;
+  const claro = v.tema === "claro" || (v.tema !== "escuro" && sistemaClaro.matches);
+  raiz.dataset.paleta = claro ? v.paleta_clara : v.paleta_escura;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", getComputedStyle(raiz).getPropertyValue("--ativ").trim() || "#181818");
+}
+const previa = () => pintar(Object.fromEntries(Object.entries(ctx.rascunho).filter(([k]) => k in visual)));
+
+/** Aplica ao painel o que e puramente visual (tema, paleta, detalhe, oficina) a partir das preferencias salvas. */
 export function aplicarPreferencias(prefs) {
   const v = Object.fromEntries(itensDe(prefs).filter((p) => p.persistida).map((p) => [p.id, p.valor]));
-  if (v.tema === "claro" || v.tema === "escuro") document.documentElement.dataset.tema = v.tema; else delete document.documentElement.dataset.tema;
+  const todos = Object.fromEntries(itensDe(prefs).map((p) => [p.id, p.valor])); // inclui padroes (apos "Restaurar padrão")
+  for (const k of Object.keys(visual)) if (typeof todos[k] === "string") visual[k] = todos[k];
+  pintar();
   if (v.nivel_detalhe) { definirNivel(v.nivel_detalhe); const s = document.getElementById("nivel"); if (s) s.value = v.nivel_detalhe; }
   if (typeof v.oficina_pixel === "boolean") { estado.oficina = v.oficina_pixel; localStorage.setItem("forja_oficina", v.oficina_pixel ? "on" : "off"); emitir("oficina", v.oficina_pixel); }
 }
@@ -65,6 +89,23 @@ function controle(p) {
   const v = valorDe(p);
   const definir = (novo) => { if (igual(novo, p.valor)) delete ctx.rascunho[p.id]; else ctx.rascunho[p.id] = novo; atualizarBarra(); };
   const rotulo = `${p.rotulo}`;
+  if (p.tipo === "selecao" && p.id.startsWith("paleta_")) {
+    // Amostras clicaveis (grupo de radio acessivel): a escolha e aplicada como PREVIA na hora; salvar a torna permanente.
+    const botoes = p.opcoes.map(([val, r]) => {
+      const [fundo, cartao, acento, texto] = CORES_AMOSTRA[val] || [];
+      const faixa = el("span", { className: "faixa-cores", "aria-hidden": "true" }, ...[fundo, cartao, acento, texto].map((c) => {
+        const i = el("i"); i.style.background = c; return i;
+      }));
+      return el("button", { type: "button", role: "radio", className: "amostra", dataset: { valor: val }, "aria-checked": String(val === v),
+        onclick: () => { definir(val); marcar(val); }, onkeydown: (ev) => {
+          const i = p.opcoes.findIndex(([x]) => x === val), passo = ev.key === "ArrowRight" || ev.key === "ArrowDown" ? 1 : ev.key === "ArrowLeft" || ev.key === "ArrowUp" ? -1 : 0;
+          if (passo) { ev.preventDefault(); const alvo = botoes[(i + passo + botoes.length) % botoes.length]; alvo.focus(); alvo.click(); }
+        } }, faixa, el("span", { textContent: r }));
+    });
+    const marcar = (x) => botoes.forEach((b) => { const on = b.dataset.valor === x; b.setAttribute("aria-checked", String(on)); b.tabIndex = on ? 0 : -1; });
+    marcar(v);
+    return { no: el("div", { className: "amostras", role: "radiogroup", "aria-label": rotulo }, ...botoes), aplicar: (x) => { marcar(x); } };
+  }
   if (p.tipo === "bool") {
     const c = el("input", { type: "checkbox", checked: !!v, "aria-label": rotulo, onchange: () => definir(c.checked) });
     return { no: el("label", { className: "linha" }, c, el("span", { textContent: "Ativado" })), aplicar: (x) => { c.checked = !!x; } };
@@ -126,7 +167,7 @@ function controle(p) {
 function cartao(p) {
   const ctl = controle(p);
   const fonte = p.fonte === "ambiente" ? tag("vem do ambiente", "aviso") : null;
-  const exemplos = p.exemplos.length && ctl ? el("div", { className: "linha", role: "group", "aria-label": `Exemplos para ${p.rotulo}` },
+  const exemplos = p.exemplos.length && ctl && !p.id.startsWith("paleta_") ? el("div", { className: "linha", role: "group", "aria-label": `Exemplos para ${p.rotulo}` },
     ...p.exemplos.map((e) => el("button", { type: "button", className: "exemplo", title: e.descricao, textContent: e.rotulo,
       onclick: () => { ctx.rascunho[p.id] = e.valor; if (igual(e.valor, p.valor)) delete ctx.rascunho[p.id]; ctl.aplicar(e.valor); atualizarBarra(); } }))) : null;
   const explicados = p.exemplos.length ? el("ul", { className: "exemplos-lista" }, ...p.exemplos.map((e) => el("li", {}, el("strong", { textContent: `${e.rotulo}: ` }), el("span", { textContent: e.descricao })))) : null;
@@ -134,7 +175,7 @@ function cartao(p) {
     title: `Padrão: ${padraoTexto(p)}`, onclick: () => restaurarPadrao(p) }) : null;
   return el("section", { className: "card opcao", "data-pref": p.id },
     el("div", { className: "linha" }, el("h3", { textContent: p.rotulo }), tag(`risco ${p.risco}`, RISCO[p.risco] || ""), ...(p.reinicia ? [tag("exige reiniciar", "aviso")] : []), ...(fonte ? [fonte] : [])),
-    el("p", { textContent: p.explicacao }),
+    recolhivel(el("p", { textContent: p.explicacao }), 3),
     ...(ctl ? [ctl.no] : []), ...(exemplos ? [exemplos] : []),
     el("details", {}, el("summary", { textContent: "Exemplos e consequências" }),
       ...(explicados ? [explicados] : []),
@@ -248,6 +289,7 @@ const montarItem = (p) => (ESPECIAIS[p.tipo] ?? cartao)(p);
 
 // ---------------------------------------------------------------- tela
 function atualizarBarra() {
+  previa();
   const n = Object.keys(ctx.rascunho).length;
   const barra = document.getElementById("barra-config");
   if (!barra) return;
@@ -272,16 +314,10 @@ let latEl = null;
 function desenharLateral() {
   if (!latEl || !ctx.prefs) return;
   limpar(latEl);
-  latEl.append(el("h2", { textContent: "Configurações" }),
+  latEl.append(el("h2", { textContent: "Categorias" }),
     el("nav", { "aria-label": "Categorias de configuração" }, ...ctx.prefs.categorias.map((c) =>
-      el("button", { type: "button", className: c.id === ctx.categoria ? "primario bloco" : "bloco", "aria-current": c.id === ctx.categoria ? "page" : "false",
+      el("button", { type: "button", className: "bloco", "aria-current": c.id === ctx.categoria ? "page" : "false",
         textContent: c.rotulo, onclick: () => trocar(c.id) }))));
-}
-
-export function montarLateral(lat) {
-  latEl = lat;
-  desenharLateral();
-  if (!ctx.prefs) lat.append(el("p", { className: "mudo", textContent: "Carregando categorias…" }));
 }
 
 function desenhar() {
@@ -297,7 +333,7 @@ function desenhar() {
   raiz.append(el("div", { className: "titulo-vista" }, el("h1", { textContent: cat.rotulo })), el("p", { className: "mudo", textContent: cat.descricao }),
     el("div", { className: "linha", role: "tablist", "aria-label": "Tipo de configuração" }, aba("geral", "Gerais", gerais.length), aba("avancado", "Avançadas", avancadas.length)),
     ...ctx.prefs.avisos.map((a) => el("p", { className: "aviso", role: "status", textContent: a })),
-    el("div", { id: "lista-config", className: "grade", style: "grid-template-columns:repeat(auto-fit,minmax(380px,1fr))" },
+    el("div", { id: "lista-config", className: "grade grade-config" },
       ...(mostrar.length ? mostrar.map(montarItem) : [el("p", { className: "mudo", textContent: "Nenhuma opção nesta aba." })])),
     el("div", { id: "barra-config", className: "linha barra-salvar" }, el("span", { "data-contagem": "", className: "mudo", role: "status" }),
       el("button", { type: "button", className: "primario", textContent: "Salvar alterações", onclick: salvar }),
@@ -306,10 +342,19 @@ function desenhar() {
   atualizarBarra();
 }
 
-export async function montar(raiz) {
-  ctx.raiz = raiz;
-  limpar(raiz);
-  raiz.append(el("p", { className: "mudo", textContent: "Carregando configurações…" }));
+let janelaAberta = null;
+/** Configuracoes em JANELA FLUTUANTE (nao e pagina): categorias a esquerda, opcoes a direita, barra de salvar fixa. */
+export async function abrirJanela() {
+  if (janelaAberta) return janelaAberta.no.querySelector(".config-conteudo")?.focus();
+  const nav = el("div", { className: "config-nav" }, el("p", { className: "mudo", textContent: "Carregando categorias…" }));
+  const conteudo = el("div", { className: "config-conteudo", tabIndex: -1 }, el("p", { className: "mudo", textContent: "Carregando configurações…" }));
+  latEl = nav; ctx.raiz = conteudo;
+  janelaAberta = janela("Configurações", el("div", { className: "config-janela" }, nav, conteudo), {
+    classe: "janela-config", id: "janela-config",
+    antesDeFechar: () => !Object.keys(ctx.rascunho).length || confirm("Há alterações não salvas. Fechar e descartar?"),
+    aoFechar: () => { ctx.rascunho = {}; janelaAberta = null; latEl = null; ctx.raiz = null; pintar(); emitir("janela-fechada", "config"); },
+  });
+  for (const b of document.querySelectorAll("#atividades button")) b.setAttribute("aria-current", b.dataset.id === "config" ? "page" : "false");
   try { await carregarPreferencias(); desenhar(); desenharLateral(); recarregar().catch(() => {}); }
-  catch (e) { limpar(raiz); raiz.append(el("p", { className: "aviso", textContent: e.message })); }
+  catch (e) { limpar(conteudo); conteudo.append(el("p", { className: "aviso", textContent: e.message })); }
 }

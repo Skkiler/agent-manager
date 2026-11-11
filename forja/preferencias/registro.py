@@ -101,7 +101,21 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
          Exemplo("Escuro", "escuro", "Fundo escuro; confortável à noite.")),
         opcoes=(("auto", "Automático"), ("claro", "Claro"), ("escuro", "Escuro"))),
     Preferencia(
-        "oficina_pixel", "cosmetica", "geral", "Oficina pixel art", "bool",
+        "paleta_escura", "cosmetica", "geral", "Paleta do tema escuro", "selecao",
+        "Conjunto de cores usado quando o tema está escuro (fixo ou pelo sistema). Todas seguem o contraste mínimo de acessibilidade "
+        "(WCAG AA). Não afeta nenhuma função.", "grafite",
+        (Exemplo("Grafite", "grafite", "Neutra, acento azul (estilo das IDEs)."), Exemplo("Meia-noite", "meia_noite", "Azul-marinho, acento ciano."),
+         Exemplo("Floresta", "floresta", "Verde profundo, acento esmeralda."), Exemplo("Brasa", "brasa", "Carvão quente, acento laranja de forja.")),
+        opcoes=(("grafite", "Grafite"), ("meia_noite", "Meia-noite"), ("floresta", "Floresta"), ("brasa", "Brasa"))),
+    Preferencia(
+        "paleta_clara", "cosmetica", "geral", "Paleta do tema claro", "selecao",
+        "Conjunto de cores usado quando o tema está claro (fixo ou pelo sistema). Todas seguem o contraste mínimo de acessibilidade "
+        "(WCAG AA). Não afeta nenhuma função.", "neve",
+        (Exemplo("Neve", "neve", "Branca, acento azul."), Exemplo("Papel", "papel", "Creme quente, acento terracota; cansa menos a vista."),
+         Exemplo("Névoa", "nevoa", "Cinza-azulado frio, acento verde-azulado."), Exemplo("Lavanda", "lavanda", "Lilás suave, acento violeta.")),
+        opcoes=(("neve", "Neve"), ("papel", "Papel"), ("nevoa", "Névoa"), ("lavanda", "Lavanda"))),
+    Preferencia(
+        "oficina_pixel", "cosmetica", "avancado", "Oficina pixel art", "bool",
         "Mostra, no painel inferior, bonequinhos que representam as tarefas ativas. É só uma projeção do estado real: não decide nada.",
         True, se_ligar="Visual lúdico; custo praticamente zero.",
         se_desligar="Painel mais limpo e com um pouco menos de redesenho (útil em computadores fracos)."),

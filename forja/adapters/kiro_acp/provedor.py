@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from forja.adapters.kiro_acp import perfil_kiro
 from forja.adapters.kiro_acp.cliente import (
     AcpAutenticacaoNecessaria,
     AcpCliAusente,
@@ -29,6 +30,9 @@ from forja.adapters.kiro_acp.mediador import MediadorPermissoes
 from forja.adapters.kiro_acp.sessao_config import ConfiguracaoIndisponivel, aplicar_configuracao
 from forja.agentes.base import ControleExecucao
 from forja.agentes.estilo import PADRAO, PerfilTrabalho
+from forja.conversa.alegacoes import Alegacao
+from forja.conversa.alegacoes import resumo as resumo_alegacoes
+from forja.conversa.alegacoes import verificar as verificar_alegacoes
 from forja.conversa.briefing import Briefing
 from forja.conversa.briefing import parse as parse_briefing
 from forja.dominio.contratos import (
@@ -45,6 +49,7 @@ log = logging.getLogger("forja.kiro")
 MAX_RESPOSTA = 200_000
 TETO_MENSAGEM = 20_000  # caracteres por mensagem de conversa (o artefato guarda a resposta integral)
 MAX_EVENTOS_TOOL = 100
+MAX_OBSERVADAS = 500
 MODOS_PERMITIDOS = set(PADRAO.modos)  # nivel restrito (padrao); niveis liberado/total ampliam (agentes/estilo.py)
 
 
@@ -66,9 +71,10 @@ def resolver_cli(configurado: str = "") -> str | None:
 
 
 def montar_comando(cli: str, agente: str = "", modelo: str = "", engine: str = "v3") -> list[str]:
+    """`agente` e ignorado: o kiro-cli 3.1.0 (engine v3) RECUSA --agent. O perfil vira modo da sessao (perfil_kiro.py)."""
     cmd = [cli, "acp", f"--agent-engine={engine}"]
     if agente:
-        cmd += ["--agent", agente]
+        log.warning("APP_KIRO_AGENT ignorado: o engine v3 nao aceita --agent; a Forja usa o modo de sessao 'forja'")
     if modelo:
         cmd += ["--model", modelo]
     return cmd  # nunca inclui --trust-all-tools / --trust-tools
@@ -279,6 +285,7 @@ class ProvedorKiroAcp:
 
         partes: list[str] = []
         n_tools = 0
+        observadas: dict[str, dict[str, Any]] = {}  # toolCallId -> {tipo, status, titulo, comando}: base da checagem de alegacoes
         reproduzindo = False
         tokens_ferramentas: list[int] = []  # 'breakdown' do Kiro: cresce quando o MCP conecta e registra as ferramentas
 
@@ -296,7 +303,16 @@ class ProvedorKiroAcp:
                 c = upd.get("content") or {}
                 if c.get("type") == "text" and sum(map(len, partes)) < MAX_RESPOSTA:
                     partes.append(str(c.get("text", "")))
-            elif tipo in ("tool_call", "tool_call_update") and n_tools < MAX_EVENTOS_TOOL:
+            elif tipo in ("tool_call", "tool_call_update"):
+                tid = str(upd.get("toolCallId") or f"sem-id-{len(observadas)}")
+                if tid in observadas or len(observadas) < MAX_OBSERVADAS:
+                    o = observadas.setdefault(tid, {})
+                    for chave, valor in (("tipo", upd.get("kind")), ("status", upd.get("status")), ("titulo", upd.get("title")),
+                                         ("comando", (upd.get("rawInput") or {}).get("command") if isinstance(upd.get("rawInput"), dict) else None)):
+                        if valor:  # updates parciais do Kiro trazem campos nulos: nao apagam o que ja se sabe
+                            o[chave] = str(valor)[:300]
+                if n_tools >= MAX_EVENTOS_TOOL:
+                    return
                 n_tools += 1
                 ctl.evento(
                     "kiro.ferramenta",
@@ -320,12 +336,15 @@ class ProvedorKiroAcp:
                 {"agente": cliente.agent_info.get("name"), "versao": cliente.agent_info.get("version"), "mcp": self.usar_mcp and bool(self.mcp_servers)},
             )
             mcps = list(self.mcp_servers) if self.usar_mcp else []
+            presets = list(perfil_kiro.PRESETS.get(perfil.nivel, perfil_kiro.PRESETS["restrito"]))
             sid, sessao_carregada = None, False
             anterior = (checkpoint or {}).get("session_id")
             if self.reusar_sessao and tarefa.get("retomada") and isinstance(anterior, str) and anterior and cliente.suporta_carregar_sessao:
                 reproduzindo = True  # o agente reenvia o historico como notificacoes: nao podem virar resposta nova
                 try:
-                    cliente.carregar_sessao(anterior, str(cwd.resolve()), self.timeout_handshake, mcps)
+                    cliente.carregar_sessao(anterior, str(cwd.resolve()), self.timeout_handshake, mcps, presets=presets)
+                    if trabalho and perfil_kiro.NOME not in cliente.modos():
+                        raise AcpErro("sessao carregada sem o modo 'forja'")  # cai para sessao nova (que confere de novo)
                     sid, sessao_carregada = anterior, True
                     ctl.evento("kiro.sessao_carregada", {"reaproveitada": True})
                 except AcpErro as e:  # sessao expirada/inexistente: cai para sessao nova com o prompt completo (falha segura)
@@ -334,7 +353,16 @@ class ProvedorKiroAcp:
                     reproduzindo = False
                     partes.clear()
             if sid is None:
-                sid = cliente.nova_sessao(str(cwd.resolve()), self.timeout_handshake, mcps)
+                sid = cliente.nova_sessao(str(cwd.resolve()), self.timeout_handshake, mcps, presets=presets)
+            if perfil_kiro.NOME in cliente.modos():
+                cliente.definir_opcao(sid, "mode", perfil_kiro.NOME, self.timeout_handshake)
+                ctl.evento("kiro.perfil", {"modo": perfil_kiro.NOME, "presets": presets, "aplicado": True})
+            else:
+                ctl.evento("kiro.perfil", {"modo": None, "presets": presets, "aplicado": False})
+                if trabalho:  # falha fechada: sem o perfil o Kiro le .env da pasta do projeto em silencio
+                    return self._res("bloqueada", "Perfil de seguranca da Forja indisponivel no Kiro.", t0, pendencias=[
+                        "perfil_kiro_indisponivel: o modo 'forja' nao apareceu na sessao (~/.kiro/agents/forja.json)",
+                        "Reinicie a Forja para regravar o perfil ou verifique a versao do kiro-cli."])
             if mcps:
                 ctl.evento("kiro.mcp", {"pronto": self._aguardar_mcp(tokens_ferramentas, ctl)})
             modelo, esforco = self.configuracao_da_execucao(tarefa)
@@ -378,7 +406,11 @@ class ProvedorKiroAcp:
                 return self._res(
                     "cancelada" if ctl.cancelado() else "pausada", "Execucao interrompida pelo orquestrador.", t0
                 )
-            return self._concluir(parada, texto, cliente, n_tools, t0, mediador, chamadas, tokens_in)
+            alegacoes = verificar_alegacoes(texto, list(observadas.values()), cwd)
+            if alegacoes:
+                ctl.evento("kiro.alegacoes", {"total": len(alegacoes), "nao_verificadas": sum(not a.verificada for a in alegacoes),
+                                              "tipos": sorted({a.tipo for a in alegacoes if not a.verificada})})
+            return self._concluir(parada, texto, cliente, n_tools, t0, mediador, chamadas, tokens_in, alegacoes)
         except AcpAutenticacaoNecessaria as e:
             return self._res(
                 "bloqueada",
@@ -461,8 +493,11 @@ class ProvedorKiroAcp:
         mediador: MediadorPermissoes,
         chamadas: int,
         tokens_in: int = 0,
+        alegacoes: list[Alegacao] | None = None,
     ) -> ResultadoAgente:
         tokens_out = estimar_tokens(texto) if texto else 0
+        aviso = resumo_alegacoes(alegacoes or [])
+        n_falhas = sum(not a.verificada for a in alegacoes or [])
         if parada == "refusal":
             return self._res(
                 "falhou",
@@ -481,6 +516,9 @@ class ProvedorKiroAcp:
             )
         briefing = parse_briefing(texto)
         mensagens = self._mensagens(briefing, texto)
+        if aviso:  # sinaliza na propria conversa; a resposta do agente fica intacta
+            mensagens.append(MensagemSaida(tipo="verificacao", conteudo=aviso,
+                                           dados={"alegacoes": [a.como_dict() for a in alegacoes or []]}))
         if (
             briefing.precisa_do_usuario
         ):  # UMA pergunta consolidada, com recomendacao: o desenvolvedor responde de uma vez
@@ -510,9 +548,11 @@ class ProvedorKiroAcp:
                 artefato="resposta_kiro.md",
                 resumo=f"Resposta de LLM via ACP (nao verificada deterministicamente). Ferramentas observadas: {n_tools}; "
                 f"permissoes aprovadas: {cliente.permissoes_aprovadas}, negadas: {cliente.permissoes_negadas}; "
-                f"consultas ao operador: {mediador.perguntas}.",
+                f"consultas ao operador: {mediador.perguntas}; alegacoes nao confirmadas pela Forja: {n_falhas}.",
             )
         )
+        if n_falhas:
+            r.pendencias.append(f"alegacoes_nao_verificadas: {n_falhas} (veja a mensagem 'Verificação da Forja')")
         if parada == "max_tokens":
             r.pendencias.append("resposta_truncada: stopReason=max_tokens")
         r.hipoteses.append("Conteudo da resposta e gerado por modelo; requer revisao antes de uso.")

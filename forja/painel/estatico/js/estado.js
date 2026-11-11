@@ -26,3 +26,20 @@ export function selecionarTarefa(id) {
   estado.tarefaId = id;
   emitir("tarefa", id);
 }
+
+// ---- paineis sobrepostos (lateral, direita, inferior): abrem POR CIMA do conteudo; fechados ficam inertes (fora do Tab)
+export const PAINEIS = { lateral: "alternar-lateral", direita: "alternar-direita", inferior: "alternar-inferior" };
+export const painelAberto = (nome) => document.getElementById("area")?.dataset[nome] === "on";
+
+export function definirPainel(nome, ligado) {
+  const area = document.getElementById("area");
+  const painel = document.getElementById(nome);
+  if (!area || !painel) return;
+  if (!ligado && painel.contains(document.activeElement)) document.getElementById("principal")?.focus({ preventScroll: true });
+  area.dataset[nome] = ligado ? "on" : "off";
+  painel.inert = !ligado;
+  document.getElementById(PAINEIS[nome])?.setAttribute("aria-pressed", String(ligado));
+  emitir("painel", { nome, ligado });
+}
+
+export const alternarPainel = (nome) => definirPainel(nome, !painelAberto(nome));

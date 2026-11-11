@@ -32,7 +32,7 @@ function mensagem(m) {
       m.expira_em ? tag(`expira ${dataCurta(m.expira_em)}`, "so-avancado") : null),
     el("strong", { textContent: m.assunto }),
     el("div", { className: "mudo", textContent: `${m.origem} → ${m.destino} · ${dataCurta(m.criado_em)}` }),
-    m.payload?.texto ? el("p", { textContent: m.payload.texto }) : null,
+    m.payload?.texto ? el("p", { className: "recolhivel", textContent: m.payload.texto }) : null,
     Object.keys(m.payload || {}).length ? el("pre", { className: "so-avancado", textContent: JSON.stringify(m.payload, null, 1) }) : null,
     (m.referencias || []).length ? el("div", { className: "linha" }, ...m.referencias.map((r) => tag(r))) : null,
     m.nota_resolucao ? el("div", { className: "mudo", textContent: `Resolvida por ${m.resolvida_por}: ${m.nota_resolucao}` }) : null,

@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from forja.adapters.agentes_mock.mock import AgenteMock
+from forja.adapters.kiro_acp import perfil_kiro
 from forja.adapters.kiro_acp.modelos import CatalogoModelos
 from forja.adapters.kiro_acp.provedor import ProvedorKiroAcp, montar_comando, resolver_cli
 from forja.adapters.sqlite.banco import criar_engines, migrar
@@ -74,6 +75,11 @@ def criar_provedor_kiro(cfg: Configuracoes) -> ProvedorKiroAcp:
     comando = montar_comando(cli, cfg.app_kiro_agent, cfg.app_kiro_model) if cli else None
     if comando is None:
         log.warning("Kiro CLI nao encontrado; execucoes ficarao bloqueadas (kiro_cli_ausente)")
+    else:
+        try:  # perfil com regras DENY para segredos; sem ele, execucoes em pastas de projeto ficam bloqueadas (falha fechada)
+            perfil_kiro.garantir(protegidas=[cfg.dados_dir, cfg.credenciais_dir])
+        except OSError as e:
+            log.warning("nao foi possivel gravar o perfil do Kiro: %s", type(e).__name__)
     return ProvedorKiroAcp(comando, cfg.kiro_workspace_dir, float(cfg.app_kiro_prompt_timeout_seconds), mcp_servers=_mcp_forja(cfg))
 
 

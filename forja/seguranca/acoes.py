@@ -49,6 +49,35 @@ def _ferramenta_forja(tc: dict[str, Any]) -> str | None:
     return nome if nome in _FORJA_MCP else None
 
 
+# Usar um .env sem le-lo: programas que recebem o arquivo e o consomem (subir containers, rodar com variaveis).
+_CONSOME_ENV = re.compile(r"(?i)^\s*(docker(\s+compose)?|docker-compose|podman(-compose)?|uv\s+run|dotenv\s+(-f\s+\S+\s+)?run)\b.*--?env-file(\s|=)")
+# ...e os que IMPRIMEM variaveis resolvidas (mesmo sem citar o arquivo): sempre tratados como leitura de segredo.
+_IMPRIME_ENV = re.compile(
+    r"(?i)(^|[;&|]\s*)(printenv|env|set|export\s+-p|get-childitem\s+env:|gci\s+env:|dir\s+env:|ls\s+env:)(\s*$|\s*[;&|])"
+    r"|\b(docker(\s+compose)?|docker-compose|podman(-compose)?)\s+(\S+\s+)*config\b"
+    r"|\bdocker\s+(container\s+)?inspect\b|\bdocker\s+exec\b.*\b(env|printenv|set)\b|\$env:|%[A-Za-z_]+%"
+    r"|\b(echo|write-output|write-host)\s+.*\$[A-Za-z_{]")
+
+
+# ".env" em qualquer ponto do texto do comando (modelos .env.example/.sample/.template/.dist nao contam).
+_ENV_NO_TEXTO = re.compile(r"(?i)(?<![\w.])\.env(?!\.(example|sample|template|dist)\b)(\.\w+)?(?![\w])")
+
+
+def _sem_argumento_env_file(tokens: list[str]) -> list[str]:
+    saida, pular = [], False
+    for t in tokens:
+        if pular:
+            pular = False
+            continue
+        if t.lower() in ("--env-file", "-env-file"):
+            pular = True
+            continue
+        if t.lower().startswith(("--env-file=", "-env-file=")):
+            continue
+        saida.append(t)
+    return saida
+
+
 _CAMPOS_CAMINHO = (
     "path", "file_path", "filePath", "filepath", "file", "target", "dest", "destination", "directory", "dir")
 
@@ -194,8 +223,14 @@ def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None, tra
     elif kind in {"read", "search", "think"}:
         categoria, risco = "ler", "baixo"
 
-    candidatos = alvos + [t.strip("\"';,()") for t in re.split(r"\s+", cmd) if t]  # cada token do comando conta
-    sensivel = any(_SENSIVEL.search(c.replace("\\", "/")) for c in candidatos)
+    tokens = [t.strip("\"';,()") for t in re.split(r"\s+", cmd) if t]
+    usa_env = bool(cmd) and _CONSOME_ENV.search(cmd) is not None
+    if usa_env:  # o .env so aparece como argumento de --env-file: e CONSUMIDO pelo programa, nunca impresso
+        tokens = _sem_argumento_env_file(tokens)
+    candidatos = alvos + tokens  # cada token do comando conta
+    sensivel = (any(_SENSIVEL.search(c.replace("\\", "/")) for c in candidatos)
+                or (bool(cmd) and _IMPRIME_ENV.search(cmd) is not None)
+                or _ENV_NO_TEXTO.search(" ".join(tokens)) is not None)  # ex.: python -c "open('.env')": o nome colado em outro texto
     raizes_escrita = [r for r in [workspace, *(trabalho or [])] if r is not None]
     raizes_leitura = raizes_escrita + list(consulta or [])
     if raizes_escrita:  # avaliado ANTES de relativizar
@@ -218,7 +253,7 @@ def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None, tra
         "instalar_dependencias": f"Posso instalar dependências (`{cmd_vis}`)?",
         "mover": f"Posso mover ou renomear {_lista(alvos)}?",
         "acessar_rede": f"Posso acessar a rede ({cmd_vis or _lista(alvos)})?",
-        "executar_comando": f"Posso executar o comando `{cmd_vis or titulo}`?",
+        "executar_comando": f"Posso executar o comando `{cmd_vis or titulo}`{' (usa o .env sem exibi-lo)' if usa_env and not sensivel else ''}?",
         "modificar_arquivos": f"Posso criar ou modificar {_lista(alvos)}?",
         "ler": f"Posso ler {_lista(alvos)}?",
         "ferramenta_forja": f"O agente pode {_FORJA_MCP.get(forja or '', 'usar uma ferramenta da Forja')}?",
@@ -233,5 +268,6 @@ def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None, tra
         "sensivel": sensivel,
         "fora_do_workspace": fora,
         "em_consulta": em_consulta,
+        "usa_env": usa_env and not sensivel,
         "tecnico": titulo,
     }

@@ -82,6 +82,11 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.27 Projetos com pastas de trabalho/consulta (estilo Codex) ligados ao provedor e ao mediador. ADR-017.
 - [x] 4.28 Anexos de tarefa (do projeto ou enviados de qualquer pasta; texto redigido, imagens ACP), explorador e @mencao.
 - [~] 4.29 Busca hibrida como fallback: medida (margem < 0,30 = melhor gatilho); implementacao opcional aguarda aprovacao (recurso pesado).
+- [x] 4.30 Perfil de seguranca "forja" no Kiro (modo + presets, deny de segredos, falha fechada), verificado no Kiro real. ADR-018.
+- [x] 4.31 `.env` sem leitura: `env.verificar` (so booleanos) e comandos que consomem o env sem exibi-lo.
+- [x] 4.32 Conferencia deterministica de alegacoes (testes/comandos/arquivos) na resposta do agente.
+- [x] 4.33 Interface: tokens de design, 8 paletas AA, janelas flutuantes, paineis sobrepostos, truncamento com dica e "ler mais".
+- [ ] 4.34 Propostas da pesquisa (docs/PESQUISA_METODOS.md): indice estrutural de codigo, avaliador-otimizador de um turno, prefixo de prompt fixo.
 - [x] 4.26 Hospedagem: app web local instalavel (PWA) e `python -m forja --abrir`; tema estilo IDE, responsivo e com movimento reduzido.
 ## Gate Fase 1
 Atingido: tarefa simulada percorre rascunho -> ... -> concluida com estado consistente, evidencia (simulada),

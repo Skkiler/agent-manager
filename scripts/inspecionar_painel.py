@@ -31,7 +31,7 @@ VISTAS = {
     "memoria": ".grafo-caixa svg .no",
     "ferramentas": ".lista-notas button",
     "integracoes": ".grade .card",
-    "config": ".opcao",
+    "config": "#janela-config .opcao",
 }
 
 
@@ -93,6 +93,7 @@ def integracoes(pagina, base: str, saida: Path, expect, passo) -> int:
     pagina.goto(base + "#/integracoes")
     pagina.reload()
     pagina.wait_for_selector(".card")
+    fechar_menu(pagina)
     jira = pagina.locator(".card", has_text="Jira (leitura de issues)")
     passo("integracoes de rede nascem desligadas", "desligada" in jira.inner_text() and jira.get_by_role("button", name="Testar conexão").is_disabled())
     jira.get_by_role("button", name="Configurar").click()
@@ -128,6 +129,22 @@ def integracoes(pagina, base: str, saida: Path, expect, passo) -> int:
     return 0
 
 
+def abrir_menu(pagina) -> None:
+    """O menu lateral e uma gaveta SOBREPOSTA: abre ao entrar numa area e fecha ao clicar no conteudo."""
+    if pagina.locator("#area").get_attribute("data-lateral") != "on":
+        pagina.locator("#alternar-lateral").click()
+    pagina.locator("#lateral").wait_for(state="visible")
+
+
+def fechar_menu(pagina) -> None:
+    from playwright.sync_api import expect
+
+    expect(pagina.locator("dialog[open]")).to_have_count(0, timeout=8000)  # com janela aberta, o Esc e da janela
+    if pagina.locator("#area").get_attribute("data-lateral") == "on":
+        pagina.keyboard.press("Escape")
+    pagina.locator("#lateral").wait_for(state="hidden")
+
+
 def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     from playwright.sync_api import expect  # a CSP da pagina proibe eval: wait_for_function nao funciona aqui
 
@@ -147,6 +164,10 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.reload()
     pagina.wait_for_selector(".cartao")
     passo("painel de conversa comeca recolhido", pagina.locator("#direita").is_hidden())
+    passo("menu lateral abre ao entrar na area, por cima do conteudo (nao empurra)",
+          pagina.locator("#lateral").is_visible() and pagina.locator("#principal").bounding_box()["x"] <= 60)
+    fechar_menu(pagina)
+    passo("Esc fecha o menu lateral", pagina.locator("#lateral").is_hidden())
     pagina.locator(".cartao", has_text="Definir autenticacao").click()
     pagina.wait_for_selector("#direita .msg", timeout=8000)
     passo("selecionar tarefa abre a conversa com o briefing do agente", pagina.locator("#direita .decisao").count() >= 1)
@@ -164,6 +185,7 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     (pasta / "src").mkdir()
     (pasta / "src" / "fila_prioridade.py").write_text("def enfileirar(x):\n    return x\n", encoding="utf-8")
     (pasta / ".env").write_text("SEGREDO=x", encoding="utf-8")
+    abrir_menu(pagina)
     pagina.get_by_role("button", name="+ Projeto").click()
     pagina.get_by_label("Nome do projeto").fill(f"Projeto da fila {pasta.name}")  # unico: o script pode rodar de novo no mesmo demo
     pagina.get_by_label("Caminho da pasta").fill(str(pasta))
@@ -174,6 +196,7 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.get_by_label("Titulo").fill("Revisar a fila")
     pagina.get_by_label("Criterios de aceite (obrigatorio)").fill("explicar a fila")
     pagina.get_by_role("button", name="Criar e preparar").click()
+    fechar_menu(pagina)
     pagina.locator(".cartao", has_text="Revisar a fila").click()
     pagina.get_by_role("button", name="@ do projeto").click()
     pagina.get_by_label("Buscar arquivo do projeto").fill("@fila")
@@ -183,9 +206,15 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.get_by_role("button", name="@ do projeto").click()
     passo("explorador do projeto esconde .env", ".env" not in pagina.locator(".explorador").inner_text())
     pagina.screenshot(path=str(saida / "projeto-anexos.png"))
-    pagina.locator("#dlg-geral").get_by_role("button", name="Fechar").click()
+    passo("janela flutuante tem cabecalho com titulo e botao de fechar", pagina.locator("#dlg-geral .janela-cabeca .fechar").is_visible())
+    pagina.locator("#dlg-geral").get_by_role("button", name="Fechar", exact=True).click()
+    abrir_menu(pagina)
     pagina.get_by_label("Filtrar por projeto").select_option("")  # volta a mostrar todas as tarefas para os proximos passos
     pagina.screenshot(path=str(saida / "tarefas-conversa.png"))
+    fechar_menu(pagina)
+    pagina.locator('#direita [data-fechar="direita"]').click()
+    expect(pagina.locator("#direita")).to_be_hidden(timeout=3000)
+    passo("botao de fechar recolhe a conversa", True)
 
     pagina.locator(".cartao", has_text="Planejar migracao").drag_to(pagina.locator('.coluna[data-id="concluida"]'))
     pagina.wait_for_selector(".toast.erro", timeout=4000)
@@ -196,13 +225,19 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     passo("nivel avancado mostra campos tecnicos", pagina.locator(".so-avancado").first.is_visible())
     pagina.select_option("#nivel", "simples")
 
+    largura_antes = pagina.locator("#principal").bounding_box()["width"]
     pagina.keyboard.press("Control+j")
-    passo("Ctrl+J recolhe o painel inferior", pagina.locator("#inferior").is_hidden())
+    expect(pagina.locator("#inferior")).to_be_visible(timeout=3000)
+    passo("Ctrl+J abre o painel inferior por cima do conteudo (sem empurrar)",
+          abs(pagina.locator("#principal").bounding_box()["width"] - largura_antes) < 1)
     pagina.keyboard.press("Control+j")
+    expect(pagina.locator("#inferior")).to_be_hidden(timeout=3000)
+    passo("Ctrl+J recolhe o painel inferior", True)
 
     pagina.goto(base + "#/quadro")
     pagina.reload()
     pagina.wait_for_selector(".msg-q")
+    fechar_menu(pagina)
     antes = pagina.locator(".msg-q.pendente").count()
     pagina.locator(".msg-q.pendente").first.get_by_role("button", name="Resolver").click()
     pagina.fill("#dlg-geral-corpo input", "feito no teste")
@@ -228,6 +263,7 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     expect(pagina.locator(".nota")).to_contain_text("Linha editada pelo teste", timeout=6000)
     passo("editar e salvar nota persiste e renderiza", True)
     pagina.screenshot(path=str(saida / "memoria-nota.png"))
+    abrir_menu(pagina)
     pagina.fill('input[aria-label="Buscar no grafo"]', "alembic")
     expect(pagina.locator(".grafo-caixa .no")).to_have_count(2, timeout=6000)
     passo("busca filtra o grafo", pagina.locator(".grafo-caixa .no").count() <= 3)
@@ -247,7 +283,8 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.goto(base + "#/config")
     pagina.reload()
     pagina.wait_for_selector(".opcao")
-    passo("menu lista categorias na lateral", pagina.get_by_role("button", name="Privacidade").count() == 1)
+    passo("configuracoes abrem em janela flutuante (nao em pagina)", pagina.locator("dialog#janela-config[open]").count() == 1)
+    passo("janela lista as categorias", pagina.locator("#janela-config").get_by_role("button", name="Privacidade").count() == 1)
     passo("abas Gerais e Avancadas separadas", pagina.get_by_role("tab", name="Avançadas", exact=False).count() == 1)
     passo("categoria Agentes abre primeiro com nivel, tags e observacoes", pagina.locator('[data-pref="metodos_acao"] .tag-opcao').count() >= 6)
     pagina.locator('[data-pref="metodos_acao"]').get_by_role("button", name="Direto").click()
@@ -260,7 +297,14 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     passo("perfil de trabalho salvo (nivel + tags + observacoes)", pagina.locator('[data-pref="nivel_autonomia"] select').input_value() == "liberado")
     pagina.screenshot(path=str(saida / "config-agentes.png"))
     pagina.get_by_role("button", name="Aparência").click()
+    passo("4 paletas escuras e 4 claras como amostras", pagina.locator('[data-pref="paleta_escura"] [role=radio]').count() == 4
+          and pagina.locator('[data-pref="paleta_clara"] [role=radio]').count() == 4)
+    pagina.locator('[data-pref="tema"]').get_by_role("button", name="Escuro").click()
+    pagina.locator('[data-pref="paleta_escura"]').get_by_role("radio", name="Brasa").click()
+    passo("escolher tema e paleta mostra previa na hora (antes de salvar)", pagina.locator("html").get_attribute("data-paleta") == "brasa")
     pagina.screenshot(path=str(saida / "config-aparencia.png"))
+    pagina.get_by_role("button", name="Descartar").click()
+    passo("descartar desfaz a previa", pagina.locator("html").get_attribute("data-paleta") != "brasa")
     pagina.locator('[data-pref="tema"]').get_by_role("button", name="Claro").click()
     pagina.get_by_role("button", name="Salvar alterações").click()
     expect(pagina.locator("html")).to_have_attribute("data-tema", "claro", timeout=6000)
@@ -303,6 +347,7 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.goto(base + "#/integracoes")
     pagina.reload()
     pagina.wait_for_selector("#acoes-externas")
+    fechar_menu(pagina)
     pendentes = pagina.locator(".acao-externa").count()
     passo("acoes externas pendentes aparecem com a frase em linguagem natural",
           pendentes == 0 or "Posso criar no Trello o cartao" in pagina.locator("#acoes-externas + .grade").inner_text())
@@ -326,7 +371,7 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     expect(pagina.get_by_text("Busca atual:")).to_be_visible(timeout=6000)
     passo("rotular uma pergunta real mostra recall/MRR da busca", "MRR" in pagina.locator(".rotulagem").inner_text())
     pagina.screenshot(path=str(saida / "rotulagem.png"))
-    pagina.get_by_role("button", name="Fechar").click()
+    pagina.locator("#dlg-geral").get_by_role("button", name="Fechar", exact=True).click()
 
     pagina.goto(base + "#/ferramentas")
     pagina.reload()

@@ -78,7 +78,7 @@ function cartao(c, recarregar) {
     el("div", { className: "linha" }, el("h3", { textContent: c.nome }), el("span", { className: "espaco" }),
       rede ? estadoRede(c) : tag(c.estado === "implementado" ? (c.disponivel ? "disponivel" : "ferramenta ausente") : "requer aprovacao", c.disponivel ? "ok" : "aviso")),
     el("div", { className: "linha" }, tag(c.categoria), tag(c.custo), tag(c.rede ? "usa rede" : "local"), tag(c.credencial ? "usa credencial" : "sem credencial")),
-    el("p", { textContent: c.como_usar }),
+    el("p", { className: "recolhivel", textContent: c.como_usar }),
     c.ferramentas.length ? el("p", { className: "mudo so-avancado mono", textContent: c.ferramentas.join(", ") }) : null,
     c.riscos.length ? el("ul", {}, ...c.riscos.map((r) => el("li", { className: "mudo", textContent: r }))) : null,
     c.aprovacao ? el("p", { className: "aviso", textContent: `Para ativar, voce precisa aprovar: ${c.aprovacao}` }) : null,

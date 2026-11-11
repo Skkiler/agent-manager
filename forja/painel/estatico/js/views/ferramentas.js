@@ -34,7 +34,7 @@ function formulario(f) {
         carregarEstatisticas();
       } catch (e) { saida.append(el("p", { className: "aviso", textContent: e.message })); } finally { rodar.disabled = !f.disponivel; }
     } });
-  return el("section", {}, el("h1", { textContent: f.id }), el("p", { textContent: f.descricao }),
+  return el("section", {}, el("h1", { textContent: f.id }), el("p", { className: "recolhivel", textContent: f.descricao }),
     el("div", { className: "linha" }, tag(`risco: ${f.risco}`), f.fallback ? tag(`fallback: ${f.fallback}`) : null, f.usa_arquivos ? tag("le arquivos autorizados") : tag("so texto")),
     el("p", { className: "mudo so-avancado mono", textContent: `entrada: { ${props.join(", ")} }` }), entrada, el("div", { className: "linha" }, rodar), saida,
     el("p", { className: "aviso", textContent: "Somente leitura; sem shell, sem rede. A saida e dado nao confiavel e tokens sao estimativas." }));

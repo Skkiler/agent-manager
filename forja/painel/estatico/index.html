@@ -9,8 +9,8 @@
   <link rel="icon" href="/estatico/icone.svg" type="image/svg+xml" />
   <link rel="manifest" href="/estatico/manifest.webmanifest" />
   <meta name="theme-color" content="#181818" />
-  <link rel="stylesheet" href="/estatico/app.css" />
   <link rel="stylesheet" href="/estatico/tema.css" />
+  <link rel="stylesheet" href="/estatico/app.css" />
 </head>
 <body data-nivel="simples">
   <a class="pular" href="#principal">Pular para o conteúdo</a>
@@ -27,22 +27,28 @@
       </select>
     </label>
     <span id="nivel-ajuda" class="sr-only">Simples esconde campos técnicos; Avançado mostra tudo.</span>
-    <button id="alternar-lateral" type="button" aria-pressed="true" title="Barra lateral (Ctrl+B)">Lateral</button>
-    <button id="alternar-direita" type="button" aria-pressed="false" title="Conversa e decisões (Ctrl+Shift+B)">Conversa</button>
-    <button id="alternar-inferior" type="button" aria-pressed="true" title="Painel inferior (Ctrl+J)">Painel</button>
+    <button id="alternar-lateral" type="button" aria-pressed="false" aria-controls="lateral" title="Menu lateral (Ctrl+B)">Menu</button>
+    <button id="alternar-direita" type="button" aria-pressed="false" aria-controls="direita" title="Conversa e decisões (Ctrl+Shift+B)">Conversa</button>
+    <button id="alternar-inferior" type="button" aria-pressed="false" aria-controls="inferior" title="Painel inferior (Ctrl+J)">Painel</button>
     <span id="conexao" role="status" aria-live="polite" class="pill">desconectado</span>
   </header>
 
-  <div id="area" data-direita="off">
+  <div id="area" data-lateral="off" data-direita="off" data-inferior="off">
     <nav id="atividades" aria-label="Áreas do orquestrador"></nav>
-    <aside id="lateral" aria-label="Barra lateral"></aside>
     <main id="principal" tabindex="-1"></main>
-    <aside id="direita" aria-label="Conversa e decisões">
-      <div role="tablist" aria-label="Painel de conversa" id="direita-abas"></div>
+    <aside id="lateral" aria-label="Menu lateral" inert></aside>
+    <aside id="direita" aria-label="Conversa e decisões" inert>
+      <div class="cabeca-painel">
+        <div role="tablist" aria-label="Painel de conversa" id="direita-abas"></div>
+        <button type="button" class="fechar" data-fechar="direita" aria-label="Fechar conversa" title="Fechar (Esc)">✕</button>
+      </div>
       <div id="direita-corpo" tabindex="0" aria-label="Conteudo da conversa"></div>
     </aside>
-    <section id="inferior" aria-label="Painel inferior">
-      <div role="tablist" aria-label="Painel inferior" id="inferior-abas"></div>
+    <section id="inferior" aria-label="Painel inferior" inert>
+      <div class="cabeca-painel">
+        <div role="tablist" aria-label="Painel inferior" id="inferior-abas"></div>
+        <button type="button" class="fechar" data-fechar="inferior" aria-label="Fechar painel inferior" title="Fechar (Esc)">✕</button>
+      </div>
       <div id="inferior-corpo" tabindex="0" aria-label="Conteudo do painel inferior"></div>
     </section>
   </div>
@@ -61,11 +67,11 @@
       <p class="aviso">Servidor local-first. Informe o token da API (arquivo <code>data/api_token.txt</code>).
         Ele fica só nesta aba e nunca é versionado.</p>
       <label>Token <input id="token" type="password" autocomplete="off" required /></label>
-      <div class="linha"><button value="ok" id="salvar-token">Usar token</button></div>
+      <div class="linha"><button value="ok" id="salvar-token" class="primario">Usar token</button></div>
     </form>
   </dialog>
   <dialog id="dlg-geral" aria-labelledby="dlg-geral-t"><div id="dlg-geral-corpo"></div></dialog>
-  <div id="avisos" role="status" aria-live="polite"></div>
+  <div id="avisos" role="status" aria-live="polite" popover="manual"></div>
 
   <script src="/estatico/js/main.js" type="module"></script>
 </body>

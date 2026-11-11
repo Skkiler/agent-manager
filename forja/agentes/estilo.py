@@ -30,7 +30,8 @@ class Nivel:
 
 NIVEIS: tuple[Nivel, ...] = (
     Nivel("restrito", "Acesso restrito",
-          "Somente análise e documentação. Toda ação de ferramenta (ler, editar, executar) pergunta antes. É o padrão.",
+          "Somente análise e documentação. Lê a pasta de trabalho sem perguntar (segredos como .env são sempre negados); "
+          "editar e executar perguntam antes. É o padrão.",
           frozenset({"analise", "documentacao"}), frozenset(),
           "Pergunte sempre que houver duvida; nao modifique arquivos."),
     Nivel("liberado", "Acesso liberado",

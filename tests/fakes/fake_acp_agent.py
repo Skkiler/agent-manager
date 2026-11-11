@@ -56,6 +56,15 @@ def opcoes_modelos() -> list[dict]:
     return ops
 
 
+def opcoes() -> list[dict]:
+    """Como o kiro-cli 3.1.0: perfis de ~/.kiro/agents aparecem como modos. Cenarios '*sem_perfil*' nao oferecem 'forja'."""
+    ops = opcoes_modelos() if cenario == "modelos" else []
+    modos = ["vibe", "spec"] + ([] if "sem_perfil" in cenario else ["forja"])
+    ops.append({"type": "select", "id": "mode", "currentValue": escolha.get("mode", "vibe"),
+                "options": [{"value": v, "name": v} for v in modos]})
+    return ops
+
+
 while True:
     msg = ler()
     if msg is None:
@@ -71,12 +80,13 @@ while True:
             "authMethods": [{"id": "kiro-login", "name": "Kiro Login"}],
             "agentInfo": {"name": "Fake ACP Agent", "version": "0.0.1"}}})
     elif m == "session/new":
+        globals()["meta_recebido"] = (msg.get("params") or {}).get("_meta")
         if cenario == "auth":
             enviar({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000,
                     "message": "Authentication required. Not logged in. Run `kiro-cli login` first."}})
         elif cenario in ("mcp", "mcp_mudo"):  # imita o kiro-cli 3.1.0: MCP conecta DEPOIS da resposta de session/new
             globals()["mcp_recebido"] = (msg.get("params") or {}).get("mcpServers")
-            enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid}})
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "configOptions": opcoes()}})
 
             def info(tokens: int, sid: str = sid) -> None:
                 update(sid, {"sessionUpdate": "session_info_update", "_meta": {"kiro": {"kind": "context_usage", "breakdown": {"tools": {"tokens": tokens}}}}})
@@ -92,9 +102,9 @@ while True:
 
                 threading.Thread(target=conectar, daemon=True).start()
         elif cenario == "modelos":  # imita o kiro-cli 3.1.0 real (engine v3)
-            enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "configOptions": opcoes_modelos()}})
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "configOptions": opcoes()}})
         else:
-            enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid}})
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "configOptions": opcoes()}})
     elif m == "session/load":
         if cenario == "carregavel_falha":
             enviar({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "Session not found"}})
@@ -103,7 +113,7 @@ while True:
             chunk(sid, "HISTORICO-REPRODUZIDO")
             update(sid, {"sessionUpdate": "tool_call", "toolCallId": "h1", "title": "Ferramenta antiga", "kind": "read", "status": "completed"})
             carregada = True
-            enviar({"jsonrpc": "2.0", "id": rid, "result": {}})
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": opcoes()}})
     elif m == "session/prompt" and cenario in ("mcp", "mcp_mudo"):
         pronto = "mcp_conectado_em" in globals()
         nomes = [s.get("name") for s in globals().get("mcp_recebido") or []]
@@ -114,6 +124,16 @@ while True:
         txt = ((msg.get("params") or {}).get("prompt") or [{}])[0].get("text", "")
         chunk(sid, f"sessao={sid} carregada={globals().get('carregada', False)}\n<<PROMPT>>\n{txt}\n<<FIM>>")
         enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
+    elif m == "session/set_config_option" and (msg.get("params") or {}).get("configId") == "mode":
+        valor = (msg.get("params") or {}).get("value")
+        if valor in [o["value"] for o in opcoes()[-1]["options"]]:
+            escolha["mode"] = valor
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": opcoes()}})
+        else:
+            enviar({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "modo desconhecido"}})
+    elif m == "session/prompt" and cenario.startswith("perfil"):
+        chunk(sid, f"modo={escolha.get('mode', 'vibe')} meta={json.dumps(globals().get('meta_recebido'), sort_keys=True)}")
+        enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
     elif m == "session/set_config_option" and cenario == "modelos":
         p = msg.get("params") or {}
         if p.get("configId") == "model":
@@ -121,7 +141,7 @@ while True:
             escolha.pop("effortLevel", None)
         elif p.get("configId") == "effortLevel" and p.get("value") in ("low", "medium", "high", "xhigh", "max"):
             escolha["effortLevel"] = p["value"]
-        enviar({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": opcoes_modelos()}})
+        enviar({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": opcoes()}})
     elif m == "session/prompt" and cenario == "modelos":
         chunk(sid, f"configuracao model={escolha.get('model', 'auto')} effort={escolha.get('effortLevel', '-')}")
         enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
@@ -193,6 +213,10 @@ while True:
                         o = r["result"]["outcome"]
                         respostas["921"] = o.get("optionId", o["outcome"])
             chunk(sid, "decisoes=" + json.dumps(respostas, sort_keys=True))
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
+        elif cenario == "alegacao":  # afirma ter testado sem chamar nenhuma ferramenta (alucinacao tipica)
+            update(sid, {"sessionUpdate": "tool_call", "toolCallId": "r1", "title": "Read File", "kind": "read", "status": "completed"})
+            chunk(sid, "## Resposta\nCorrigi o modulo e todos os testes passaram.\n")
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
         elif cenario == "eco":  # devolve o prompt recebido: permite provar o que foi (e o que NAO foi) enviado ao modelo
             txt = ((msg.get("params") or {}).get("prompt") or [{}])[0].get("text", "")

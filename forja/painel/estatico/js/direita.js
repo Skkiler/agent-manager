@@ -1,21 +1,22 @@
 // Painel direito: conversa da tarefa (briefing do agente + UMA resposta livre) e decisoes pendentes (aprovacoes por acao).
 import { api } from "./api.js";
-import { agrupar, emitir, estado, ouvir } from "./estado.js";
-import { abas, el, limpar, toast } from "./ui.js";
+import { agrupar, definirPainel, emitir, estado, ouvir } from "./estado.js";
+import { abas, el, limpar, recolhivel, toast } from "./ui.js";
 import { secaoAnexos } from "./views/projetos.js";
 
 const TITULOS = { entendimento: "Entendimento", resposta: "Resposta", premissas: "Premissas", decisoes: "Decisões para você",
-  riscos: "Riscos", proximos_passos: "Próximos passos", resposta_operador: "Você" };
+  riscos: "Riscos", proximos_passos: "Próximos passos", resposta_operador: "Você", verificacao: "Verificação da Forja" };
 let aba = "conversa";
 let pendentes = 0;
 
 function mensagem(m) {
-  const caixa = el("article", { className: `msg ${m.papel}` }, el("h3", { textContent: TITULOS[m.tipo] || m.tipo }));
+  const caixa = el("article", { className: `msg ${m.papel}${m.tipo === "verificacao" ? " msg-verificacao" : ""}` },
+    el("h3", { textContent: TITULOS[m.tipo] || m.tipo }));
   const ds = m.tipo === "decisoes" && Array.isArray(m.dados?.decisoes) ? m.dados.decisoes : [];
   if (ds.length) {
     for (const d of ds) caixa.append(el("div", { className: "decisao" }, el("strong", { textContent: `${d.numero}. ${d.pergunta}` }),
       d.recomendacao ? el("small", { textContent: `Recomendo: ${d.recomendacao}` }) : null, (d.alternativas || []).length ? el("small", { textContent: `Alternativas: ${d.alternativas.join("; ")}` }) : null));
-  } else caixa.append(el("p", { textContent: m.conteudo }));
+  } else caixa.append(m.conteudo.length > 400 ? recolhivel(el("p", { textContent: m.conteudo }), 8) : el("p", { textContent: m.conteudo }));
   return caixa;
 }
 
@@ -95,10 +96,7 @@ export async function renderizar() {
 
 export function iniciar() {
   ouvir("tarefa", () => { if (aba === "conversa") renderizar(); });
-  ouvir("abrir-direita", (id) => {
-    aba = id; document.getElementById("area").dataset.direita = "on";
-    document.getElementById("alternar-direita").setAttribute("aria-pressed", "true"); renderizar();
-  });
+  ouvir("abrir-direita", (id) => { aba = id; definirPainel("direita", true); renderizar(); });
   const reagir = agrupar(renderizar);
   ouvir("evento", (e) => {
     const t = String(e.tipo);

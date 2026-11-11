@@ -36,7 +36,7 @@ class Configuracoes(BaseSettings):
     app_kiro_cli_path: str = ""
     # Workspace entregue ao Kiro: por padrao um diretorio VAZIO e isolado (nao o repositorio).
     app_kiro_workspace: Path | None = None
-    app_kiro_agent: str = ""  # nome de agente Kiro opcional (vazio = padrao)
+    app_kiro_agent: str = ""  # obsoleto: o engine v3 recusa --agent; ignorado com aviso (perfil "forja" vira modo da sessao, ADR-018)
     app_kiro_model: str = ""  # id de modelo opcional (vazio = padrao da conta/politica)
     app_kiro_prompt_timeout_seconds: int = 300
     # Tempo maximo que um pedido de aprovacao aguarda o operador; expirado => negado (nunca aprova por omissao).

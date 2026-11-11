@@ -1,6 +1,6 @@
 # Estado da implementacao
 
-**Atualizado:** 2026-11-10. **Fases 0 a 3 testadas; Fase 4 implementada, incluindo MCP (4.7c), session/load (2.9), escrita com aprovacao (4.20b) e rotulagem (4.8). Abertos: 4.9/3.12 (dependem da sua rotulagem), 4.21, 4.22, 0.6, 2.8.** Padrao de agente continua sendo o **mock SIMULADO**;
+**Atualizado:** 2026-11-06 (perfil de segurança do Kiro, `.env` sem leitura, alegações, interface). **Fases 0 a 3 testadas; Fase 4 implementada, incluindo MCP (4.7c), session/load (2.9), escrita com aprovacao (4.20b) e rotulagem (4.8). Abertos: 4.9/3.12 (dependem da sua rotulagem), 4.21, 4.22, 0.6, 2.8.** Padrao de agente continua sendo o **mock SIMULADO**;
 o Kiro real so e usado com `APP_KIRO_ACP_ENABLED=true` (validado em sessao autenticada na etapa anterior).
 
 ## Regra de publicacao (repositorio publico)
@@ -183,6 +183,38 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - **Medido (ADR-017):** fallback hibrido por margem 1o-2o < 0,30 = recall@5 0,222 (hibrido sempre 0,218; busca atual 0,163), usado em 86% das perguntas; o custo dominante e indexar, nao consultar.
 - **Pendente de decisao:** ativar o hibrido opcional (modelo ~220 MB, ~6 min de CPU na 1a indexacao). Nao validado com o Kiro real: se ele pede permissao para LER dentro da pasta de trabalho (no restrito, a pergunta depende disso).
 
+## Perfil de segurança no Kiro, `.env` sem leitura, conferência de alegações e interface refeita (itens 4.30-4.33): resultados reais (2026-11-06)
+- **Achado crítico no Kiro real (kiro-cli 3.1.0):** a política padrão lê qualquer arquivo da pasta de trabalho sem perguntar. Um `.env` fictício foi lido e o valor apareceu na resposta.
+  Além disso, `--agent` é recusado pelo engine v3, então `APP_KIRO_AGENT` nunca funcionou.
+- **Correção:** perfil `~/.kiro/agents/forja.json`, gravado pela Forja, aplicado como **modo** da sessão e combinado com presets por nível. O perfil tem regras `deny` para segredos e para comandos que imprimem o env.
+  Falha fechada: em pasta de projeto, sem o modo a execução fica bloqueada. ADR-018.
+- **Verificação no Kiro real com `.env` fictício:**
+  - **restrito:** `nota.txt` lido sem perguntar; `.env` negado (`deny fs_read`, `Source: agent-profile`); `type .env` negado (`deny shell`); criar arquivo pediu permissão.
+  - **liberado:** igual ao restrito, exceto que o arquivo foi criado sem perguntar.
+  - As ferramentas MCP `@forja` continuam disponíveis no modo.
+  - Pelo provedor completo, o próprio modelo se recusou a tentar ler o `.env` por causa do protocolo.
+- **Novos:**
+  - `adapters/kiro_acp/perfil_kiro.py`, `ferramentas/ambiente_env.py` (ferramenta `env.verificar`: só booleanos e nomes) e `conversa/alegacoes.py` (salvaguarda determinística contra "testes passaram" sem execução observada).
+  - Mediador: comandos que **usam** o `.env` sem exibi-lo (`docker compose --env-file`...) contam como execução comum; comandos que imprimem o env são sensíveis.
+  - `docs/PESQUISA_METODOS.md`: varredura de cada recurso contra o mercado, com fontes.
+- **Interface:**
+  - Tokens de design: uma fonte, escala tipográfica, espaçamentos e camadas de z-index.
+  - **8 paletas** (4 escuras + 4 claras) com contraste AA verificado por teste (`tests/test_paletas.py`) e prévia ao vivo.
+  - Configurações em **janela flutuante** arrastável.
+  - Menu lateral, conversa e painel inferior **sobrepostos**: não empurram o conteúdo, ficam inertes quando fechados e fecham com Esc ou clique fora.
+  - Botões com altura fixa e reticências, com dica automática quando o texto é cortado. Textos longos ganham "Ler mais".
+  - Avisos aparecem acima das janelas (popover). Ao arrastar um cartão, os painéis ficam translúcidos e deixam o ponteiro passar.
+- **Verificado:**
+  - **963 testes passando** (`python -m pytest`), Ruff limpo, `node --check` em todos os módulos JS.
+  - Benchmark de busca inalterado (GLOBAL 0.94/0.87/0.89).
+  - Navegador real (Edge + Playwright): **todos os passos OK, 0 problemas**; axe sem violações nas 6 vistas; 420 px sem estouro horizontal.
+- **Achado pelo navegador:**
+  - A janela de Configurações não reabria após recarregar a página: o endereço voltava para `#/tarefas`. Corrigido: `#/config` agora fica no endereço enquanto a janela está aberta.
+  - A conversa sobreposta cobria a coluna de destino ao arrastar um cartão. Corrigido: os painéis ficam translúcidos durante o arraste.
+- **Pendências:**
+  - Trocar para o modo `forja` reduz o custo de ferramentas informado pelo Kiro, então o sinal "MCP pronto" pode não disparar (espera até 15 s). Falta reavaliar.
+  - Decisões abertas: busca híbrida; `dev-shell` no nível total (hoje não usado); melhorias propostas em `docs/PESQUISA_METODOS.md` (índice estrutural de código, avaliador-otimizador de um turno, prefixo de prompt fixo).
+
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -201,7 +233,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - Scanner dedicado de segredos (gitleaks) e CI continuam ausentes. Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 897 passed.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 963 passed.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

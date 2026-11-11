@@ -1,9 +1,9 @@
 // Shell do orquestrador: barra de atividades, barra lateral, area principal, conversa/decisoes, painel inferior e SSE.
 import { api, definirToken, lerToken } from "./api.js";
 import * as direita from "./direita.js";
-import { agrupar, definirNivel, emitir, estado, ouvir } from "./estado.js";
+import { agrupar, alternarPainel, definirNivel, definirPainel, emitir, estado, ouvir, painelAberto } from "./estado.js";
 import * as inferior from "./inferior.js";
-import { $, el, limpar } from "./ui.js";
+import { $, el, iniciarTexto, limpar } from "./ui.js";
 import * as config from "./views/config.js";
 import * as ferramentas from "./views/ferramentas.js";
 import * as integracoes from "./views/integracoes.js";
@@ -17,26 +17,46 @@ const VISTAS = [
   { id: "memoria", rotulo: "Memória", glifo: "◉", modulo: memoria },
   { id: "ferramentas", rotulo: "Ferram.", glifo: "⚒", modulo: ferramentas },
   { id: "integracoes", rotulo: "Integr.", glifo: "⇄", modulo: integracoes },
-  { id: "config", rotulo: "Config", glifo: "⚙", modulo: config },
+  { id: "config", rotulo: "Config", glifo: "⚙", modulo: config, janela: true }, // tela secundaria: janela flutuante, nao pagina
 ];
 let atual = null;
 let fonte = null;
 const vistos = new Set();
 
-function ir(id) {
+function marcarAtual() {
+  for (const b of document.querySelectorAll("#atividades button")) b.setAttribute("aria-current", b.dataset.id === atual ? "page" : "false");
+}
+
+/** Troca a area principal. O menu lateral da area abre por cima do conteudo (gaveta) e fecha ao clicar fora, Esc ou Ctrl+B. */
+function ir(id, { abrirMenu = true } = {}) {
   const v = VISTAS.find((x) => x.id === id) || VISTAS[0];
+  if (v.janela) { // a area de fundo continua; o endereco #/config reabre a janela (link direto e recarregar)
+    if (!atual) ir("tarefas", { abrirMenu: false });
+    history.replaceState(null, "", `#/${v.id}`);
+    config.abrirJanela();
+    return;
+  }
   atual = v.id;
   if (location.hash !== `#/${v.id}`) history.replaceState(null, "", `#/${v.id}`);
-  for (const b of document.querySelectorAll("#atividades button")) b.setAttribute("aria-current", b.dataset.id === v.id ? "page" : "false");
+  marcarAtual();
   const lat = $("#lateral");
-  limpar(lat); v.modulo.montarLateral?.(lat);
+  limpar(lat);
+  const temMenu = typeof v.modulo.montarLateral === "function";
+  if (temMenu) v.modulo.montarLateral(lat);
+  definirPainel("lateral", temMenu && abrirMenu);
   v.modulo.montar($("#principal"));
   $("#principal").setAttribute("aria-label", v.rotulo);
 }
 
+function clicarAtividade(id) {
+  if (id === atual && painelAberto("lateral")) return definirPainel("lateral", false); // como nas IDEs: clicar na area ativa recolhe
+  if (id === atual) return definirPainel("lateral", true);
+  ir(id);
+}
+
 function montarAtividades() {
   const nav = $("#atividades");
-  nav.append(...VISTAS.map((v) => el("button", { type: "button", dataset: { id: v.id }, title: v.rotulo, "aria-label": v.rotulo, onclick: () => ir(v.id) },
+  nav.append(...VISTAS.map((v) => el("button", { type: "button", dataset: { id: v.id }, title: v.rotulo, "aria-label": v.rotulo, onclick: () => clicarAtividade(v.id) },
     el("span", { className: "glifo", "aria-hidden": "true", textContent: v.glifo }), el("span", { textContent: v.rotulo }))));
   // Navegacao por setas ↑/↓ entre as areas (padrao de barras de atividade de IDEs)
   nav.addEventListener("keydown", (ev) => {
@@ -47,24 +67,32 @@ function montarAtividades() {
   });
 }
 
-function alternar(id, atributo, botao) {
-  const area = $("#area");
-  const ligado = area.dataset[atributo] !== "off";
-  area.dataset[atributo] = ligado ? "off" : "on";
-  $(botao).setAttribute("aria-pressed", String(!ligado));
-  if (id === "memoria") window.dispatchEvent(new Event("resize"));
-}
-
 function atalhos() {
-  $("#alternar-lateral").addEventListener("click", () => alternar("lateral", "lateral", "#alternar-lateral"));
-  $("#alternar-direita").addEventListener("click", () => alternar("direita", "direita", "#alternar-direita"));
-  $("#alternar-inferior").addEventListener("click", () => alternar("inferior", "inferior", "#alternar-inferior"));
+  $("#alternar-lateral").addEventListener("click", () => alternarPainel("lateral"));
+  $("#alternar-direita").addEventListener("click", () => alternarPainel("direita"));
+  $("#alternar-inferior").addEventListener("click", () => alternarPainel("inferior"));
+  for (const b of document.querySelectorAll("[data-fechar]")) b.addEventListener("click", () => definirPainel(b.dataset.fechar, false));
+  // Clique fora do menu lateral (no conteudo ou no painel inferior) o recolhe; o clique continua valendo para o que foi clicado.
+  for (const alvo of ["#principal", "#inferior", "#direita"]) $(alvo).addEventListener("pointerdown", () => { if (painelAberto("lateral")) definirPainel("lateral", false); });
+  // Arrastar um cartao: os paineis sobrepostos ficam translucidos e deixam o ponteiro passar (a coluna de destino pode estar embaixo).
+  document.addEventListener("dragstart", () => document.body.classList.add("arrastando"));
+  for (const t of ["dragend", "drop"]) document.addEventListener(t, () => document.body.classList.remove("arrastando"));
+  // Escolher um item de lista do menu (nota, ferramenta) e "navegar": o menu sai da frente do conteudo escolhido.
+  $("#lateral").addEventListener("click", (ev) => { if (ev.target.closest(".lista-notas button")) definirPainel("lateral", false); });
   document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && !document.querySelector("dialog[open]")) {
+      // Fecha o painel sobreposto de cima: menu lateral, depois o painel em foco (conversa ou inferior).
+      const emFoco = ["direita", "inferior"].find((n) => $(`#${n}`).contains(document.activeElement));
+      const alvo = painelAberto("lateral") ? "lateral" : emFoco && painelAberto(emFoco) ? emFoco : null;
+      if (alvo) { ev.preventDefault(); definirPainel(alvo, false); }
+      return;
+    }
     if (!(ev.ctrlKey || ev.metaKey)) return;
     const k = ev.key.toLowerCase();
-    if (k === "b" && ev.shiftKey) { ev.preventDefault(); alternar("direita", "direita", "#alternar-direita"); }
-    else if (k === "b") { ev.preventDefault(); alternar("lateral", "lateral", "#alternar-lateral"); }
-    else if (k === "j") { ev.preventDefault(); alternar("inferior", "inferior", "#alternar-inferior"); }
+    if (k === "b" && ev.shiftKey) { ev.preventDefault(); alternarPainel("direita"); }
+    else if (k === "b") { ev.preventDefault(); alternarPainel("lateral"); }
+    else if (k === "j") { ev.preventDefault(); alternarPainel("inferior"); }
+    else if (k === ",") { ev.preventDefault(); config.abrirJanela(); }
   });
 }
 
@@ -106,7 +134,8 @@ async function autenticarSeNecessario() {
 }
 
 async function iniciar() {
-  montarAtividades(); atalhos();
+  montarAtividades(); atalhos(); iniciarTexto();
+  ouvir("janela-fechada", () => { marcarAtual(); if (atual) history.replaceState(null, "", `#/${atual}`); });
   const nivel = $("#nivel");
   nivel.value = estado.nivel; definirNivel(estado.nivel);
   nivel.addEventListener("change", () => { definirNivel(nivel.value); config.definirPreferencia("nivel_detalhe", nivel.value).catch(() => {}); });

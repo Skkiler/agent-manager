@@ -329,8 +329,11 @@ class ClienteAcp:
         ]
         return res
 
-    def nova_sessao(self, cwd: str, timeout: float = 30.0, mcp_servers: list[dict[str, Any]] | None = None) -> str:
-        res = self.chamar("session/new", {"cwd": cwd, "mcpServers": mcp_servers or []}, timeout)
+    def nova_sessao(self, cwd: str, timeout: float = 30.0, mcp_servers: list[dict[str, Any]] | None = None, presets: list[str] | None = None) -> str:
+        params: dict[str, Any] = {"cwd": cwd, "mcpServers": mcp_servers or []}
+        if presets:
+            params["_meta"] = {"kiro": {"policyPreset": list(presets)}}  # presets de permissao do Kiro (so "allow"; deny do perfil vence)
+        res = self.chamar("session/new", params, timeout)
         sid = res.get("sessionId")
         if not isinstance(sid, str) or not sid:
             raise AcpErro("Resposta de session/new sem sessionId.")
@@ -341,14 +344,25 @@ class ClienteAcp:
     def suporta_carregar_sessao(self) -> bool:
         return self.capacidades.get("loadSession") is True
 
-    def carregar_sessao(self, session_id: str, cwd: str, timeout: float = 30.0, mcp_servers: list[dict[str, Any]] | None = None) -> str:
+    def carregar_sessao(self, session_id: str, cwd: str, timeout: float = 30.0, mcp_servers: list[dict[str, Any]] | None = None,
+                        presets: list[str] | None = None) -> str:
         """session/load: reabre uma sessao anterior (o agente reenvia o historico como notificacoes ANTES da resposta).
         So deve ser chamado se o agente anunciou loadSession; o chamador decide o que fazer com as notificacoes de replay."""
         if not self.suporta_carregar_sessao:
             raise AcpMetodoNaoSuportado("O agente nao anunciou loadSession.")
-        res = self.chamar("session/load", {"sessionId": session_id, "cwd": cwd, "mcpServers": mcp_servers or []}, timeout)
+        params: dict[str, Any] = {"sessionId": session_id, "cwd": cwd, "mcpServers": mcp_servers or []}
+        if presets:
+            params["_meta"] = {"kiro": {"policyPreset": list(presets)}}
+        res = self.chamar("session/load", params, timeout)
         self.opcoes_sessao = [o for o in res.get("configOptions") or [] if isinstance(o, dict)]
         return session_id
+
+    def modos(self) -> list[str]:
+        """Modos (agentes) oferecidos pela sessao atual; perfis em ~/.kiro/agents aparecem aqui."""
+        for o in self.opcoes_sessao:
+            if o.get("id") == "mode":
+                return [str(v.get("value")) for v in o.get("options") or [] if isinstance(v, dict)]
+        return []
 
     def definir_opcao(self, session_id: str, config_id: str, valor: str, timeout: float = 20.0) -> list[dict[str, Any]]:
         """`session/set_config_option`: devolve a lista de opcoes ATUALIZADA (algumas so existem apos outra escolha)."""

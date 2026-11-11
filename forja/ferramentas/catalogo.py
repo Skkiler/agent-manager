@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, Validation
 from forja.dominio.erros import ErroDominio, NaoEncontrado, ValidacaoDominio
 from forja.ferramentas.agenda import ler_agenda
 from forja.ferramentas.amostra import amostra_arquivo
+from forja.ferramentas.caminhos import resolver_dentro
 from forja.ferramentas.contrato import ResultadoFerramenta, montar
 from forja.ferramentas.conversor import converter
 from forja.ferramentas.diff import resumir_diff
@@ -28,7 +29,7 @@ from forja.ferramentas.outline import outline_arquivo
 from forja.ferramentas.segredos import varrer
 from forja.ferramentas.testes import resumir_pytest
 from forja.ferramentas.vault import indexar_vault
-from forja.seguranca.pastas import PoliticaPastas, aplicar
+from forja.seguranca.pastas import PoliticaPastas, aplicar, proibido
 
 log = logging.getLogger("forja.ferramentas")
 TEXTO_MAX = 2_000_000
@@ -168,6 +169,39 @@ class EntBuscaWeb(_Base):
 
 class EntLerPagina(_Base):
     url: Annotated[str, StringConstraints(min_length=10, max_length=2000)]
+
+
+NomeVar = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,99}$")]
+
+
+class EntEnv(_Base):
+    caminho: Annotated[str, StringConstraints(min_length=4, max_length=500)] = ".env"
+    chaves: list[NomeVar] = Field(default_factory=list, max_length=50)
+    formatos: dict[NomeVar, str] = Field(default_factory=dict, max_length=50)
+    comparar: dict[NomeVar, Annotated[str, StringConstraints(max_length=500)]] = Field(default_factory=dict, max_length=10)
+    exemplo: Annotated[str, StringConstraints(max_length=500)] | None = ".env.example"
+
+
+def _env(e: EntEnv, c: Contexto) -> ResultadoFerramenta:
+    """Le o .env DENTRO da Forja (nunca o devolve). So arquivos .env/.env.* das pastas permitidas; protegidas e proibidas nunca."""
+    from forja.ferramentas.ambiente_env import NOME_ENV, verificar
+    from forja.seguranca.pastas import protegido
+
+    raiz, rel = c.resolver(e.caminho)
+    p = Path(rel)
+    if not NOME_ENV.fullmatch(p.name):
+        raise ValidacaoDominio("env.verificar so aceita arquivos .env ou .env.<nome>")
+    pasta = resolver_dentro(raiz, p.parent.as_posix() or ".", diretorio=True)
+    arquivo = pasta / p.name
+    if arquivo.is_symlink() or not arquivo.is_file() or protegido(arquivo) or proibido(arquivo):
+        raise ValidacaoDominio("arquivo .env nao encontrado nas pastas permitidas")
+    exemplo = None
+    if e.exemplo:  # modelo (.env.example): mesma pasta, so o NOME do arquivo (sem subir de diretorio)
+        nome = Path(e.exemplo).name
+        candidato = pasta / nome
+        if NOME_ENV.fullmatch(nome) and candidato.is_file() and not candidato.is_symlink() and not proibido(candidato):
+            exemplo = candidato
+    return verificar(arquivo, list(e.chaves), dict(e.formatos), dict(e.comparar), exemplo)
 
 
 class EntLogs(_Base):
@@ -324,6 +358,8 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
                lambda e, c: c.integracao("busca_web", "buscar", e.model_dump(exclude_none=True)), integracao="busca_web"),
     Ferramenta("web.ler_pagina", "Texto de uma pagina que veio de web.buscar (ou de dominio liberado), sem scripts, limitado.", EntLerPagina,
                lambda e, c: c.integracao("busca_web", "ler_pagina", e.model_dump()), integracao="busca_web"),
+    Ferramenta("env.verificar", "Valida um .env sem revelar valores: existe/vazia/formato/igual-a, e o que falta vs .env.example.", EntEnv,
+               _env, True),
     Ferramenta("testes.resumir_saida", "Veredito e causa das falhas a partir da saida do pytest.", EntPytest,
                lambda e, c: resumir_pytest(e.texto, e.limite)),
     Ferramenta("git.diff_analisar", "Arquivos, areas e riscos de um diff unificado.", EntTexto,
