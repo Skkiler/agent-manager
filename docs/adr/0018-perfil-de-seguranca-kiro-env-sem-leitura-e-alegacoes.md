@@ -50,5 +50,5 @@
 
 ## Consequências e pendências
 
-- Trocar de modo reduz o custo de ferramentas informado pelo Kiro (4938 → 4793 tokens). Por isso o sinal "MCP pronto", que espera esse número subir, pode não disparar. A execução espera então o teto (15 s) e segue: é seguro, porém mais lento. Falta reavaliar o sinal.
+- Trocar de modo reduz o custo de ferramentas informado pelo Kiro (4938 → 4793 tokens), e o antigo sinal de "MCP pronto" dependia desse número subir. **Resolvido no ADR-019:** o sinal agora é a notificação `_kiro/mcp/status` (`connected`), medida em 1,96 s no Kiro real.
 - Se o usuário editar `~/.kiro/agents/forja.json`, a Forja regrava o arquivo no próximo início. O Kiro pede confirmação para o agente escrever nessa pasta.

@@ -163,6 +163,30 @@ def test_modelo_inexistente_bloqueia_a_execucao_em_vez_de_rodar_em_outro(tmp_pat
     assert any("modelo_indisponivel" in p for p in r.pendencias)
 
 
+def test_modelo_ausente_usa_a_reserva_explicita_e_registra(tmp_path):
+    ctl, eventos = _ctl()
+    p = _prov(tmp_path, "modelo-que-nao-existe")
+    p.alternativas_de = lambda parte: ["outro-inexistente", "claude-haiku-5.5"]
+    r = p.executar(_tarefa(), {}, ctl)
+    assert r.estado == "concluida" and "model=claude-haiku-5.5" in r.artefatos[0].conteudo
+    ev = dict(eventos)["kiro.configuracao"]
+    assert ev["aplicados"]["modelo_alternativo"] == "claude-haiku-5.5" and "indisponivel" in ev["avisos"][0]
+
+
+def test_reserva_tambem_ausente_continua_bloqueando(tmp_path):
+    ctl, _ = _ctl()
+    p = _prov(tmp_path, "modelo-que-nao-existe")
+    p.alternativas_de = lambda parte: ["outro-inexistente"]
+    assert p.executar(_tarefa(), {}, ctl).estado == "bloqueada"
+
+
+def test_parte_deterministica_recusa_reserva():
+    from forja.dominio.configuracao import ConfiguracaoSistema
+
+    with pytest.raises(ValueError):
+        ConfiguracaoSistema.model_validate({"partes": {"contexto": {"alternativas": ["auto"]}}})
+
+
 def test_tarefa_de_revisao_usa_a_configuracao_da_parte_revisao(tmp_path):
     ctl, _ = _ctl()
     import sys

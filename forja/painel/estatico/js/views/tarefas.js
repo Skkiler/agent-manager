@@ -90,11 +90,28 @@ function novaTarefa() {
   const modo = el("select", { "aria-label": "Modo da tarefa" }, ...[["analise", "Analise (so leitura)"], ["documentacao", "Documentacao"], ["alteracao_codigo", "Alteracao de codigo"], ["verificacao", "Verificacao (rodar testes)"]]
     .map(([v, r]) => el("option", { value: v, textContent: r })));
   const prio = el("select", {}, ...[1, 2, 3, 4, 5].map((n) => el("option", { value: n, textContent: `P${n}${n === 1 ? " (mais urgente)" : ""}`, selected: n === 3 })));
+  // Prompting guiado: criterios que a Forja CONFERE sozinha ("testes passam", "arquivo: caminho") e bons criterios manuais por modo.
+  const SUGESTOES = {
+    analise: ["citar os arquivos e linhas que sustentam a conclusao", "listar riscos e alternativas"],
+    documentacao: ["arquivo: docs/NOME.md", "exemplo de uso que roda sem alteracao"],
+    alteracao_codigo: ["testes passam", "arquivo: CAMINHO/DO/ARQUIVO", "sem mudar a API publica"],
+    verificacao: ["testes passam", "relatar falhas com a causa provavel"],
+  };
+  const sugestoes = el("div", { className: "linha", role: "group", "aria-label": "Sugestoes de criterios" });
+  const desenharSugestoes = () => {
+    limpar(sugestoes);
+    sugestoes.append(...(SUGESTOES[modo.value] || []).map((s) => el("button", { type: "button", className: "pequeno", textContent: `+ ${s}`,
+      title: s.startsWith("testes") || s.startsWith("arquivo") ? "A Forja confere este criterio sozinha" : "Criterio conferido por voce",
+      onclick: () => { crit.value = [...crit.value.split("\n").filter((x) => x.trim()), s].join("\n"); crit.focus(); } })));
+  };
+  modo.addEventListener("change", desenharSugestoes); desenharSugestoes();
   const f = el("form", {},
     el("label", { className: "campo" }, el("span", { textContent: "Titulo" }), titulo),
     el("label", { className: "campo" }, el("span", { textContent: "Descricao" }), desc),
-    el("label", { className: "campo" }, el("span", { textContent: "Criterios de aceite (obrigatorio)" }), crit),
     el("label", { className: "campo" }, el("span", { textContent: "Modo" }), modo),
+    el("label", { className: "campo" }, el("span", { textContent: "Criterios de aceite (obrigatorio)" }), crit),
+    sugestoes,
+    el("p", { className: "mudo", textContent: "A Forja confere sozinha os criterios 'testes passam' e 'arquivo: caminho'; os demais ficam para a sua revisao." }),
     el("p", { className: "mudo", textContent: "Alteracao de codigo e verificacao exigem nivel de autonomia liberado ou total (Configuracoes > Agentes) e uma pasta de trabalho no projeto." }),
     el("label", { className: "campo" }, el("span", { textContent: "Prioridade" }), prio),
     el("label", { className: "campo so-avancado" }, el("span", { textContent: "Cenario do agente simulado (so vale para o mock)" }), cenario),

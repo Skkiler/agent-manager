@@ -117,6 +117,8 @@ class PerfilTrabalho:
     nivel: str = "restrito"
     metodos: tuple[str, ...] = ()
     observacoes: str = ""
+    correcao: str = "uma_rodada"  # desligada | uma_rodada: a Forja roda os testes e devolve UMA falha ao agente (alteracao de codigo)
+    testes_timeout_s: int = 300
 
     @property
     def modos(self) -> frozenset[str]:

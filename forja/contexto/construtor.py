@@ -105,6 +105,9 @@ class ConstrutorContexto:
     ) -> None:
         self.memoria, self.principal, self.namespaces = memoria, principal, namespaces
         self.orcamento, self.teto_item, self.min_relativo, self.piso = orcamento, teto_item, min_relativo, piso
+        # Com o MCP da Forja ligado o agente le sob demanda (just-in-time): o contexto vira REFERENCIAS (local + resumo),
+        # sem trechos longos. Sem MCP, o agente nao tem como buscar, entao continua recebendo o trecho.
+        self.referencias = False
 
     # ------------------------------------------------------------------ consulta derivada da tarefa
     @staticmethod
@@ -149,6 +152,8 @@ class ConstrutorContexto:
             it.ref = f"{'M' if it.origem == 'memoria' else 'C'}{n}"
         pacote.itens = escolhidos
         pacote.texto = self._renderizar(escolhidos)
+        if self.referencias and escolhidos:
+            pacote.texto += "\n(Referencias: leia sob demanda pelas ferramentas da Forja.)"
         return pacote
 
     def _explicito(self, mem_id: str) -> ItemContexto | None:
@@ -221,14 +226,17 @@ class ConstrutorContexto:
                 sel.append("CONFLITO com outra memoria")
             fonte = (x.get("fonte") or {}).get("caminho")
             corpo = f"({' · '.join(sel)}) {x['titulo']} — {x['resumo']}"
-            if trecho and trecho[:60] not in corpo:
+            if trecho and trecho[:60] not in corpo and not self.referencias:
                 corpo += f"\n{trecho}"
             if fonte:
                 corpo += f"\nfonte: {fonte}"
+            if self.referencias:
+                corpo += f" (id {x['id']})"
         else:
             d = x.get("definicao")
             local = f"{x['caminho']}:{x['linhas'][0]}-{x['linhas'][1]}" + (f" ({d['tipo']} {d['nome']})" if d else "")
-            corpo = f"{local}\n{trecho}"
+            primeira = next((ln.strip() for ln in trecho.splitlines() if ln.strip()), "")[:160]
+            corpo = f"{local}\n{primeira}" if self.referencias else f"{local}\n{trecho}"
         return ItemContexto(
             "",
             x["origem"],

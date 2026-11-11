@@ -28,14 +28,23 @@ def valores(opcoes: list[dict[str, Any]], config_id: str) -> list[str]:
     return []
 
 
-def aplicar_configuracao(cliente: _Cliente, session_id: str, modelo: str, esforco: str, timeout: float = 20.0) -> dict[str, Any]:
+def aplicar_configuracao(cliente: _Cliente, session_id: str, modelo: str, esforco: str, timeout: float = 20.0,
+                         alternativas: list[str] | None = None) -> dict[str, Any]:
+    """`alternativas`: fallback EXPLICITO e ordenado escolhido pelo usuario. Usado so se o modelo principal faltar na conta;
+    o resultado diz qual foi usado (`modelo_alternativo`). Sem alternativas validas, falha fechada como antes."""
     aplicados: dict[str, str] = {}
     avisos: list[str] = []
     if modelo:
-        if modelo not in valores(cliente.opcoes_sessao, "model"):
-            raise ConfiguracaoIndisponivel(f"modelo {modelo!r} nao esta entre os modelos oferecidos pela sessao")
-        cliente.definir_opcao(session_id, "model", modelo, timeout)
-        aplicados["modelo"] = modelo
+        oferecidos = valores(cliente.opcoes_sessao, "model")
+        escolhido = modelo if modelo in oferecidos else next((a for a in (alternativas or []) if a in oferecidos), None)
+        if escolhido is None:
+            raise ConfiguracaoIndisponivel(f"modelo {modelo!r} nao esta entre os modelos oferecidos pela sessao"
+                                           + (" (nem as alternativas)" if alternativas else ""))
+        if escolhido != modelo:
+            avisos.append(f"modelo {modelo!r} indisponivel; usado o alternativo {escolhido!r} (configurado por voce)")
+            aplicados["modelo_alternativo"] = escolhido
+        cliente.definir_opcao(session_id, "model", escolhido, timeout)
+        aplicados["modelo"] = escolhido
     if esforco:  # as opcoes de esforco dependem do modelo escolhido: so existem depois de aplica-lo
         if esforco in valores(cliente.opcoes_sessao, "effortLevel"):
             cliente.definir_opcao(session_id, "effortLevel", esforco, timeout)

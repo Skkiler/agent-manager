@@ -33,6 +33,7 @@ class ConfiguracaoServico:
                     "id": p.id, "rotulo": p.rotulo, "descricao": p.descricao, "usa_modelo": p.usa_modelo,
                     "modelo": cfg.partes[p.id].modelo if p.id in cfg.partes else "",
                     "esforco": cfg.partes[p.id].esforco if p.id in cfg.partes else "",
+                    "alternativas": list(cfg.partes[p.id].alternativas) if p.id in cfg.partes else [],
                     "modelo_efetivo": self._efetivo(cfg, p.id) if p.usa_modelo else None,
                 }
                 for p in PARTES
@@ -62,6 +63,16 @@ class ConfiguracaoServico:
         except Exception:  # noqa: BLE001
             return ""
         return cfg.partes[parte].esforco if parte in cfg.partes else ""
+
+    def alternativas_para(self, parte: str) -> list[str]:
+        """Modelos de reserva, em ordem (vazio = sem fallback: falha fechada). Nunca levanta."""
+        try:
+            with self.repo.leitura() as t:
+                linha = t.obter(T.Configuracao, CHAVE)
+            cfg = ConfiguracaoSistema.model_validate((linha or {}).get("valor") or {})
+        except Exception:  # noqa: BLE001
+            return []
+        return list(cfg.partes[parte].alternativas) if parte in cfg.partes else []
 
     def salvar(self, d: SalvarConfiguracaoIn) -> dict[str, Any]:
         agora = iso(self.relogio.agora())

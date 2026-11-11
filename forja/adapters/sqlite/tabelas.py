@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -423,3 +423,18 @@ class Anexo(Base):
     texto: Mapped[str] = mapped_column(Text, default="")
     truncado: Mapped[bool] = mapped_column(Boolean, default=False)
     criado_em: Mapped[str] = mapped_column(String(40))
+
+
+class VetorSemantico(Base):
+    """Embedding de um documento ja indexado (trecho de codigo ou memoria), usado SO quando a busca semantica estiver ligada.
+    `chave` = 'c:<id do trecho>' ou 'm:<id da memoria>'; `sha` detecta mudanca (reindexa so o que mudou). O texto nunca e
+    guardado aqui: a fonte continua sendo o FTS/memoria (ja redigidos). Vetor float32 normalizado (cosseno = produto escalar)."""
+    __tablename__ = "vetor_semantico"
+    chave: Mapped[str] = mapped_column(String(80), primary_key=True)
+    origem: Mapped[str] = mapped_column(String(16), index=True)
+    ref: Mapped[str] = mapped_column(String(64), index=True)
+    namespace: Mapped[str] = mapped_column(String(200), index=True)
+    sha: Mapped[str] = mapped_column(String(64))
+    modelo: Mapped[str] = mapped_column(String(120), index=True)
+    dim: Mapped[int] = mapped_column(Integer)
+    vetor: Mapped[bytes] = mapped_column(LargeBinary)

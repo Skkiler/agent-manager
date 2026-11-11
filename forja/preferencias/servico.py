@@ -78,7 +78,8 @@ class PreferenciasServico:
 
     def perfil_trabalho(self) -> PerfilTrabalho:
         return PerfilTrabalho(nivel=self.valor("nivel_autonomia"), metodos=tuple(self.valor("metodos_acao")),
-                              observacoes=self.valor("observacoes_guia"))
+                              observacoes=self.valor("observacoes_guia"), correcao=self.valor("correcao_automatica"),
+                              testes_timeout_s=int(self.valor("testes_tempo_maximo")))
 
     def politica_pastas(self) -> PoliticaPastas:
         return PoliticaPastas(

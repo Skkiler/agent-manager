@@ -52,6 +52,7 @@ from forja.memoria.saneamento import (
     redigir_objeto,
     redigir_pii,
 )
+from forja.memoria.semantica import IndiceSemantico, margem_insegura
 
 log = logging.getLogger("forja.memoria")
 EM = EstadoMemoria
@@ -76,6 +77,11 @@ class ServicoMemoria:
         self.repo = repo
         self.relogio = relogio or RelogioSistema()
         self.raizes = [r.resolve() for r in (raizes_ingestao or [])]
+        self.semantica: IndiceSemantico | None = IndiceSemantico(repo)  # inativa por padrao (preferencia busca_semantica)
+
+    def _avisar_semantica(self) -> None:
+        if self.semantica is not None and self.semantica.modo != "inativo":
+            self.semantica.agendar()  # incremental em segundo plano: so o que mudou
 
     # ------------------------------------------------------------------ utilidades
     def _ts(self) -> str:
@@ -213,6 +219,7 @@ class ServicoMemoria:
             )
             if conflitos:
                 self._ev(t, "memoria.conflito_detectado", {"memoria_id": m["id"], "com": conflitos})
+        self._avisar_semantica()
         return {**m, "conflito_com": conflitos}
 
     def obter(self, p: Principal, memoria_id: str) -> dict[str, Any]:
@@ -285,6 +292,8 @@ class ServicoMemoria:
             )  # type: ignore[index]
             if conflitos:
                 self._ev(t, "memoria.conflito_detectado", {"memoria_id": m["id"], "com": conflitos})
+        if mudou:
+            self._avisar_semantica()
         return {**m2, "conflito_com": conflitos}  # type: ignore[dict-item]
 
     def transicionar(
@@ -501,6 +510,8 @@ class ServicoMemoria:
                     res["memorias_marcadas"] += self._origem_mudou(t, d.namespace, d.repositorio, caminho, "")
             self._ev(t, "memoria.ingestao", {k: (len(v) if isinstance(v, list) else v) for k, v in res.items()})
         res["truncado"] = truncado
+        if res["novos"] or res["alterados"] or res["removidos"]:
+            self._avisar_semantica()
         return res
 
     def _indexar_arquivo(self, t: Tx, d: IngerirIn, a: indexador.ArquivoAnalisado, ex: dict[str, Any] | None) -> None:
@@ -610,7 +621,9 @@ class ServicoMemoria:
                 if usar_grafo and "memoria" in fontes
                 else []
             )
-        itens = self._fundir(mem_items, cod_items, sim_items, graf_items)[:limite]
+            sem_items, info_sem = self._semanticos(t, q, alvo, fontes, tipos, apenas_validadas, incluir_inativas,
+                                                   mem_items, cod_items, sim_items, graf_items)
+        itens = self._fundir(mem_items, cod_items, sim_items, graf_items, sem_items)[:limite]
         por_sujeito: dict[str, list[str]] = {}
         for i in itens:
             for outro in i.get("conflito_com", []):
@@ -626,7 +639,35 @@ class ServicoMemoria:
             "conflitos": conflitos,
             "avisos": avisos,
             "expansao": expansao,
+            "semantica": info_sem,
         }
+
+    def _semanticos(self, t: Tx, q: str, alvo: list[str], fontes: tuple[str, ...], tipos: list[str] | None, apenas_validadas: bool,
+                    incluir_inativas: bool, *lexicos: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Ranking semantico (opcional). 'fallback' so entra se a lexical estiver insegura; 'ativo' entra sempre.
+        Peso 0,8 na fusao: reforca a lexical, nao a substitui (o melhor resultado medido)."""
+        sem = self.semantica
+        if sem is None or sem.modo == "inativo":
+            return [], {"modo": "inativo", "usada": False}
+        info: dict[str, Any] = {"modo": sem.modo, "usada": False}
+        previa = self._fundir(*lexicos)
+        if sem.modo == "fallback" and not margem_insegura([i["pontuacao"] for i in previa[:2]]):
+            info["motivo"] = "busca lexical confiante"
+            return [], info
+        try:
+            mh, ch = sem.buscar(q, alvo, 50)
+        except Exception as e:  # noqa: BLE001 - a busca semantica e reforco: falhar nunca derruba a busca
+            log.warning("busca semantica falhou: %s", type(e).__name__)
+            return [], {**info, "motivo": f"falhou ({type(e).__name__})"}
+        if not (mh or ch):
+            return [], {**info, "motivo": sem.motivo or "sem vetores ainda (indexando em segundo plano)"}
+        itens = (self._hidratar_memorias(t, mh, tipos, apenas_validadas, incluir_inativas) if "memoria" in fontes else []) + (
+            self._hidratar_codigo(t, ch) if "codigo" in fontes and not apenas_validadas else [])
+        for i in itens:
+            i["_fator"] = i["_fator"] * 0.8
+            i["semantico"] = True
+        info["usada"] = bool(itens)
+        return itens, info
 
     def _hidratar_memorias(
         self, t: Tx, hits: list[dict], tipos: list[str] | None, apenas_validadas: bool, incluir_inativas: bool

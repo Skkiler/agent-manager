@@ -23,6 +23,8 @@ Pre-requisito: Python 3.12+ (testado em 3.13). Nao exige Kiro CLI nem modelo loc
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
+# opcional: busca semantica por nivel (inativa por padrao; >= 8 GB de RAM)
+# pip install -r requirements-semantica.txt
 
 # 2. configuracao local (opcional; ha defaults seguros)
 Copy-Item .env.example .env   # ajuste se desejar; nunca commite .env

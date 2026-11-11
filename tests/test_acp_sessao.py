@@ -105,7 +105,22 @@ def test_com_mcp_espera_o_servidor_conectar_antes_do_prompt(tmp_path):
     ctl, eventos = _ctl()
     texto = p.executar(_tarefa(), {}, ctl).artefatos[0].conteudo
     assert "mcp_pronto_no_prompt=True" in texto and "servidores=['forja']" in texto and "dica=True" in texto
-    assert ("kiro.mcp", {"pronto": True}) in eventos
+    ev = next(d for t, d in eventos if t == "kiro.mcp")
+    # sinal real (_kiro/mcp/status), mesmo com o 'breakdown' DIMINUINDO (como apos trocar para o modo 'forja')
+    assert ev["pronto"] is True and ev["sinal"] == "mcp_status" and ev["servidores"]["forja"]["ferramentas"] == 1
+    assert ev["espera_ms"] < 5000
+
+
+def test_mcp_que_falha_nao_espera_o_teto(tmp_path):
+    import time
+
+    p = _prov("mcp_falha", tmp_path, mcp_servers=MCP, espera_mcp_s=20)
+    p.usar_mcp = True
+    ctl, eventos = _ctl()
+    t0 = time.monotonic()
+    assert p.executar(_tarefa(), {}, ctl).estado == "concluida"
+    ev = next(d for t, d in eventos if t == "kiro.mcp")
+    assert ev["pronto"] is False and ev["sinal"] == "mcp_falhou" and time.monotonic() - t0 < 10
 
 
 def test_sem_sinal_de_prontidao_segue_apos_o_teto(tmp_path):
@@ -116,4 +131,5 @@ def test_sem_sinal_de_prontidao_segue_apos_o_teto(tmp_path):
 
     t0 = time.monotonic()
     r = p.executar(_tarefa(), {}, ctl)
-    assert r.estado == "concluida" and ("kiro.mcp", {"pronto": False}) in eventos and time.monotonic() - t0 < 10
+    ev = next(d for t, d in eventos if t == "kiro.mcp")
+    assert r.estado == "concluida" and ev["pronto"] is False and ev["sinal"] == "sem_sinal" and time.monotonic() - t0 < 10

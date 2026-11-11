@@ -84,6 +84,10 @@ while True:
         if cenario == "auth":
             enviar({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000,
                     "message": "Authentication required. Not logged in. Run `kiro-cli login` first."}})
+        elif cenario == "mcp_falha":
+            globals()["mcp_recebido"] = (msg.get("params") or {}).get("mcpServers")
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "configOptions": opcoes()}})
+            enviar({"jsonrpc": "2.0", "method": "_kiro/mcp/status", "params": {"sessionId": sid, "servers": [{"name": "forja", "status": "failed"}]}})
         elif cenario in ("mcp", "mcp_mudo"):  # imita o kiro-cli 3.1.0: MCP conecta DEPOIS da resposta de session/new
             globals()["mcp_recebido"] = (msg.get("params") or {}).get("mcpServers")
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "configOptions": opcoes()}})
@@ -95,10 +99,15 @@ while True:
             if cenario == "mcp":
                 import threading
 
-                def conectar() -> None:  # em paralelo: um prompt enviado cedo demais chega ANTES desta marca
+                def conectar(sid: str = sid) -> None:  # em paralelo: um prompt enviado cedo demais chega ANTES desta marca
+                    enviar({"jsonrpc": "2.0", "method": "_kiro/mcp/status", "params": {"sessionId": sid, "servers": [
+                        {"name": "forja", "status": "connecting"}]}})
                     time.sleep(0.6)
                     globals()["mcp_conectado_em"] = time.monotonic()
-                    info(5256)
+                    # como o kiro-cli 3.1.0: o status chega antes e o 'breakdown' pode ate DIMINUIR (troca de modo)
+                    enviar({"jsonrpc": "2.0", "method": "_kiro/mcp/status", "params": {"sessionId": sid, "servers": [
+                        {"name": "forja", "status": "connected", "tools": [{"name": "forja_listar_ferramentas"}]}]}})
+                    info(4793)
 
                 threading.Thread(target=conectar, daemon=True).start()
         elif cenario == "modelos":  # imita o kiro-cli 3.1.0 real (engine v3)
@@ -114,7 +123,7 @@ while True:
             update(sid, {"sessionUpdate": "tool_call", "toolCallId": "h1", "title": "Ferramenta antiga", "kind": "read", "status": "completed"})
             carregada = True
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": opcoes()}})
-    elif m == "session/prompt" and cenario in ("mcp", "mcp_mudo"):
+    elif m == "session/prompt" and cenario in ("mcp", "mcp_mudo", "mcp_falha"):
         pronto = "mcp_conectado_em" in globals()
         nomes = [s.get("name") for s in globals().get("mcp_recebido") or []]
         txt = ((msg.get("params") or {}).get("prompt") or [{}])[0].get("text", "")
@@ -214,6 +223,34 @@ while True:
                         respostas["921"] = o.get("optionId", o["outcome"])
             chunk(sid, "decisoes=" + json.dumps(respostas, sort_keys=True))
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
+        elif cenario in ("corrige", "corrige_nunca"):  # 1o turno deixa um bug; ao receber a falha da Forja, corrige (ou nao)
+            import os
+
+            txt = ((msg.get("params") or {}).get("prompt") or [{}])[0].get("text", "")
+            alvo = os.path.join(os.getcwd(), "soma.py")
+            segunda = "FALHARAM" in txt
+            correto = segunda and cenario == "corrige"
+            with open(alvo, "w", encoding="utf-8") as f:
+                f.write("def soma(a, b):\n    return a + b\n" if correto else "def soma(a, b):\n    return a - b\n")
+            update(sid, {"sessionUpdate": "tool_call", "toolCallId": f"w{int(segunda)}", "title": "Write File", "kind": "edit",
+                         "status": "completed", "rawInput": {"path": alvo}})
+            chunk(sid, ("## Resposta\nCorrigi a soma.\n## Evidências\n- alterei soma.py\n" if segunda else
+                        "## Resposta\nImplementei `soma.py` e os testes passaram.\n"))
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
+        elif cenario in ("laco", "muitas"):  # agente perdido: repete a mesma leitura (ou faz chamadas sem fim) ate ser cancelado
+            chunk(sid, "## Resposta\nprocurando...")
+            for i in range(40):
+                titulo = "Read File" if cenario == "laco" else f"Read File {i}"
+                update(sid, {"sessionUpdate": "tool_call", "toolCallId": f"l{i}", "title": titulo, "kind": "read", "status": "completed",
+                             "rawInput": {"path": "a.py" if cenario == "laco" else f"a{i}.py"}})
+                time.sleep(0.01)
+            while True:
+                n = ler()
+                if n is None:
+                    sys.exit(0)
+                if n.get("method") == "session/cancel":
+                    enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "cancelled"}})
+                    break
         elif cenario == "alegacao":  # afirma ter testado sem chamar nenhuma ferramenta (alucinacao tipica)
             update(sid, {"sessionUpdate": "tool_call", "toolCallId": "r1", "title": "Read File", "kind": "read", "status": "completed"})
             chunk(sid, "## Resposta\nCorrigi o modulo e todos os testes passaram.\n")

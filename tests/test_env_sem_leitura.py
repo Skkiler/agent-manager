@@ -106,3 +106,16 @@ def test_consumir_env_e_permitido_como_comando_comum(cmd):
                                  "Get-ChildItem env:", "docker compose --env-file .env up && cat .env", "python -c open('.env')"])
 def test_imprimir_variaveis_continua_sendo_leitura_de_segredo(cmd):
     assert descrever_acao({"kind": "execute", "rawInput": {"command": cmd}})["sensivel"] is True, cmd
+
+
+def test_compose_aponta_variaveis_obrigatorias_faltando_sem_mostrar_valores(projeto):
+    (projeto / "docker-compose.yml").write_text(
+        "services:\n  api:\n    image: x\n    environment:\n      - DB=${DATABASE_URL}\n      - CHAVE=${API_KEY:?defina}\n"
+        "      - CACHE=${REDIS_URL:-redis://localhost}\n      - TOKEN=$SEGREDO_EXTERNO\n      - ESCAPADO=$$NAO_E_VARIAVEL\n"
+        "      # - IGNORADA=${COMENTADA}\n      - VAZIA=${VAZIA}\n", encoding="utf-8")
+    r = amb.verificar(projeto / ".env", [], {}, {}, None)
+    c = r.dados["compose"]
+    assert c["faltando_obrigatorias"] == ["SEGREDO_EXTERNO"]
+    assert c["faltando_com_padrao"] == ["REDIS_URL"] and c["vazias_obrigatorias"] == ["VAZIA"]
+    assert "NAO_E_VARIAVEL" not in str(c) and "COMENTADA" not in str(c)
+    assert SEGREDO not in r.resumo + str(r.dados)

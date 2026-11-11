@@ -44,6 +44,12 @@ def criar(d: MemoriaIn, s: Mem, p: Pr) -> dict[str, Any]:
     return s.criar(p, d, ATOR)
 
 
+@rm.get("/busca/semantica")
+def estado_semantica(s: Mem) -> dict[str, Any]:
+    """Nivel da busca semantica, disponibilidade (dependencia/RAM), vetores prontos e velocidade medida."""
+    return s.semantica.estado() if s.semantica is not None else {"modo": "inativo", "disponivel": False, "motivo": "desligada"}
+
+
 @rm.get("/memorias/buscar")
 def buscar(
     s: Mem, p: Pr, q: Annotated[str, Query(min_length=1, max_length=300)],

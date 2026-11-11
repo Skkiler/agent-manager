@@ -63,6 +63,30 @@ def ler_env(caminho: Path) -> tuple[dict[str, str], list[int], list[str]]:
     return valores, ruins, sorted(set(duplicadas))
 
 
+COMPOSE = ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
+_REF_CHAVES = re.compile(r"(?<!\$)\$\{([A-Za-z_][A-Za-z0-9_]*)(:?[-?+][^}]*)?\}")
+_REF_SIMPLES = re.compile(r"(?<!\$)\$([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def referencias_compose(pasta: Path) -> dict[str, list[str]]:
+    """NOMES das variaveis que o docker compose interpola. `${X}`/`${X:?erro}` = obrigatoria; `${X:-padrao}` = tem padrao.
+    `$$X` e escape (nao e variavel). So nomes saem daqui; o arquivo do compose nao e repassado."""
+    obrig, padrao, arquivos = set(), set(), []
+    for nome in COMPOSE:
+        p = pasta / nome
+        if not p.is_file() or p.stat().st_size > 1_000_000:
+            continue
+        arquivos.append(nome)
+        for linha in p.read_text(encoding="utf-8", errors="replace").splitlines():
+            if linha.lstrip().startswith("#"):
+                continue
+            for m in _REF_CHAVES.finditer(linha):
+                (padrao if (m.group(2) or "").lstrip(":")[:1] in ("-", "+") else obrig).add(m.group(1))
+            for m in _REF_SIMPLES.finditer(_REF_CHAVES.sub("", linha)):
+                obrig.add(m.group(1))
+    return {"arquivos": arquivos, "obrigatorias": sorted(obrig), "com_padrao": sorted(padrao - obrig)}
+
+
 def _pode_comparar(arquivo: Path, chave: str, agora: float | None = None) -> bool:
     agora = time.monotonic() if agora is None else agora
     k = (str(arquivo), chave)
@@ -101,7 +125,18 @@ def verificar(arquivo: Path, chaves: list[str], formatos: dict[str, str], compar
         dados["faltando_em_relacao_ao_exemplo"] = sorted(set(esperadas) - set(valores))[:MAX_CHAVES]
         dados["sobrando_em_relacao_ao_exemplo"] = sorted(set(valores) - set(esperadas))[:MAX_CHAVES]
         dados["vazias_que_o_exemplo_espera"] = sorted(k for k in esperadas if k in valores and not valores[k].strip())[:MAX_CHAVES]
+    compose = referencias_compose(arquivo.parent)
+    if compose["arquivos"]:
+        dados["compose"] = {"arquivos": compose["arquivos"],
+                            "faltando_obrigatorias": sorted(set(compose["obrigatorias"]) - set(valores))[:MAX_CHAVES],
+                            "faltando_com_padrao": sorted(set(compose["com_padrao"]) - set(valores))[:MAX_CHAVES],
+                            "vazias_obrigatorias": sorted(k for k in compose["obrigatorias"] if k in valores and not valores[k].strip())[:MAX_CHAVES]}
     linhas = [f"{arquivo.name}: {len(valores)} variavel(is)" + (f", {len(ruins)} linha(s) mal formada(s) (linhas {ruins[:10]})" if ruins else "")]
+    if "compose" in dados:
+        c = dados["compose"]
+        linhas.append(f"compose ({', '.join(c['arquivos'])}): faltam obrigatorias: {', '.join(c['faltando_obrigatorias']) or 'nenhuma'}"
+                      + (f"; vazias: {', '.join(c['vazias_obrigatorias'])}" if c["vazias_obrigatorias"] else "")
+                      + (f"; sem valor (usarao o padrao do compose): {', '.join(c['faltando_com_padrao'])}" if c["faltando_com_padrao"] else ""))
     if duplicadas:
         linhas.append(f"duplicadas: {', '.join(duplicadas[:10])}")
     for c, info in por_chave.items():

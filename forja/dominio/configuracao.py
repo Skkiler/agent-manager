@@ -35,6 +35,9 @@ class ParteConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     modelo: ModeloId | Literal[""] = Field("", description="Vazio = padrao da conta/politica do Kiro.")
     esforco: Esforco = ""
+    # Fallback EXPLICITO e ordenado (desligado = lista vazia): se o modelo escolhido nao estiver na conta, tenta estes, em ordem,
+    # e registra qual foi usado. Sem lista, continua a falha fechada (nunca troca de modelo em silencio).
+    alternativas: list[ModeloId] = Field(default_factory=list, max_length=3)
 
 
 class ConfiguracaoSistema(BaseModel):
@@ -47,7 +50,7 @@ class ConfiguracaoSistema(BaseModel):
             parte = PARTES_POR_ID.get(pid)
             if parte is None:
                 raise ValueError(f"parte desconhecida: {pid!r}")
-            if (cfg.modelo or cfg.esforco) and not parte.usa_modelo:
+            if (cfg.modelo or cfg.esforco or cfg.alternativas) and not parte.usa_modelo:
                 raise ValueError(f"a parte {pid!r} e deterministica e nao usa modelo nem esforco")
         return self
 

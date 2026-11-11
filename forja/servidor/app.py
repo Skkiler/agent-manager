@@ -109,7 +109,10 @@ def _criar_preferencias(cfg: Configuracoes, servico: Servico, app: FastAPI) -> P
     prov = servico.provedor
     if isinstance(prov, ProvedorKiroAcp):
         prefs.registrar_aplicador("kiro_mcp_ativo", lambda v: setattr(prov, "usar_mcp", bool(v)))
+        prefs.registrar_aplicador("kiro_mcp_ativo", lambda v: setattr(servico.construtor_contexto, "referencias", bool(v))
+                                  if servico.construtor_contexto is not None else None)
         prefs.registrar_aplicador("kiro_reusar_sessao", lambda v: setattr(prov, "reusar_sessao", bool(v)))
+        prefs.registrar_aplicador("limite_ferramentas_por_execucao", lambda v: setattr(prov, "max_ferramentas", int(v)))
     prefs.registrar_aplicador("contexto_ativo", lambda v: setattr(servico, "contexto_ativo", bool(v)))
     prefs.registrar_aplicador("aprovacao_timeout_segundos", lambda v: setattr(servico, "espera_aprovacao_s", float(v)))
     prefs.registrar_aplicador("contexto_orcamento_tokens", lambda v: setattr(servico.construtor_contexto, "orcamento", int(v))
@@ -178,10 +181,13 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     if isinstance(provedor_servico.provedor, ProvedorKiroAcp):  # modelo por parte do sistema (configuravel no painel)
         provedor_servico.provedor.modelo_de = app.state.configuracao.modelo_para
         provedor_servico.provedor.esforco_de = app.state.configuracao.esforco_para
+        provedor_servico.provedor.alternativas_de = app.state.configuracao.alternativas_para
     app.state.modelos = CatalogoModelos(resolver_cli(cfg.app_kiro_cli_path))  # lista da conta (somente leitura)
     app.state.token = carregar_token(cfg)
     app.state.limitador = LimitadorTaxa(cfg.app_rate_limit_per_minute)
     app.state.prefs.registrar_aplicador("limite_requisicoes_por_minuto", lambda v: setattr(app.state.limitador, "limite", int(v)))
+    if app.state.memoria.semantica is not None:
+        app.state.prefs.registrar_aplicador("busca_semantica", app.state.memoria.semantica.definir_modo)
     app.state.prefs.aplicar_todos()  # aplica as preferencias salvas aos componentes ja criados
     app.state.encerrando = threading.Event()
     app.state.hosts = {"127.0.0.1", "localhost", "::1", f"127.0.0.1:{cfg.app_port}", f"localhost:{cfg.app_port}"}

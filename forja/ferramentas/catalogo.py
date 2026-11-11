@@ -22,6 +22,7 @@ from forja.ferramentas.conversor import converter
 from forja.ferramentas.diff import resumir_diff
 from forja.ferramentas.email_mbox import ler_mbox
 from forja.ferramentas.esquema import inspecionar_sqlite
+from forja.ferramentas.estrutura import estrutura_codigo
 from forja.ferramentas.logs import agrupar_falhas
 from forja.ferramentas.mapa import mapa_repositorio
 from forja.ferramentas.orcamento import orcar_tokens
@@ -86,6 +87,13 @@ class EntMbox(_Base):
 
 class EntNada(_Base):
     pass
+
+
+class EntEstrutura(_Base):
+    caminho: Caminho = "."
+    operacao: Annotated[str, StringConstraints(pattern=r"^(mapa|definicao|referencias|dependencias|impacto|testes_afetados)$")] = "mapa"
+    alvo: Annotated[str, StringConstraints(max_length=300)] = ""
+    limite: int = Field(30, ge=1, le=100)
 
 
 class EntJiraBuscar(_Base):
@@ -318,6 +326,10 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
     Ferramenta("codigo.outline", "Simbolos e linhas de um arquivo, sem o corpo.", EntCaminho, _outline, True,
                fallback="texto.amostra"),
     Ferramenta("texto.amostra", "Trecho numerado de um arquivo de texto.", EntAmostra, _arquivo(amostra_arquivo), True),
+    Ferramenta("codigo.estrutura", "Indice estrutural: mapa dos arquivos centrais, onde um simbolo e definido, quem o usa, "
+               "de quem um arquivo depende, impacto de mudar um simbolo e quais testes rodar. Use antes de abrir arquivos inteiros.",
+               EntEstrutura, _arquivo(estrutura_codigo), True,
+               fallback="repo.mapa"),
     Ferramenta("repo.mapa", "Linguagens, pastas, entradas e configuracao de um repositorio.", EntMapa,
                _arquivo(mapa_repositorio), True),
     Ferramenta("segredos.varrer", "Possiveis segredos (arquivo:linha, sem o valor).", EntMapa, _arquivo(varrer), True),

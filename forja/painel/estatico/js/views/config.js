@@ -173,7 +173,8 @@ function cartao(p) {
   const explicados = p.exemplos.length ? el("ul", { className: "exemplos-lista" }, ...p.exemplos.map((e) => el("li", {}, el("strong", { textContent: `${e.rotulo}: ` }), el("span", { textContent: e.descricao })))) : null;
   const restaurar = p.persistida && p.tipo !== "perfil" ? el("button", { type: "button", textContent: "Restaurar padrão",
     title: `Padrão: ${padraoTexto(p)}`, onclick: () => restaurarPadrao(p) }) : null;
-  return el("section", { className: "card opcao", "data-pref": p.id },
+  const status = p.id === "busca_semantica" ? estadoSemantica() : null;
+  return el("section", { className: "card opcao", "data-pref": p.id }, status,
     el("div", { className: "linha" }, el("h3", { textContent: p.rotulo }), tag(`risco ${p.risco}`, RISCO[p.risco] || ""), ...(p.reinicia ? [tag("exige reiniciar", "aviso")] : []), ...(fonte ? [fonte] : [])),
     recolhivel(el("p", { textContent: p.explicacao }), 3),
     ...(ctl ? [ctl.no] : []), ...(exemplos ? [exemplos] : []),
@@ -182,6 +183,17 @@ function cartao(p) {
       ...(p.se_ligar ? [el("p", {}, el("strong", { textContent: p.tipo === "bool" ? "Se ativar: " : "Ao escolher mais: " }), p.se_ligar)] : []),
       ...(p.se_desligar ? [el("p", {}, el("strong", { textContent: p.tipo === "bool" ? "Se desativar: " : "Ao escolher menos: " }), p.se_desligar)] : [])),
     el("div", { className: "linha mudo" }, el("span", { textContent: `Padrão: ${padraoTexto(p)}` }), ...(restaurar ? [restaurar] : [])));
+}
+
+/** Estado real da busca semantica (dependencia, RAM, vetores prontos, velocidade medida). */
+function estadoSemantica() {
+  const caixa = el("p", { className: "aviso estado-semantica", role: "status", textContent: "Verificando disponibilidade…" });
+  api("GET", "/busca/semantica").then((e) => {
+    caixa.textContent = !e.disponivel ? `Indisponível neste computador: ${e.motivo}`
+      : `Disponível. ${e.vetores} de ${e.documentos} documentos com vetor${e.indexando ? " (indexando…)" : ""}`
+        + (e.ms_por_bloco ? `; ~${e.ms_por_bloco} ms por bloco` : "") + (e.ultimo_erro ? `; último erro: ${e.ultimo_erro}` : "");
+  }).catch(() => { caixa.textContent = "Não foi possível consultar o estado da busca semântica."; });
+  return caixa;
 }
 
 function padraoTexto(p) {
@@ -241,13 +253,21 @@ function secaoModelos(c, catalogo) {
     const custo = el("span", { className: "mudo", role: "status" });
     const mostrar = () => { const m = custos.get(modelo.value.trim()); custo.textContent = m ? `${m.custo}x creditos` : ""; };
     modelo.addEventListener("input", mostrar); mostrar();
-    campos.set(p.id, { modelo, esforco });
+    const alternativas = el("input", { value: (p.alternativas || []).join(", "), maxLength: 250, disabled: !p.usa_modelo, list: "lista-modelos",
+      placeholder: p.usa_modelo ? "vazio = sem reserva (bloqueia)" : "—", "aria-label": `Modelos de reserva de ${p.rotulo}`,
+      title: "Se o modelo escolhido faltar na conta, tenta estes, em ordem (até 3, separados por vírgula). Vazio: a tarefa fica bloqueada." });
+    campos.set(p.id, { modelo, esforco, alternativas });
     return el("tr", {}, el("td", {}, el("strong", { textContent: p.rotulo }), el("div", { className: "mudo", textContent: p.descricao })),
-      el("td", {}, modelo, custo), el("td", {}, esforco), el("td", { className: "so-avancado mono", textContent: p.usa_modelo ? p.modelo_efetivo : "deterministico" }));
+      el("td", {}, modelo, custo), el("td", {}, esforco), el("td", {}, alternativas),
+      el("td", { className: "so-avancado mono", textContent: p.usa_modelo ? p.modelo_efetivo : "deterministico" }));
   });
   const salvar = el("button", { type: "button", className: "primario", textContent: "Salvar modelos", onclick: async () => {
     const partes = {};
-    for (const [id, f] of campos) if (!f.modelo.disabled && (f.modelo.value.trim() || f.esforco.value)) partes[id] = { modelo: f.modelo.value.trim(), esforco: f.esforco.value };
+    for (const [id, f] of campos) {
+      if (f.modelo.disabled) continue;
+      const alternativas = f.alternativas.value.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 3);
+      if (f.modelo.value.trim() || f.esforco.value || alternativas.length) partes[id] = { modelo: f.modelo.value.trim(), esforco: f.esforco.value, alternativas };
+    }
     try {
       await api("PUT", "/configuracao", { expected_version: c.versao, configuracao: { partes } });
       toast("Modelos salvos", "ok"); await recarregar(); desenhar();
@@ -256,7 +276,7 @@ function secaoModelos(c, catalogo) {
   return [el("p", { className: "aviso", textContent: catalogo.modelos.length
     ? "Os modelos vem da sua conta, com o custo relativo em creditos (menor e mais barato). Vazio usa o padrao da conta."
     : `${catalogo.aviso || ""} Um nome invalido faz o Kiro recusar a sessao.` }), lista,
-  el("table", {}, el("thead", {}, el("tr", {}, el("th", { textContent: "Parte" }), el("th", { textContent: "Modelo" }), el("th", { textContent: "Esforco" }), el("th", { className: "so-avancado", textContent: "Efetivo" }))), el("tbody", {}, ...linhas)),
+  el("table", {}, el("thead", {}, el("tr", {}, el("th", { textContent: "Parte" }), el("th", { textContent: "Modelo" }), el("th", { textContent: "Esforco" }), el("th", { textContent: "Reserva" }), el("th", { className: "so-avancado", textContent: "Efetivo" }))), el("tbody", {}, ...linhas)),
   el("div", { className: "linha" }, salvar, tag(`versao ${c.versao}`, "so-avancado"))];
 }
 

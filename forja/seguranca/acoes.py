@@ -117,6 +117,9 @@ def _caminhos(tc: dict[str, Any]) -> list[str]:
     return achados
 
 
+caminhos_do_tool_call = _caminhos  # publico: o provedor usa o MESMO extrator do mediador (formato real do Kiro)
+
+
 def _alvos_do_comando(cmd: str) -> list[str]:
     try:
         tokens = shlex.split(cmd, posix=False)

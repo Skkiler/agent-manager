@@ -196,7 +196,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - **Novos:**
   - `adapters/kiro_acp/perfil_kiro.py`, `ferramentas/ambiente_env.py` (ferramenta `env.verificar`: só booleanos e nomes) e `conversa/alegacoes.py` (salvaguarda determinística contra "testes passaram" sem execução observada).
   - Mediador: comandos que **usam** o `.env` sem exibi-lo (`docker compose --env-file`...) contam como execução comum; comandos que imprimem o env são sensíveis.
-  - `docs/PESQUISA_METODOS.md`: varredura de cada recurso contra o mercado, com fontes.
+  - Pesquisa de métodos contra o mercado (relatório implementado e removido; decisões e fontes no ADR-019).
 - **Interface:**
   - Tokens de design: uma fonte, escala tipográfica, espaçamentos e camadas de z-index.
   - **8 paletas** (4 escuras + 4 claras) com contraste AA verificado por teste (`tests/test_paletas.py`) e prévia ao vivo.
@@ -212,8 +212,26 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   - A janela de Configurações não reabria após recarregar a página: o endereço voltava para `#/tarefas`. Corrigido: `#/config` agora fica no endereço enquanto a janela está aberta.
   - A conversa sobreposta cobria a coluna de destino ao arrastar um cartão. Corrigido: os painéis ficam translúcidos durante o arraste.
 - **Pendências:**
-  - Trocar para o modo `forja` reduz o custo de ferramentas informado pelo Kiro, então o sinal "MCP pronto" pode não disparar (espera até 15 s). Falta reavaliar.
-  - Decisões abertas: busca híbrida; `dev-shell` no nível total (hoje não usado); melhorias propostas em `docs/PESQUISA_METODOS.md` (índice estrutural de código, avaliador-otimizador de um turno, prefixo de prompt fixo).
+  - (resolvido na etapa seguinte) sinal "MCP pronto" com o modo `forja`; melhorias da pesquisa implementadas (ver abaixo).
+
+## Melhorias da pesquisa, correção com testes reais, índice estrutural e semântica por nível (itens 4.34-4.36): resultados reais (2026-11-06)
+- **Novos:**
+  - Ferramentas: `ferramentas/estrutura.py` (`codigo.estrutura`: mapa, definição, referências, dependências, impacto, testes afetados) e `ferramentas/verificacao.py` (descobre e roda os testes do projeto com ambiente limpo).
+  - Memória: `memoria/semantica.py` (busca semântica opcional por nível) + migração 0011.
+  - Provedor: rodada única de correção, critérios verificáveis, orçamentos rígidos (laço e limite de chamadas), lembrete do objetivo, sinal `_kiro/mcp/status`, modelo de reserva, consumo medido pelo Kiro.
+  - MCP compacto e paginado; contexto por referência com MCP; `env.verificar` lê o compose; sugestões de critérios na nova tarefa. ADR-019.
+- **Verificado:**
+  - **1008 testes passando**, Ruff limpo, benchmark inalterado (GLOBAL 0.94/0.87/0.89).
+  - Navegador real: **63 passos OK, 0 problemas**, axe sem violações, 420 px sem estouro.
+  - **Kiro real:** MCP pronto em 1,96 s pelo `_kiro/mcp/status` (modo `forja`).
+  - **Kiro real:** correção de código num projeto sintético (o agente corrigiu; a Forja rodou o teste afetado e depois a suíte; PASSOU; os 2 critérios conferidos).
+  - **fastembed real:** 31 vetores em 3,2 s.
+- **Achado e corrigido:**
+  - O gatilho do fallback tratava "1 único acerto" como dúvida; agora é confiança (só "nenhum resultado" ou margem < 30% aciona).
+  - O caminho do arquivo editado não era lido no formato real do Kiro; agora usa o mesmo extrator do mediador.
+- **Pendências:**
+  - A rodada de correção só reconhece pytest, npm test, cargo e go.
+  - A semântica em `fallback`/`ativo` baixa o modelo na 1ª ativação (rede; aceito ao escolher o nível).
 
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
@@ -233,7 +251,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - Scanner dedicado de segredos (gitleaks) e CI continuam ausentes. Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 963 passed.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 1008 passed.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

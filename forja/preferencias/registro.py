@@ -84,7 +84,33 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         "Regras, boas práticas e observações escritas por você, enviadas ao agente em toda tarefa (ex.: 'use português nos commits', "
         "'prefira pytest', 'nunca altere a pasta migrations sem perguntar'). Não coloque segredos: o texto vai ao provedor de IA.",
         "", se_ligar="O agente segue suas regras; cada caractere conta no custo da tarefa.", se_desligar="Vazio: nenhum texto extra.",
-        max_texto=_estilo.MAX_OBSERVACOES),    # ------------------------------------------------------------------ aparencia
+        max_texto=_estilo.MAX_OBSERVACOES),
+    Preferencia(
+        "correcao_automatica", "agentes", "avancado", "Conferir com os testes do projeto (uma rodada de correção)", "selecao",
+        "Depois que o agente altera código, a Forja roda os testes do projeto (pytest, npm test, cargo ou go, conforme o projeto declara). "
+        "Se falharem, devolve a falha ao agente UMA vez para ele corrigir e roda de novo. O resultado vira evidência real. "
+        "Rodar testes executa código do projeto: pede sua aprovação, exceto no nível 'Acesso total'.", "uma_rodada",
+        (Exemplo("Desligada", "desligada", "A Forja não roda nada; vale a palavra do agente (marcada como não verificada)."),
+         Exemplo("Uma rodada", "uma_rodada", "Testes conferidos de verdade; no máximo um turno extra do agente.")),
+        se_ligar="Mais confiança no resultado; custa o tempo dos testes e, se falharem, um turno do agente.",
+        se_desligar="Mais rápido e barato; 'os testes passaram' fica sem prova.", risco="medio",
+        opcoes=(("desligada", "Desligada"), ("uma_rodada", "Uma rodada"))),
+    Preferencia(
+        "limite_ferramentas_por_execucao", "agentes", "avancado", "Limite de chamadas de ferramenta por execução", "int",
+        "Orçamento rígido: passou disso, a Forja interrompe o turno e bloqueia a tarefa com o motivo (a resposta parcial é guardada). "
+        "Independente do limite, a MESMA chamada repetida 6 vezes seguidas é tratada como laço e também interrompe.",
+        200, (Exemplo("Curto", 60, "Tarefas pequenas; corta cedo agentes que se perdem."), Exemplo("Médio", 200, "Padrão."),
+              Exemplo("Longo", 800, "Refatorações grandes.")),
+        se_ligar="Mais alto: tarefas longas terminam; um agente perdido gasta mais antes de parar.",
+        se_desligar="Mais baixo: economia e proteção contra laços; tarefas grandes podem parar no meio.",
+        minimo=20, maximo=2000, unidade="chamadas"),
+    Preferencia(
+        "testes_tempo_maximo", "agentes", "avancado", "Tempo máximo dos testes da Forja", "int",
+        "Se a suíte de testes passar deste tempo, a execução é interrompida e registrada como 'tempo esgotado' (não como sucesso).",
+        300, (Exemplo("Curto", 60, "Projetos pequenos."), Exemplo("Médio", 300, "Padrão."), Exemplo("Longo", 1200, "Suítes grandes.")),
+        se_ligar="Mais longo: suítes grandes terminam; a tarefa demora mais.", se_desligar="Mais curto: resposta rápida; suítes grandes não terminam.",
+        minimo=10, maximo=3600, unidade="segundos"),
+    # ------------------------------------------------------------------ aparencia
     Preferencia(
         "nivel_detalhe", "cosmetica", "geral", "Nível de detalhe da interface", "selecao",
         "Quantos detalhes técnicos a interface mostra: IDs, número de tentativas, JSON dos dados, estados internos.",
@@ -127,6 +153,18 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         True,
         se_ligar="Respostas mais coerentes com o que você já validou. Custa até o orçamento de tokens abaixo, só quando há algo relevante.",
         se_desligar="Custo de contexto zero, mas o agente 'esquece' o segundo cérebro e pode repetir perguntas."),
+    Preferencia(
+        "busca_semantica", "eficiencia", "avancado", "Busca semântica (embeddings locais)", "selecao",
+        "Como o mercado, a Forja busca por termos e estrutura (rápido, sem modelo). A busca semântica acha textos por SIGNIFICADO "
+        "e pode reforçar perguntas vagas. 'Fallback' só a usa quando a busca normal fica em dúvida (o melhor resultado medido); "
+        "'Ativa' usa sempre. Exige o pacote opcional fastembed e 8 GB de RAM; na 1ª vez baixa um modelo de ~220 MB (Hugging Face) "
+        "e indexa em segundo plano (alguns minutos de CPU). Nenhum texto sai do computador.", "inativo",
+        (Exemplo("Inativa", "inativo", "Padrão. Zero custo extra."),
+         Exemplo("Fallback", "fallback", "Só nas buscas incertas (~86% das perguntas vagas medidas; quase nunca em nomes exatos)."),
+         Exemplo("Ativa", "ativo", "Sempre funde os dois rankings. Mais CPU por consulta.")),
+        se_ligar="Mais acertos em perguntas em linguagem natural; custa download, indexação e CPU.",
+        se_desligar="Sem custo; nomes exatos e termos continuam sendo achados normalmente.", risco="medio",
+        opcoes=(("inativo", "Inativa"), ("fallback", "Fallback"), ("ativo", "Ativa"))),
     Preferencia(
         "contexto_orcamento_tokens", "eficiencia", "avancado", "Orçamento de contexto por tarefa", "int",
         "Teto de tokens (estimados, ~4 caracteres cada) de memória anexada a cada tarefa. Itens pouco relevantes são descartados antes de atingir o teto.",

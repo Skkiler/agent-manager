@@ -86,7 +86,9 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.31 `.env` sem leitura: `env.verificar` (so booleanos) e comandos que consomem o env sem exibi-lo.
 - [x] 4.32 Conferencia deterministica de alegacoes (testes/comandos/arquivos) na resposta do agente.
 - [x] 4.33 Interface: tokens de design, 8 paletas AA, janelas flutuantes, paineis sobrepostos, truncamento com dica e "ler mais".
-- [ ] 4.34 Propostas da pesquisa (docs/PESQUISA_METODOS.md): indice estrutural de codigo, avaliador-otimizador de um turno, prefixo de prompt fixo.
+- [x] 4.34 Melhorias da pesquisa (ADR-019): indice estrutural de codigo, rodada unica de correcao com testes reais, criterios verificaveis, prefixo de prompt fixo, secao Evidencias, contexto por referencia com MCP, MCP compacto e paginado, compose no env.verificar, modelo de reserva, consumo medido pelo Kiro, sugestoes de criterios.
+- [x] 4.35 Busca semantica por nivel (inativo/fallback/ativo), opcional, incremental, com checagem de hardware. Migracao 0011.
+- [x] 4.36 Sinal real de MCP pronto (`_kiro/mcp/status`), verificado no Kiro real (1,96 s).
 - [x] 4.26 Hospedagem: app web local instalavel (PWA) e `python -m forja --abrir`; tema estilo IDE, responsivo e com movimento reduzido.
 ## Gate Fase 1
 Atingido: tarefa simulada percorre rascunho -> ... -> concluida com estado consistente, evidencia (simulada),

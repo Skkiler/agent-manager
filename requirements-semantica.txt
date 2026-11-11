@@ -1,0 +1,3 @@
+# OPCIONAL: busca semantica por nivel (Configuracoes > Eficiencia > Busca semantica). Inativa por padrao.
+# Exige >= 8 GB de RAM; na 1a ativacao baixa o modelo (~220 MB). Sem este pacote, a Forja usa so a busca lexical/estrutural.
+fastembed==0.9.1

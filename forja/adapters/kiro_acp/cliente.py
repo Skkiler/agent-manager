@@ -90,7 +90,9 @@ class ClienteAcp:
         decisor_permissao: DecisorPermissao = decisor_negar_tudo,
         on_update: Atualizacao | None = None,
         env_extra: dict[str, str] | None = None,
+        on_notificacao: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> None:
+        self._on_notificacao = on_notificacao  # extensoes do agente (ex.: _kiro/mcp/status), fora de session/update
         self.comando = comando
         self.cwd = cwd
         self._decisor = decisor_permissao
@@ -215,6 +217,11 @@ class ClienteAcp:
                         self._on_update(str(p.get("sessionId", "")), upd)
                     except Exception:  # noqa: BLE001 - callback nao pode derrubar o leitor
                         log.exception("falha em on_update")
+            elif self._on_notificacao:
+                try:
+                    self._on_notificacao(str(msg["method"]), msg.get("params") or {})
+                except Exception:  # noqa: BLE001 - callback nao pode derrubar o leitor
+                    log.exception("falha em on_notificacao")
         elif "id" in msg:
             with self._mu:
                 f = self._pend.pop(msg["id"], None) if isinstance(msg["id"], int) else None
