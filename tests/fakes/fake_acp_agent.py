@@ -43,7 +43,7 @@ print("aviso de debug no stderr", file=sys.stderr, flush=True)
 
 sid = "sess-fake-1"
 escolha: dict = {}
-MODELOS = ["auto", "claude-haiku-5.5", "claude-opus-5.5", "deepseek-3.2"]
+MODELOS = ["auto", "claude-haiku-5.5", "claude-sonnet-5.5", "claude-opus-5.5", "deepseek-3.2"]
 
 
 def opcoes_modelos() -> list[dict]:
@@ -58,7 +58,7 @@ def opcoes_modelos() -> list[dict]:
 
 def opcoes() -> list[dict]:
     """Como o kiro-cli 3.1.0: perfis de ~/.kiro/agents aparecem como modos. Cenarios '*sem_perfil*' nao oferecem 'forja'."""
-    ops = opcoes_modelos() if cenario == "modelos" else []
+    ops = opcoes_modelos() if cenario == "modelos" or cenario.startswith("planeja") else []
     modos = ["vibe", "spec"] + ([] if "sem_perfil" in cenario else ["forja"])
     ops.append({"type": "select", "id": "mode", "currentValue": escolha.get("mode", "vibe"),
                 "options": [{"value": v, "name": v} for v in modos]})
@@ -143,7 +143,7 @@ while True:
     elif m == "session/prompt" and cenario.startswith("perfil"):
         chunk(sid, f"modo={escolha.get('mode', 'vibe')} meta={json.dumps(globals().get('meta_recebido'), sort_keys=True)}")
         enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
-    elif m == "session/set_config_option" and cenario == "modelos":
+    elif m == "session/set_config_option" and (cenario == "modelos" or cenario.startswith("planeja")):
         p = msg.get("params") or {}
         if p.get("configId") == "model":
             escolha["model"] = p.get("value")  # o agente real ACEITA qualquer valor em silencio
@@ -236,6 +236,28 @@ while True:
                          "status": "completed", "rawInput": {"path": alvo}})
             chunk(sid, ("## Resposta\nCorrigi a soma.\n## Evidências\n- alterei soma.py\n" if segunda else
                         "## Resposta\nImplementei `soma.py` e os testes passaram.\n"))
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
+        elif cenario == "estudo":  # agente de estudo: notas por subtopico, uma ligada a nota da propria lista e outra a base
+            txt = ((msg.get("params") or {}).get("prompt") or [{}])[0].get("text", "")
+            chunk(sid, "## Resposta\nEstudei e organizei em 3 notas.\n## Notas\n"
+                       f"### Nota: Visao geral da fila\nTopico pai:\nTags: fila, arquitetura\nFontes: src/fila.py\n"
+                       f"A fila ordena por prioridade (protocolo={'agente de ESTUDO' in txt}).\n"
+                       "### Nota: Prioridade da fila\nTopico pai: Visao geral da fila\nTags: fila\nFontes: src/fila.py\n"
+                       "Prioridade 1 sai primeiro; empate por ordem de chegada.\n"
+                       "### Nota: Riscos de concorrencia na fila\nTopico pai: Concorrência e paralelismo\nTags: risco\n"
+                       "Fontes: src/fila.py\nDois consumidores podem pegar o mesmo item sem trava.\n"
+                       "## Premissas\n- li so os arquivos centrais\n")
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
+        elif cenario.startswith("planeja"):  # turno de plano (modelo de planejamento) e depois execucao (modelo executor)
+            txt = ((msg.get("params") or {}).get("prompt") or [{}])[0].get("text", "")
+            mod, esf = escolha.get("model", "auto"), escolha.get("effortLevel", "-")
+            if "ETAPA 1 DE 2" in txt:
+                decisao = ("\n## Decisões para você\n1. Trocar o banco? — Recomendo: nao (risco).\n" if cenario == "planeja_decisao" else "")
+                chunk(sid, f"## Plano\n1. ler o modulo\n2. alterar\n(modelo={mod} esforco={esf})\n{decisao}")
+            elif "ETAPA 2 DE 2" in txt:
+                chunk(sid, f"## Resposta\nexecutado conforme o plano (modelo={mod} esforco={esf})\n")
+            else:
+                chunk(sid, f"## Resposta\ndireto (modelo={mod} esforco={esf} grafo={'Grafo de funcoes' in txt})\n")
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
         elif cenario in ("laco", "muitas"):  # agente perdido: repete a mesma leitura (ou faz chamadas sem fim) ate ser cancelado
             chunk(sid, "## Resposta\nprocurando...")

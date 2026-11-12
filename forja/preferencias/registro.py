@@ -166,6 +166,12 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         se_desligar="Sem custo; nomes exatos e termos continuam sendo achados normalmente.", risco="medio",
         opcoes=(("inativo", "Inativa"), ("fallback", "Fallback"), ("ativo", "Ativa"))),
     Preferencia(
+        "registrar_aprendizados", "eficiencia", "avancado", "Registrar decisões e aprendizados no segundo cérebro", "bool",
+        "Ao concluir uma tarefa real, a Forja guarda um registro curto (entendimento, plano, premissas, suas decisões, evidências e "
+        "pendências) como nota candidata do projeto, ligada ao tópico 'Projeto: <nome>'. Fica em pessoal/projetos/<projeto>.",
+        True, se_ligar="O conhecimento cresce a cada tarefa e fica auditável; ocupa um pouco de espaço no banco.",
+        se_desligar="Nada é guardado automaticamente; você registra o que quiser à mão."),
+    Preferencia(
         "contexto_orcamento_tokens", "eficiencia", "avancado", "Orçamento de contexto por tarefa", "int",
         "Teto de tokens (estimados, ~4 caracteres cada) de memória anexada a cada tarefa. Itens pouco relevantes são descartados antes de atingir o teto.",
         2000, (Exemplo("Baixo", 500, "1 a 2 memórias curtas. Mais barato; pode faltar contexto."),

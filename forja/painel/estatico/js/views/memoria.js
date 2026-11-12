@@ -1,13 +1,13 @@
 // Segundo cerebro: grafo (estilo Obsidian), busca, leitura e edicao de notas com [[wikilinks]] e backlinks.
 import { api } from "../api.js";
-import { agrupar, ouvir } from "../estado.js";
+import { agrupar, emitir, ouvir, selecionarTarefa } from "../estado.js";
 import { desenhar } from "../grafo.js";
 import { renderizar } from "../markdown.js";
 import { dialogo, el, limpar, tag, toast } from "../ui.js";
 import { abrirRotulagem } from "./rotulagem.js";
 
 const NAMESPACES = ["publico", "pessoal"];
-const sel = { namespaces: new Set(["publico"]), q: "", inativas: false, vizinhos: 1, nota: null, editando: false };
+const sel = { namespaces: new Set(["publico"]), q: "", inativas: false, base: false, vizinhos: 1, nota: null, editando: false };
 let ctx = {};
 let grafoAtual = { nos: [], arestas: [] };
 
@@ -21,6 +21,7 @@ async function carregarGrafo() {
     if (sel.q) params.set("q", sel.q);
     params.set("vizinhos", String(sel.vizinhos));
     if (sel.inativas) params.set("incluir_inativas", "true");
+    if (sel.base) params.set("incluir_base", "true");
     grafoAtual = await api("GET", `/conhecimento/grafo?${params}`);
     ctx.resumo.textContent = `${grafoAtual.nos.length} nos · ${grafoAtual.arestas.length} ligacoes` + (grafoAtual.truncado ? " (truncado)" : "")
       + (grafoAtual.fantasmas ? ` · ${grafoAtual.fantasmas} link(s) sem nota` : "");
@@ -59,7 +60,8 @@ function renderNota() {
   const back = (n.links?.entrada || []).map((l) => el("li", {}, el("button", { type: "button", className: "wikilink", textContent: l.titulo, onclick: () => aoWikilink(l.titulo, true) })));
   ctx.nota.append(
     el("div", { className: "linha" }, el("h1", { textContent: n.titulo }), el("span", { className: "espaco" }),
-      el("button", { type: "button", textContent: sel.editando ? "Ler" : "Editar", onclick: () => { sel.editando = !sel.editando; renderNota(); } }),
+      String(n.namespace || "").startsWith("publico/forja-base") ? tag("base da Forja (somente leitura)")
+        : el("button", { type: "button", textContent: sel.editando ? "Ler" : "Editar", onclick: () => { sel.editando = !sel.editando; renderNota(); } }),
       el("button", { type: "button", textContent: "Fechar", onclick: () => { sel.nota = null; renderNota(); carregarGrafo(); } })),
     el("div", { className: "linha" }, tag(n.tipo), tag(n.estado, n.estado === "validado" ? "ok" : ""), tag(`v${n.versao}`, "so-avancado"), tag(n.namespace),
       ...(n.sinalizadores?.suspeita_injecao?.length ? [tag("possivel prompt injection", "erro")] : []),
@@ -142,6 +144,41 @@ function criarNota(tituloInicial = "") {
   });
 }
 
+/** Solicitacao de alimentacao e estudo: pasta (permitida) ou topico (pesquisa). As notas nascem candidatas e ligadas por topico. */
+function abrirEstudo() {
+  const tipo = el("select", { "aria-label": "Tipo de estudo" }, el("option", { value: "topico", textContent: "Pesquisar um tópico" }),
+    el("option", { value: "pasta", textContent: "Analisar uma pasta de código" }));
+  const alvo = el("input", { required: true, maxLength: 500, "aria-label": "Tópico ou caminho da pasta", placeholder: "Ex.: boas práticas de filas com prioridade" });
+  const foco = el("input", { maxLength: 500, "aria-label": "Foco do estudo", placeholder: "Opcional: o que mais interessa" });
+  const ns = el("input", { value: "pessoal/estudos", maxLength: 200, "aria-label": "Namespace das notas", pattern: "[a-z0-9._\\/\\-]+" });
+  const web = el("input", { type: "checkbox", checked: true });
+  const exec = el("input", { type: "checkbox" });
+  const saida = el("div", { role: "status", "aria-live": "polite" });
+  tipo.addEventListener("change", () => { alvo.placeholder = tipo.value === "pasta" ? "Caminho completo de uma pasta permitida" : "Ex.: boas práticas de filas com prioridade"; });
+  const f = el("form", {},
+    el("label", { className: "campo" }, el("span", { textContent: "O que estudar" }), tipo),
+    el("label", { className: "campo" }, el("span", { textContent: "Tópico ou pasta" }), alvo),
+    el("label", { className: "campo" }, el("span", { textContent: "Foco" }), foco),
+    el("label", { className: "campo so-avancado" }, el("span", { textContent: "Onde guardar (namespace)" }), ns),
+    el("label", {}, web, " pesquisar na web (citando fontes)"), el("br"),
+    el("label", {}, exec, " executar agora (consome créditos; senão fica preparada no quadro)"),
+    el("p", { className: "aviso", textContent: "O agente de estudo usa o modelo rápido e só lê. As notas entram como candidatas, divididas em subtópicos ligados; você revisa antes de valerem como fato." }),
+    el("div", { className: "linha" }, el("button", { type: "submit", className: "primario", textContent: "Solicitar estudo" }),
+      el("button", { type: "button", textContent: "Cancelar", onclick: () => d.fechar() })), saida);
+  const d = dialogo("Estudar e alimentar o segundo cérebro", f);
+  f.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    try {
+      const r = await api("POST", "/estudos", { tipo: tipo.value, alvo: alvo.value.trim(), foco: foco.value.trim(), namespace: ns.value.trim(),
+        pesquisar_web: web.checked, executar: exec.checked });
+      limpar(saida);
+      saida.append(el("p", { textContent: exec.checked ? "Estudo iniciado. As notas aparecem no grafo ao terminar." : "Estudo preparado (não executado)." }),
+        el("button", { type: "button", textContent: "Abrir no quadro", onclick: () => { d.fechar(); selecionarTarefa(r.tarefa.id); emitir("ir", "tarefas"); } }));
+    } catch (e) { toast(e.message, "erro"); }
+  });
+  alvo.focus();
+}
+
 export function montarLateral(lat) {
   limpar(lat);
   const busca = el("input", { type: "search", placeholder: "Buscar titulo, texto ou tag", value: sel.q, "aria-label": "Buscar no grafo", maxLength: 200 });
@@ -159,6 +196,10 @@ export function montarLateral(lat) {
     el("label", { className: "campo so-avancado" }, el("span", { textContent: "Saltos de vizinhanca na busca" }), el("select", { onchange: (ev) => { sel.vizinhos = Number(ev.target.value); carregarGrafo(); } },
       ...[0, 1, 2].map((n) => el("option", { value: n, textContent: String(n), selected: n === sel.vizinhos })))),
     el("label", { className: "so-avancado" }, el("input", { type: "checkbox", checked: sel.inativas, onchange: (ev) => { sel.inativas = ev.target.checked; carregarGrafo(); } }), " incluir revogadas/substituidas"),
+    el("label", { title: "Base inicial curada da Forja (somente leitura): engenharia, segurança, DevOps, banco, front, UX, QA, RPA, Python e agentes" },
+      el("input", { type: "checkbox", checked: sel.base, onchange: (ev) => { sel.base = ev.target.checked; carregarGrafo(); } }), " mostrar a base da Forja"),
+    el("button", { type: "button", textContent: "Estudar e alimentar…", title: "Peça a um agente para estudar uma pasta ou pesquisar um tópico e criar notas",
+      onclick: () => abrirEstudo() }),
     el("button", { type: "button", textContent: "Avaliar a busca", title: "Rotule perguntas reais e meca a precisao da busca no seu corpus",
       onclick: () => abrirRotulagem(sel.namespaces).catch((e) => toast(e.message, "erro")) }),
     el("h2", { textContent: "Lista de notas" }), lista);

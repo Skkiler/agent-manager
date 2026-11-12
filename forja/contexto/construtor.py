@@ -226,6 +226,9 @@ class ConstrutorContexto:
                 sel.append("CONFLITO com outra memoria")
             fonte = (x.get("fonte") or {}).get("caminho")
             corpo = f"({' · '.join(sel)}) {x['titulo']} — {x['resumo']}"
+            subs = self._subtopicos(x["id"])
+            if subs:  # aponta o caminho no grafo do segundo cerebro sem carregar os subtopicos (o agente navega se precisar)
+                corpo += f"\nsubtopicos: {'; '.join(subs)}"
             if trecho and trecho[:60] not in corpo and not self.referencias:
                 corpo += f"\n{trecho}"
             if fonte:
@@ -246,6 +249,15 @@ class ConstrutorContexto:
             x["pontuacao"],
             hipotese=bool(x.get("hipotese")),
         )
+
+    def _subtopicos(self, memoria_id: str) -> list[str]:
+        try:
+            from forja.memoria.base import subtopicos
+
+            with self.memoria.repo.leitura() as t:
+                return subtopicos(t, memoria_id, self.principal, 6)
+        except Exception:  # noqa: BLE001 - dica de navegacao e opcional
+            return []
 
     def _selecionar(self, candidatos: list[ItemContexto], limite: int, pacote: PacoteContexto) -> list[ItemContexto]:
         escolhidos: list[ItemContexto] = []

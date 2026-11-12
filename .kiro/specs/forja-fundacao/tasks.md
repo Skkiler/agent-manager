@@ -8,7 +8,7 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 0.3 `git init` + baseline; scan de padroes de segredo em arquivos rastreados (limpo). (REQ-001)
 - [x] 0.4 ADRs iniciais em `docs/adr/`. 
 - [~] 0.5 Scanner dedicado (gitleaks/detect-secrets) em pre-commit/CI: config escrita; instalacao pendente de aprovacao.
-- [ ] 0.6 Selecao de 8–15 tarefas sinteticas de benchmark (Fase 4+).
+- [x] 0.6 Benchmark de tarefas sinteticas (10 tarefas: simples/normal/complexa) com criterio objetivo: `scripts/benchmark_tarefas.py` (falso sem custo; `--real` no Kiro).
 
 ## Fase 1 — Nucleo deterministico
 - [x] 1.1 Config por ambiente com invariantes de seguranca (`forja/config.py`). (REQ-002, REQ-013)
@@ -48,7 +48,7 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 3.9 Testes de mutacao nas defesas de ACL/evidencia/injection/raiz; 	ests/test_git_safe.py; ADR-007.
 - [x] 3.10 Propostas automaticas de procedimento a partir de tarefas concluidas (so como candidato) — ver 4.12.
 - [x] 3.11 Recuperacao ligada ao prompt do Kiro (ConstrutorContexto, orcamento, so namespaces autorizados) — ver 4.2.
-- [ ] 3.12 Embeddings opcionais / sqlite-vec apos benchmark contra o baseline textual — Fase 4.
+- [x] 3.12 Embeddings opcionais: busca semantica por nivel (inativo/fallback/ativo), ver 4.35.
 
 ## Fase 4 — Contexto economico, conversa e busca
 - [x] 4.1 Busca: radicais PT/EN, sinonimos, cobertura ponderada por idf, ranker de grafo; benchmark recall@k/MRR/nDCG. ADR-010.
@@ -76,12 +76,12 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.21 CI (GitHub Actions): lint, testes, painel em navegador real com interacoes, layout estreito e axe-core WCAG 2.1 AA (0 violacoes nas 6 vistas). Teste com leitor de tela de verdade continua manual.
 - [x] 4.22 Ligacoes tipadas pela tela (secao na nota e Shift+arrastar no grafo), ontologia e ACL; migracao 0009.
 - [x] 4.8 Medido no corpus real do usuario sem rotulagem manual (metodo CodeSearchNet, 300 perguntas, ~2.300 arquivos): busca atual 0,137 recall@5 contra 0,067 do baseline. A rotulagem manual (Memoria > Avaliar a busca) segue disponivel para perguntas reais.
-- [~] 4.9 Medido: embeddings sozinhos perdem (0,106); hibrido RRF ganha (0,177, +29%). Adocao como recurso opcional pesado aguarda aprovacao (modelo ~220 MB, ~230 s de indexacao por 2.300 arquivos).
+- [x] 4.9 Medido e adotado como opcao por nivel (4.35): embeddings sozinhos perdem (0,106); hibrido RRF ganha (0,177, +29%). Adocao como recurso opcional pesado aguarda aprovacao (modelo ~220 MB, ~230 s de indexacao por 2.300 arquivos).
 - [x] 4.24 Perfil de trabalho dos agentes: nivel de autonomia (restrito/liberado/total), metodos como tags combinaveis e observacoes guia. ADR-016.
 - [x] 4.25 Busca web (Brave/SearXNG) e leitura de pagina restrita a resultados recentes ou dominios liberados.
 - [x] 4.27 Projetos com pastas de trabalho/consulta (estilo Codex) ligados ao provedor e ao mediador. ADR-017.
 - [x] 4.28 Anexos de tarefa (do projeto ou enviados de qualquer pasta; texto redigido, imagens ACP), explorador e @mencao.
-- [~] 4.29 Busca hibrida como fallback: medida (margem < 0,30 = melhor gatilho); implementacao opcional aguarda aprovacao (recurso pesado).
+- [x] 4.29 Busca hibrida como fallback (nivel 'fallback' da 4.35): medida (margem < 0,30 = melhor gatilho); implementacao opcional aguarda aprovacao (recurso pesado).
 - [x] 4.30 Perfil de seguranca "forja" no Kiro (modo + presets, deny de segredos, falha fechada), verificado no Kiro real. ADR-018.
 - [x] 4.31 `.env` sem leitura: `env.verificar` (so booleanos) e comandos que consomem o env sem exibi-lo.
 - [x] 4.32 Conferencia deterministica de alegacoes (testes/comandos/arquivos) na resposta do agente.
@@ -89,6 +89,34 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.34 Melhorias da pesquisa (ADR-019): indice estrutural de codigo, rodada unica de correcao com testes reais, criterios verificaveis, prefixo de prompt fixo, secao Evidencias, contexto por referencia com MCP, MCP compacto e paginado, compose no env.verificar, modelo de reserva, consumo medido pelo Kiro, sugestoes de criterios.
 - [x] 4.35 Busca semantica por nivel (inativo/fallback/ativo), opcional, incremental, com checagem de hardware. Migracao 0011.
 - [x] 4.36 Sinal real de MCP pronto (`_kiro/mcp/status`), verificado no Kiro real (1,96 s).
+- [x] 4.37 Grafo de funcoes (`codigo.estrutura` funcao/grafo: assinatura, tipos, retorno, excecoes, quem chama e o que chama), gerado por padrao no preparo de tarefas com pasta de trabalho. ADR-020.
+- [x] 4.38 Agentes/modelos padrao por hierarquia (rapida=haiku-5.5, execucao=sonnet-5.5, planejamento/revisao=opus-5.5 high, estudo=haiku-5.5) com reserva `auto`; roteamento por complexidade (simples 1 turno barato; complexa plano+execucao). Medido no Kiro real (6/6). ADR-020.
+- [x] 4.39 Segundo cerebro: base inicial curada (63 notas, 10 areas, somente leitura, `publico/forja-base`), topicos->subtopicos ligados (SUBTOPICO_DE/RELACIONADO_A), navegacao (`forja_navegar_memoria`), dica de subtopicos no contexto. ADR-020.
+- [x] 4.40 Alimentacao e estudo: `POST /estudos` (pasta permitida ou topico) -> notas candidatas ligadas; registro automatico de decisoes/aprendizados por projeto; `forja_propor_nota`. ADR-020.
+
+## Fase 9 — Planejado (validacao de mercado nov/2026; ainda NAO implementado)
+Orquestracao e controle:
+- [ ] 9.1 Checkpoint de arquivos por tarefa e desfazer (snapshot via git/worktree antes de alterar; niveis de reversibilidade: arquivo, banco, externo).
+- [ ] 9.2 Worktree isolada por tarefa paralela + fusao revisada (ligado a Fase 5: DAG e scheduler).
+- [ ] 9.3 Execucao duravel: retomar execucoes interrompidas por queda do servidor a partir do ultimo checkpoint, sem duplicar efeitos.
+- [ ] 9.4 Telemetria OpenTelemetry GenAI (spans `gen_ai.*` de turnos, ferramentas e buscas) exportavel opcional para OTLP local.
+- [ ] 9.5 Sandbox para os testes da Forja (Job Object/contener com rede desligada) em projetos nao confiaveis.
+- [ ] 9.6 Marcacao de dados nao confiaveis no prompt (spotlighting/datamarking) alem dos delimitadores atuais.
+- [ ] 9.7 Compactacao de contexto em tarefas longas (resumo de turnos anteriores e limpeza de resultados de ferramenta antigos).
+- [ ] 9.8 Orquestrador-trabalhadores com subagentes paralelos (sessoes ACP separadas) para tarefas que se dividem, com orcamento por subagente.
+- [ ] 9.9 Aprendizado de roteamento (EWMA de sucesso/custo por parte e modelo, a partir do benchmark e do uso real; Fase 6).
+- [ ] 9.10 Painel de custo: creditos estimados por parte, tarefa e semana; alerta de desvio.
+- [ ] 9.11 Hooks de politica do usuario (antes de ferramenta / apos tarefa), declarativos e auditados.
+Segundo cerebro:
+- [ ] 9.12 Consolidacao em segundo plano ("sono"): unir duplicatas, propor promocoes, marcar notas desatualizadas e resumir clusters em topicos, sem apagar (nao destrutiva).
+- [ ] 9.13 Validacao assistida das notas candidatas (fila de revisao com fonte, diff e um clique para promover/contestar).
+- [ ] 9.14 Pacotes de conhecimento opcionais (ex.: frameworks especificos) instalaveis como base somente leitura, versionados.
+Tela pixel art (oficina):
+- [ ] 9.15 Um personagem por papel ativo (planejador, executor, revisor, estudo), com animacao pelo tipo de ferramenta (lendo, digitando, comando, web).
+- [ ] 9.16 Balao "aguardando voce" clicavel que abre a aprovacao/decisao; som opcional e desligado por padrao.
+- [ ] 9.17 Indicador flutuante da ferramenta atual e barra de orcamento (chamadas/tempo) sobre cada personagem; cor por nivel de complexidade.
+- [ ] 9.18 Linha do tempo/replay da execucao a partir dos eventos; clique no personagem abre a conversa.
+- [ ] 9.19 Descricao textual do estado da cena (aria-live) e respeito a movimento reduzido; layout do escritorio por paleta.
 - [x] 4.26 Hospedagem: app web local instalavel (PWA) e `python -m forja --abrir`; tema estilo IDE, responsivo e com movimento reduzido.
 ## Gate Fase 1
 Atingido: tarefa simulada percorre rascunho -> ... -> concluida com estado consistente, evidencia (simulada),

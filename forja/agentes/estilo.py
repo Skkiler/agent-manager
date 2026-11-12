@@ -32,17 +32,17 @@ NIVEIS: tuple[Nivel, ...] = (
     Nivel("restrito", "Acesso restrito",
           "Somente análise e documentação. Lê a pasta de trabalho sem perguntar (segredos como .env são sempre negados); "
           "editar e executar perguntam antes. É o padrão.",
-          frozenset({"analise", "documentacao"}), frozenset(),
+          frozenset({"analise", "documentacao", "estudo"}), frozenset(),
           "Pergunte sempre que houver duvida; nao modifique arquivos."),
     Nivel("liberado", "Acesso liberado",
           "Também altera código e roda verificações. Leituras e edições dentro da pasta de trabalho são aprovadas sozinhas; "
           "comandos, rede, instalação, exclusão, publicação e qualquer coisa fora da pasta continuam perguntando.",
-          frozenset({"analise", "documentacao", "alteracao_codigo", "verificacao"}), frozenset({"ler", "ferramenta_forja", "modificar_arquivos"}),
+          frozenset({"analise", "documentacao", "alteracao_codigo", "verificacao", "estudo"}), frozenset({"ler", "ferramenta_forja", "modificar_arquivos"}),
           "Trabalhe sozinho no que for reversivel. Liste em 'Decisoes para voce' so o que for destrutivo, fora do escopo ou uma escolha real entre opcoes."),
     Nivel("total", "Acesso total",
           "O agente trabalha de forma independente: lê, edita, move e executa comandos na pasta de trabalho sem perguntar. "
           "Só pergunta o que for destrutivo ou sem retorno (excluir, publicar, descartar), fora da pasta, instalação, rede ou ações não identificadas.",
-          frozenset({"analise", "documentacao", "alteracao_codigo", "verificacao"}),
+          frozenset({"analise", "documentacao", "alteracao_codigo", "verificacao", "estudo"}),
           frozenset({"ler", "ferramenta_forja", "modificar_arquivos", "mover", "executar_comando"}),
           "Trabalhe de forma independente ate concluir. So pergunte o que for destrutivo/sem retorno, fora do escopo, ou quando houver "
           "duvida real entre opcoes com consequencias diferentes; nos demais casos decida, registre em 'Premissas' e siga."),

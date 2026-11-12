@@ -236,6 +236,29 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   - A rodada de correção só reconhece pytest, npm test, cargo e go.
   - A semântica em `fallback`/`ativo` baixa o modelo na 1ª ativação (rede; aceito ao escolher o nível).
 
+## Grafo de funções, hierarquia de modelos, roteamento, segundo cérebro base e estudo (itens 0.6, 4.37-4.40): resultados reais
+- **Novos:**
+  - Grafo de funções em `ferramentas/estrutura.py` (operações `funcao` e `grafo`), gerado por padrão no preparo de tarefas com pasta de trabalho.
+  - Roteamento por complexidade em `orquestracao/roteamento.py`; hierarquia de modelos por parte (`dominio/configuracao.py`, padrões + reservas).
+  - Segundo cérebro: base curada em `forja/conhecimento_base/` (63 notas em 10 áreas) com `memoria/base.py` (semeadura idempotente, navegação), mais `orquestracao/estudos.py` (estudo de pasta/tópico e registro de decisões).
+  - MCP: `forja_navegar_memoria` e `forja_propor_nota`.
+  - Benchmark de tarefas: `avaliacao/tarefas.py` + `scripts/benchmark_tarefas.py`. ADR-020.
+- **Verificado:**
+  - **1036 testes passando**, Ruff limpo, benchmark de busca inalterado (GLOBAL 0.94/0.87/0.89).
+  - Navegador real: **65 passos OK, 0 problemas** (inclui a base no grafo sob demanda e o pedido de estudo), axe sem violações.
+  - **Kiro real, 6 tarefas sintéticas, 6/6 com sucesso e roteamento 100% correto:**
+    - simples: haiku-5.5, 1 chamada, 13 a 16 s;
+    - normal: sonnet-5.5, 1 chamada, 24 a 36 s, testes da Forja passaram;
+    - complexa: plano em opus-5.5/high e execução em sonnet-5.5/high, 2 chamadas, 82 s, testes passaram.
+- **Achado e corrigido:**
+  - Trabalho com testes/critérios falhando era registrado como `concluida`; agora vira `bloqueada`.
+  - O grafo de conhecimento ignorava subnamespaces (`publico/x`) por comparação exata; agora usa a mesma regra de prefixo da ACL.
+  - Chamadas `obj.get()` viravam falsas ligações no grafo de funções; agora a resolução é conservadora e considera os imports.
+- **Planejado, não implementado:** itens 9.1 a 9.19 em `tasks.md` (validação de mercado: checkpoint/rollback, worktrees, execução durável, OpenTelemetry GenAI, sandbox, consolidação de memória, melhorias da oficina pixel art).
+- **Pendentes:**
+  - 0.5: instalar gitleaks/detect-secrets exige sua aprovação.
+  - 2.8: Workflows/skills do Kiro não confirmados na conta.
+
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -254,7 +277,7 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - Scanner dedicado de segredos (gitleaks) e CI continuam ausentes. Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 1009 passed.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 1036 passed.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

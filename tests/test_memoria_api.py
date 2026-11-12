@@ -66,7 +66,8 @@ def test_criar_buscar_obter(cli):
     assert r.status_code == 201 and r.json()["estado"] == "candidato"
     mid = r.json()["id"]
     b = cli.get("/api/v1/memorias/buscar", params={"q": "WAL"}).json()  # namespace padrao: publico
-    assert [x["id"] for x in b["resultados"]] == [mid] and b["resultados"][0]["hipotese"] is True
+    proprias = [x for x in b["resultados"] if not x["id"].startswith("MEM-BASE-")]  # a base da Forja tambem fala de WAL
+    assert [x["id"] for x in proprias] == [mid] and proprias[0]["hipotese"] is True
     assert cli.get(f"/api/v1/memorias/{mid}").json()["conteudo_nao_confiavel"] is True
 
 
@@ -84,7 +85,7 @@ def test_memoria_de_outro_namespace_e_404_nao_403(cli_ampla, tmp_path):
         assert restrito.get(f"/api/v1/memorias/{mid}").status_code == 404
         assert restrito.delete(f"/api/v1/memorias/{mid}").status_code == 404
         achados = restrito.get("/api/v1/memorias/buscar", params={"q": "WAL"}).json()["resultados"]
-        assert achados == []
+        assert [a for a in achados if not a["id"].startswith("MEM-BASE-")] == []
 
 
 @pytest.mark.parametrize("corpo", [

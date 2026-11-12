@@ -12,10 +12,14 @@ from forja.adapters.sqlite import tabelas as T
 from forja.adapters.sqlite.repositorio import RepositorioSqlite, novo_id
 from forja.dominio.erros import Conflito, NaoEncontrado, ValidacaoDominio
 from forja.dominio.tempo import RelogioSistema, iso
-from forja.memoria.modelo import ARESTAS, Principal
+from forja.memoria.modelo import ARESTAS, Principal, eh_base, namespace_dentro_de
 from forja.memoria.wikilinks import extrair_wikilinks
 
 INATIVOS = frozenset({"revogado", "substituido"})
+
+
+def _dentro(ns: str, alvo: set[str]) -> bool:
+    return any(namespace_dentro_de(ns, a) for a in alvo)  # mesma regra de prefixo da ACL (publico inclui publico/x)
 MAX_NOS = 500
 MAX_FANTASMAS = 40
 
@@ -26,14 +30,17 @@ class GrafoServico:
         self.relogio = relogio or RelogioSistema()
 
     # ------------------------------------------------------------------ carga com ACL
-    def _carregar(self, p: Principal, namespaces: list[str], incluir_inativas: bool):
+    def _carregar(self, p: Principal, namespaces: list[str], incluir_inativas: bool, incluir_base: bool = True):
         alvo = set(p.filtrar(namespaces))
         with self.repo.leitura() as t:
-            memorias = [m for m in t.listar(T.Memoria, limite=5000) if m["namespace"] in alvo
+            memorias = [m for m in t.listar(T.Memoria, limite=5000) if _dentro(m["namespace"], alvo)
                         and (incluir_inativas or m["estado"] not in INATIVOS)]
-            nos = [n for n in t.listar(T.NoConhecimento, limite=5000) if n["namespace"] in alvo]
-            arestas = [a for a in t.listar(T.ArestaConhecimento, limite=10000) if a["namespace"] in alvo]
-            arestas += [{**lg, "editavel": True} for lg in t.listar(T.LigacaoGrafo, limite=10000) if lg["namespace"] in alvo]
+            nos = [n for n in t.listar(T.NoConhecimento, limite=5000) if _dentro(n["namespace"], alvo)]
+            arestas = [a for a in t.listar(T.ArestaConhecimento, limite=10000) if _dentro(a["namespace"], alvo)]
+            arestas += [{**lg, "editavel": not eh_base(lg["namespace"])} for lg in t.listar(T.LigacaoGrafo, limite=10000) if _dentro(lg["namespace"], alvo)]
+        if not incluir_base:  # a base da Forja (60+ notas) fica fora da vista por padrao; continua na busca e no contexto
+            memorias = [m for m in memorias if not eh_base(m["namespace"])]
+            arestas = [a for a in arestas if not eh_base(a.get("namespace", ""))]
         return memorias, nos, arestas
 
     @staticmethod
@@ -62,8 +69,8 @@ class GrafoServico:
 
     # ------------------------------------------------------------------ visoes
     def grafo(self, p: Principal, namespaces: list[str], q: str = "", limite: int = 200, vizinhos: int = 1,
-              incluir_inativas: bool = False) -> dict[str, Any]:
-        memorias, nos, arestas_k = self._carregar(p, namespaces, incluir_inativas)
+              incluir_inativas: bool = False, incluir_base: bool = False) -> dict[str, Any]:
+        memorias, nos, arestas_k = self._carregar(p, namespaces, incluir_inativas, incluir_base)
         arestas, fantasmas = self._arestas_de_memorias(memorias)
         arestas += [{"origem": a["origem"], "destino": a["destino"], "tipo": a["tipo"],
                      **({"id": a["id"], "editavel": True, "nota": a.get("nota", "")} if a.get("editavel") else {})} for a in arestas_k]

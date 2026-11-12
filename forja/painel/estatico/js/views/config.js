@@ -247,7 +247,7 @@ function secaoModelos(c, catalogo) {
   const lista = el("datalist", { id: "lista-modelos" }, ...catalogo.modelos.map((m) => el("option", { value: m.id, label: `${m.custo}x creditos — ${m.descricao}` })));
   const campos = new Map();
   const linhas = c.partes.map((p) => {
-    const modelo = el("input", { value: p.modelo, maxLength: 80, list: "lista-modelos", placeholder: p.usa_modelo ? "vazio = padrao da conta" : "sem modelo", disabled: !p.usa_modelo,
+    const modelo = el("input", { value: p.modelo, maxLength: 80, list: "lista-modelos", placeholder: p.usa_modelo ? `vazio = padrão da Forja (${p.padrao?.modelo || "conta"})` : "sem modelo", disabled: !p.usa_modelo,
       "aria-label": `Modelo de ${p.rotulo}`, pattern: "[A-Za-z0-9][A-Za-z0-9._:/\\-]{0,79}" });
     const esforco = el("select", { disabled: !p.usa_modelo, "aria-label": `Esforco de ${p.rotulo}` }, ...ESFORCOS.map(([v, r]) => el("option", { value: v, textContent: r, selected: v === p.esforco })));
     const custo = el("span", { className: "mudo", role: "status" });
@@ -257,7 +257,8 @@ function secaoModelos(c, catalogo) {
       placeholder: p.usa_modelo ? "vazio = sem reserva (bloqueia)" : "—", "aria-label": `Modelos de reserva de ${p.rotulo}`,
       title: "Se o modelo escolhido faltar na conta, tenta estes, em ordem (até 3, separados por vírgula). Vazio: a tarefa fica bloqueada." });
     campos.set(p.id, { modelo, esforco, alternativas });
-    return el("tr", {}, el("td", {}, el("strong", { textContent: p.rotulo }), el("div", { className: "mudo", textContent: p.descricao })),
+    return el("tr", {}, el("td", {}, el("strong", { textContent: p.rotulo }), el("div", { className: "mudo", textContent: p.descricao }),
+      p.papel ? tag(p.papel) : null, p.origem ? el("div", { className: "mudo so-avancado", textContent: `efetivo: ${p.modelo_efetivo} / ${p.esforco_efetivo} (${p.origem})` }) : null),
       el("td", {}, modelo, custo), el("td", {}, esforco), el("td", {}, alternativas),
       el("td", { className: "so-avancado mono", textContent: p.usa_modelo ? p.modelo_efetivo : "deterministico" }));
   });

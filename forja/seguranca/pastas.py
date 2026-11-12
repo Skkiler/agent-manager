@@ -30,6 +30,13 @@ class PoliticaPastas:
     proibidas: tuple[Path, ...] = ()
     mascarar_emails: bool = True  # e-mails sempre mascarados, mesmo que o agente peca os enderecos completos
 
+    def permite(self, caminho: Path) -> bool:
+        """Pasta dentro de uma permitida, fora das proibidas e das protegidas (dados do usuario, .git)."""
+        if not self.ativa or protegido(caminho):
+            return False
+        r = _real(caminho)
+        return any(_dentro(r, _real(b)) for b in self.permitidas) and not any(_dentro(r, _real(b)) for b in self.proibidas)
+
 
 _atual: ContextVar[PoliticaPastas | None] = ContextVar("politica_pastas", default=None)
 _protegidas: list[Path] = []  # definido no startup: pasta de dados do usuario

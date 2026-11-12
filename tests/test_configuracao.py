@@ -46,7 +46,26 @@ def test_configuracao_invalida_e_recusada(ruim):
 
 
 def test_partes_que_usam_modelo_sao_so_as_que_realmente_chamam_um():
-    assert {p.id for p in PARTES if p.usa_modelo} == {"execucao", "revisao"}
+    assert {p.id for p in PARTES if p.usa_modelo} == {"rapida", "execucao", "planejamento", "revisao", "estudo"}
+
+
+def test_padroes_seguem_a_hierarquia_e_nunca_bloqueiam(repo, relogio):
+    """Mestre (planeja/revisa) = mais forte; executor = custo-beneficio; somente leitura/simples = rapido. Toda parte tem reserva 'auto'."""
+    from forja.dominio.configuracao import PADROES
+
+    c = ConfiguracaoServico(repo, relogio)
+    assert c.modelo_para("planejamento") == c.modelo_para("revisao") == "claude-opus-5.5"
+    assert c.modelo_para("execucao") == "claude-sonnet-5.5" and c.modelo_para("rapida") == c.modelo_para("estudo") == "claude-haiku-5.5"
+    assert c.esforco_para("planejamento") == "high" and c.esforco_para("rapida") == "medium"
+    assert all(p.alternativas[-1] == "auto" for p in PADROES.values())
+    por = {p["id"]: p for p in c.obter()["partes"]}
+    assert por["execucao"]["origem"] == "forja" and por["execucao"]["papel"].startswith("executor")
+
+
+def test_modelo_salvo_tira_o_esforco_padrao_de_outro_modelo(repo, relogio):
+    c = ConfiguracaoServico(repo, relogio)
+    salvar(c, 0, execucao="deepseek-3.2")
+    assert c.modelo_para("execucao") == "deepseek-3.2" and c.esforco_para("execucao") == "" and c.alternativas_para("execucao") == []
 
 
 # ---------------------------------------------------------------- servico

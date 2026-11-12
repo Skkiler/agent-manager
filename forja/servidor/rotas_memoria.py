@@ -44,6 +44,16 @@ def criar(d: MemoriaIn, s: Mem, p: Pr) -> dict[str, Any]:
     return s.criar(p, d, ATOR)
 
 
+@rm.get("/memorias/navegar")
+def navegar_topico(request: Request, p: Pr, ref: Annotated[str, Query(min_length=1, max_length=200)],
+                   conteudo: bool = False) -> dict[str, Any]:
+    """Um topico do segundo cerebro e so a vizinhanca imediata (pai, subtopicos, relacionados), com resumos.
+    `conteudo=true` traz o corpo do proprio topico. Base da Forja + notas do usuario, com ACL em cada ponta."""
+    from forja.memoria.base import navegar
+
+    return navegar(request.app.state.memoria.repo, p, ref, conteudo)
+
+
 @rm.get("/busca/semantica")
 def estado_semantica(s: Mem) -> dict[str, Any]:
     """Nivel da busca semantica, disponibilidade (dependencia/RAM), vetores prontos e velocidade medida."""

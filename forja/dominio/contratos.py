@@ -78,7 +78,7 @@ class TarefaIn(_Estrito):
     criterios_aceite: list[Texto] = Field(min_length=1, max_length=50)
     dependencias: list[Annotated[str, Field(pattern=_ID_RE.pattern)]] = Field(default_factory=list, max_length=50)
     especialidade: Texto = "geral"
-    modo: Literal["analise", "alteracao_codigo", "verificacao", "documentacao"] = "analise"
+    modo: Literal["analise", "alteracao_codigo", "verificacao", "documentacao", "estudo"] = "analise"
     recursos: Recursos = Field(default_factory=Recursos)
     orcamento: Orcamento = Field(default_factory=Orcamento)
     politicas: Politicas = Field(default_factory=Politicas)

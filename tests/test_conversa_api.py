@@ -102,7 +102,7 @@ def test_contexto_da_tarefa_lista_o_que_entrou_no_prompt(cli):
     cli.post(f"/api/v1/execucoes/{ex['id']}/iniciar")
     esperar(cli, t["id"], "concluida")
     uso = cli.get(f"/api/v1/tarefas/{t['id']}/contexto").json()
-    assert len(uso) == 1 and uso[0]["tokens_contexto"] == 0 and uso[0]["itens"] == []
+    assert len(uso) == 1 and all(i["id"].startswith("MEM-BASE-") for i in uso[0]["itens"])  # so a base da Forja, se relevante
 
 
 def test_politica_de_contexto_validada_na_criacao_da_tarefa(cli):

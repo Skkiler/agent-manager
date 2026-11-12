@@ -40,6 +40,7 @@ from forja.memoria.modelo import (
     AcessoNegado,
     EstadoMemoria,
     Principal,
+    eh_base,
     namespace_dentro_de,
     sensibilidade_de,
     validar_transicao_memoria,
@@ -95,6 +96,12 @@ class ServicoMemoria:
         m = t.obter(T.Memoria, memoria_id)
         if m is None or not p.pode(m["namespace"]):  # inacessivel == inexistente (sem oraculo de existencia)
             raise NaoEncontrado(f"Memoria {memoria_id} nao encontrada.")
+        return m
+
+    def _carregar_escrita(self, t: Tx, p: Principal, memoria_id: str) -> dict[str, Any]:
+        m = self._carregar(t, p, memoria_id)
+        if eh_base(m["namespace"]):
+            raise AcessoNegado("A base de conhecimento da Forja e somente leitura (atualizada com a versao). Crie uma nota sua.")
         return m
 
     def _snapshot(self, t: Tx, m: dict[str, Any], motivo: str, ator: str) -> None:
@@ -169,6 +176,8 @@ class ServicoMemoria:
     # ------------------------------------------------------------------ CRUD / ciclo de vida
     def criar(self, p: Principal, d: MemoriaIn, ator: str = "operador") -> dict[str, Any]:
         p.exigir(d.namespace)
+        if eh_base(d.namespace):
+            raise AcessoNegado("A base de conhecimento da Forja e somente leitura; use outro namespace (ex.: pessoal).")
         titulo, resumo, conteudo, flags = self._sanear(d.titulo, d.resumo, d.conteudo)
         afirma = None
         if d.afirma:
@@ -247,7 +256,7 @@ class ServicoMemoria:
 
     def atualizar(self, p: Principal, memoria_id: str, d: MemoriaAtualizaIn, ator: str = "operador") -> dict[str, Any]:
         with self.repo.escrita() as t:
-            m = self._carregar(t, p, memoria_id)
+            m = self._carregar_escrita(t, p, memoria_id)
             if m["versao"] != d.expected_version:
                 raise ConflitoVersao(f"expected_version={d.expected_version}, atual={m['versao']}.")
             if m["estado"] in {e.value for e in INATIVOS}:
@@ -302,7 +311,7 @@ class ServicoMemoria:
         if d.para == EM.VALIDADO:
             raise Conflito("Promocao a 'validado' so pelo caminho explicito /validar (exige validador e checagens).")
         with self.repo.escrita() as t:
-            m = self._carregar(t, p, memoria_id)
+            m = self._carregar_escrita(t, p, memoria_id)
             if m["versao"] != d.expected_version:
                 raise ConflitoVersao(f"expected_version={d.expected_version}, atual={m['versao']}.")
             validar_transicao_memoria(EM(m["estado"]), d.para)
@@ -317,7 +326,7 @@ class ServicoMemoria:
         self, p: Principal, memoria_id: str, evidencia_id: str, ator: str = "operador"
     ) -> dict[str, Any]:
         with self.repo.escrita() as t:
-            m = self._carregar(t, p, memoria_id)
+            m = self._carregar_escrita(t, p, memoria_id)
             ev = t.obter(T.Evidencia, evidencia_id)
             if ev is None:
                 raise NaoEncontrado(f"Evidencia {evidencia_id} nao encontrada.")
@@ -337,7 +346,7 @@ class ServicoMemoria:
 
     def validar(self, p: Principal, memoria_id: str, d: ValidarIn, ator: str = "operador") -> dict[str, Any]:
         with self.repo.escrita() as t:
-            m = self._carregar(t, p, memoria_id)
+            m = self._carregar_escrita(t, p, memoria_id)
             if m["versao"] != d.expected_version:
                 raise ConflitoVersao(f"expected_version={d.expected_version}, atual={m['versao']}.")
             if m["estado"] != EM.VERIFICADO.value:
@@ -367,10 +376,10 @@ class ServicoMemoria:
         if d.vencedora_id in d.perdedoras_ids:
             raise ValidacaoDominio("A vencedora nao pode estar entre as perdedoras.")
         with self.repo.escrita() as t:
-            v = self._carregar(t, p, d.vencedora_id)
+            v = self._carregar_escrita(t, p, d.vencedora_id)
             substituidas = []
             for pid in dict.fromkeys(d.perdedoras_ids):
-                m = self._carregar(t, p, pid)
+                m = self._carregar_escrita(t, p, pid)
                 if m["namespace"] != v["namespace"]:
                     raise ValidacaoDominio("Conflito so se resolve entre memorias do mesmo namespace.")
                 validar_transicao_memoria(EM(m["estado"]), EM.SUBSTITUIDO)
@@ -382,7 +391,7 @@ class ServicoMemoria:
 
     def revalidar(self, p: Principal, memoria_id: str, d: RevalidarIn, ator: str = "operador") -> dict[str, Any]:
         with self.repo.escrita() as t:
-            m = self._carregar(t, p, memoria_id)
+            m = self._carregar_escrita(t, p, memoria_id)
             if m["versao"] != d.expected_version:
                 raise ConflitoVersao(f"expected_version={d.expected_version}, atual={m['versao']}.")
             if not m["necessita_revalidacao"]:
@@ -402,7 +411,7 @@ class ServicoMemoria:
 
     def remover(self, p: Principal, memoria_id: str, ator: str = "operador") -> None:
         with self.repo.escrita() as t:
-            m = self._carregar(t, p, memoria_id)
+            m = self._carregar_escrita(t, p, memoria_id)
             self._apagar(t, m["id"])
             self._ev(
                 t, "memoria.removida", {"memoria_id": memoria_id, "sensibilidade": m["sensibilidade"], "ator": ator}

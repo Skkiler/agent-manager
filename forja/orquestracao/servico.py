@@ -93,6 +93,8 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
         self.contexto_ativo = True  # preferencia do usuario (menu de configuracoes): False = nenhum contexto de memoria
         self.espera_aprovacao_s = espera_aprovacao_s
         self.quadro: Any | None = None  # QuadroServico (opcional): o orquestrador avisa o master/operador, sem depender dele
+        # Ganchos pos-execucao (melhor esforco): estudo -> notas do segundo cerebro; registro de decisoes/aprendizados.
+        self.ao_finalizar: list[Any] = []
         self._esperas: dict[str, _Espera] = {}
         self.repo = repo
         self.provedor = provedor
@@ -612,6 +614,11 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
             else:
                 self._concluir(t, tarefa, execucao_id, res, gravados, fim)
         self._avisar_quadro(execucao_id)
+        for gancho in list(self.ao_finalizar):
+            try:
+                gancho(execucao_id, res)
+            except Exception:  # noqa: BLE001 - ganchos nunca alteram o resultado da execucao
+                log.exception("falha em gancho pos-execucao", extra={"execucao_id": execucao_id})
 
     def _avisar_quadro(self, execucao_id: str) -> None:
         """Publica no quadro o desfecho que exige atencao. Melhor esforco: falha aqui nunca altera o resultado da execucao."""

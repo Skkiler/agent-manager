@@ -4,7 +4,7 @@ import { agrupar, definirPainel, emitir, estado, ouvir } from "./estado.js";
 import { abas, el, limpar, recolhivel, toast } from "./ui.js";
 import { secaoAnexos } from "./views/projetos.js";
 
-const TITULOS = { entendimento: "Entendimento", resposta: "Resposta", evidencias: "Evidências", premissas: "Premissas", decisoes: "Decisões para você",
+const TITULOS = { entendimento: "Entendimento", plano: "Plano", resposta: "Resposta", evidencias: "Evidências", premissas: "Premissas", decisoes: "Decisões para você",
   riscos: "Riscos", proximos_passos: "Próximos passos", resposta_operador: "Você", verificacao: "Verificação da Forja" };
 let aba = "conversa";
 let pendentes = 0;

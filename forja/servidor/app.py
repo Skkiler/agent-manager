@@ -26,11 +26,13 @@ from forja.contexto.construtor import ConstrutorContexto
 from forja.dominio.erros import ErroDominio
 from forja.ferramentas.catalogo import Catalogo
 from forja.integracoes import ambiente
+from forja.memoria.base import semear as semear_base
 from forja.memoria.modelo import Principal
 from forja.memoria.rotulagem import RotulagemServico
 from forja.observabilidade.logs import configurar_logging, correlation_id_var
 from forja.orquestracao.acoes_externas import AcoesExternasServico
 from forja.orquestracao.configuracao_servico import ConfiguracaoServico
+from forja.orquestracao.estudos import EstudoServico
 from forja.orquestracao.grafo_servico import GrafoServico
 from forja.orquestracao.integracao_servico import IntegracaoServico
 from forja.orquestracao.memoria_servico import ServicoMemoria
@@ -150,6 +152,10 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.state.servico = provedor_servico = criar_servico(cfg, provedor)
     _ = cfg.memoria_namespaces  # falha cedo se APP_MEMORY_ALLOWED_NAMESPACES for invalido
     app.state.memoria = ServicoMemoria(provedor_servico.repo, raizes_ingestao=cfg.memoria_raizes)
+    try:  # base de conhecimento inicial (curada, versionada): idempotente, so grava o que mudou
+        log.info("base de conhecimento da Forja", extra={"evento": "memoria.base", **semear_base(provedor_servico.repo)})
+    except Exception as e:  # noqa: BLE001 - a base e conhecimento extra; falhar nao impede o servidor
+        log.warning("nao foi possivel semear a base de conhecimento: %s", type(e).__name__)
     if cfg.app_context_enabled and cfg.contexto_namespaces:
         ns = cfg.contexto_namespaces
         provedor_servico.construtor_contexto = ConstrutorContexto(
@@ -188,6 +194,11 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.state.prefs.registrar_aplicador("limite_requisicoes_por_minuto", lambda v: setattr(app.state.limitador, "limite", int(v)))
     if app.state.memoria.semantica is not None:
         app.state.prefs.registrar_aplicador("busca_semantica", app.state.memoria.semantica.definir_modo)
+    # estudo (alimentacao do segundo cerebro) + registro de decisoes/aprendizados ao concluir tarefas reais
+    app.state.estudos = EstudoServico(provedor_servico, app.state.memoria, app.state.grafo, app.state.prefs.politica_pastas,
+                                      Principal("estudos", cfg.memoria_namespaces))
+    provedor_servico.ao_finalizar.append(app.state.estudos.ao_finalizar)
+    app.state.prefs.registrar_aplicador("registrar_aprendizados", lambda v: setattr(app.state.estudos, "registrar_aprendizados", bool(v)))
     app.state.prefs.aplicar_todos()  # aplica as preferencias salvas aos componentes ja criados
     app.state.encerrando = threading.Event()
     app.state.hosts = {"127.0.0.1", "localhost", "::1", f"127.0.0.1:{cfg.app_port}", f"localhost:{cfg.app_port}"}

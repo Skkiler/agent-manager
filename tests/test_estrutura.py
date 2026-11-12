@@ -90,3 +90,31 @@ def test_no_catalogo_com_raiz_autorizada(projeto):
     r = c.executar("codigo.estrutura", {"caminho": str(projeto), "operacao": "definicao", "alvo": "criar_fila"})
     assert r["dados"]["definicoes"][0]["caminho"] == "app/fila.py"
     assert any(f["id"] == "codigo.estrutura" for f in c.listar())
+
+
+# ------------------------------------------------------------------ grafo de funcoes
+def test_funcao_mostra_o_que_exige_de_onde_vem_e_quem_chama(projeto):
+    (projeto / "app" / "tipos.py").write_text(
+        'def validar(email: str, estrito: bool = True) -> bool:\n    """Valida um e-mail."""\n    if not email:\n'
+        '        raise ValueError("vazio")\n    return "@" in email\n\n\ndef cadastrar(email):\n    return validar(email)\n',
+        encoding="utf-8")
+    r = E.estrutura_codigo(projeto, ".", "funcao", "validar")
+    f = r.dados["funcoes"][0]
+    assert f["assinatura"] == "validar(email: str, estrito: bool = True) -> bool" and f["doc"] == "Valida um e-mail."
+    assert f["levanta"] == ["ValueError"] and f["local"] == "app/tipos.py:1-5"
+    assert {"local": "app/tipos.py:9", "funcao": "cadastrar"} in f["chamada_por"]
+    c = E.estrutura_codigo(projeto, ".", "funcao", "cadastrar").dados["funcoes"][0]
+    assert c["chama"][0]["nome"] == "validar" and c["chama"][0]["definida_em"] == ["app/tipos.py:1"]
+
+
+def test_grafo_resolve_chamadas_internas_e_ordena_pelas_mais_usadas(projeto):
+    g = E.estrutura_codigo(projeto, ".", "grafo").dados
+    ids = {n["id"] for n in g["nos"]}
+    assert "app/fila.py::criar_fila" in ids
+    assert {"de": "app/servico.py::processar", "para": "app/fila.py::criar_fila"} in g["arestas"]
+    assert g["nos"][0]["usada_por"] >= 1
+
+
+def test_resumo_do_grafo_cabe_no_orcamento(projeto):
+    txt = E.resumo_grafo(projeto, 120)
+    assert "Grafo de funcoes do projeto" in txt and "criar_fila" in txt and len(txt) // 4 <= 220

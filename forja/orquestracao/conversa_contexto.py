@@ -16,6 +16,7 @@ from forja.dominio.erros import (
 )
 from forja.dominio.estados import EstadoExecucao, EstadoTarefa
 from forja.observabilidade.sanitizar import redigir_segredos, sanitizar
+from forja.orquestracao.roteamento import classificar
 
 ET, EE = EstadoTarefa, EstadoExecucao
 
@@ -53,7 +54,9 @@ class ConversaContextoMixin:
                     tarefa["contexto_texto"] = self.construtor_contexto.so_uteis(uso[0]["itens"], uso[0]["uteis"] or [])
                 return None
             fator = self.perfil_de().fator_contexto() if getattr(self, "perfil_de", None) else 1.0  # tag 'Economico' corta pela metade
-            pacote = self.construtor_contexto.construir(tarefa, max(100, int(self.construtor_contexto.orcamento * fator)) if fator != 1.0 else None)
+            fator *= classificar(tarefa).fator_contexto  # simples: metade; complexa: 1,5x (roteamento adaptativo)
+            orc = min(20_000, max(100, int(self.construtor_contexto.orcamento * fator)))
+            pacote = self.construtor_contexto.construir(tarefa, orc if fator != 1.0 else None)
             tarefa["contexto_texto"] = pacote.texto
             with self.repo.escrita() as t:
                 t.inserir(

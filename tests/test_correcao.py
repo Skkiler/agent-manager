@@ -82,6 +82,7 @@ def test_sem_correcao_fica_pendente_e_nao_repete(projeto):
     r, ev = _rodar("corrige_nunca", projeto)
     corr = next(d for t, d in ev if t == "kiro.correcao")
     assert corr["executada"] and not corr["aprovado_final"] and r.consumo.chamadas_modelo == 2
+    assert r.estado == "bloqueada"  # testes reais falhando: nunca conta como concluida
     assert any(p.startswith("testes_falhando") for p in r.pendencias)
     assert any(p.startswith("criterios_nao_atendidos") for p in r.pendencias)
     # "os testes passaram" do 1o turno nao se confirma: a execucao observada (da Forja) falhou

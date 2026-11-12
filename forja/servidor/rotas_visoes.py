@@ -34,8 +34,8 @@ def grafo(g: Annotated[GrafoServico, Depends(_grafo)], p: Pr,
           q: Annotated[str, Query(max_length=200)] = "",
           limite: Annotated[int, Query(ge=1, le=500)] = 200,
           vizinhos: Annotated[int, Query(ge=0, le=2)] = 1,
-          incluir_inativas: bool = False) -> dict[str, Any]:
-    return g.grafo(p, namespace or ["publico"], q, limite, vizinhos, incluir_inativas)
+          incluir_inativas: bool = False, incluir_base: bool = False) -> dict[str, Any]:
+    return g.grafo(p, namespace or ["publico"], q, limite, vizinhos, incluir_inativas, incluir_base)
 
 
 @rv.get("/memorias/{id_}/links")

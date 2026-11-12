@@ -11,7 +11,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
-SECOES = ("entendimento", "resposta", "evidencias", "premissas", "decisoes", "riscos", "proximos_passos")
+SECOES = ("entendimento", "plano", "resposta", "evidencias", "premissas", "decisoes", "riscos", "proximos_passos", "notas")
 _ALIASES = {
     "entendimento": "entendimento", "resumo": "entendimento", "contexto": "entendimento",
     "resposta": "resposta", "resultado": "resposta", "analise": "resposta", "conclusao": "resposta",
@@ -20,6 +20,8 @@ _ALIASES = {
     "perguntas": "decisoes", "precisa de voce": "decisoes", "decisoes necessarias": "decisoes",
     "riscos": "riscos", "riscos e cuidados": "riscos",
     "evidencias": "evidencias", "evidencia": "evidencias", "verificacao": "evidencias", "o que foi feito": "evidencias",
+    "plano": "plano", "plano de execucao": "plano", "plano de acao": "plano",
+    "notas": "notas", "notas para o segundo cerebro": "notas",
     "proximos passos": "proximos_passos", "proximo passo": "proximos_passos", "proximos": "proximos_passos",
 }
 _TITULO = re.compile(r"^\s{0,3}#{1,4}\s+(?P<t>.+?)\s*#*\s*$")

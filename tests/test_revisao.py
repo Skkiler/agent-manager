@@ -47,7 +47,7 @@ def test_snapshot_traz_fatos_medidos_e_cabe_na_descricao(cli: TestClient):
     o = cli.post("/api/v1/objetivos", json={"projeto_id": p["id"], "titulo": "o"}).json()
     cli.post("/api/v1/tarefas", json={"objetivo_id": o["id"], "titulo": "t", "criterios_aceite": ["x"]})
     snap = cli.post("/api/v1/revisoes", json={"pesquisar_web": True}).json()["snapshot"]
-    assert snap["modelos"]["revisao"] == "m-profundo" and snap["modelos"]["execucao"] == "(padrao da conta)"
+    assert snap["modelos"]["revisao"] == "m-profundo" and snap["modelos"]["execucao"] == "claude-sonnet-5.5"  # padrao da Forja
     assert snap["ferramentas"]["com_uso"]["tokens.orcar"]["chamadas"] == 1
     assert "codigo.outline" in snap["ferramentas"]["sem_uso"] and snap["ferramentas"]["total"] >= 13
     assert set(snap["bibliotecas"]) == {"fastapi", "pydantic", "sqlalchemy", "alembic", "uvicorn"}

@@ -60,7 +60,15 @@ NOS = frozenset({
 ARESTAS = frozenset({
     "PERTENCE_A", "DEPENDE_DE", "IMPLEMENTA", "IMPORTA", "CHAMA", "VALIDA", "CAUSADO_POR", "CORRIGE",
     "DOCUMENTADO_EM", "REUTILIZAVEL_EM", "SUBSTITUI", "INCOMPATIVEL_COM", "BASEADO_EM", "OBSERVADO_EM", "VALIDO_PARA",
+    "SUBTOPICO_DE", "RELACIONADO_A",  # organizacao do segundo cerebro: topico -> subtopicos menores e ligados
 })
+# Base de conhecimento INICIAL da Forja (curada e versionada no Git): somente leitura; o que o usuario aprende fica em outros
+# namespaces (separacao entre capacidade pre-definida e o "cache" do usuario).
+BASE_NS = "publico/forja-base"
+
+
+def eh_base(ns: str) -> bool:
+    return ns == BASE_NS or ns.startswith(BASE_NS + "/")
 ESTADOS_ARESTA = frozenset({"candidato", "observado", "verificado", "validado", "contestado", "obsoleto"})
 
 SENSIBILIDADES = ("publico", "pessoal", "empresa", "terceiros")

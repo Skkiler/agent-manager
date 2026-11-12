@@ -44,9 +44,10 @@ from forja.dominio.contratos import (
     ResultadoAgente,
 )
 from forja.ferramentas import verificacao
-from forja.ferramentas.estrutura import arquivos_de_teste_afetados
+from forja.ferramentas.estrutura import arquivos_de_teste_afetados, resumo_grafo
 from forja.memoria.saneamento import estimar_tokens
 from forja.observabilidade.sanitizar import redigir_segredos, sanitizar_texto
+from forja.orquestracao.roteamento import classificar
 from forja.seguranca.acoes import caminhos_do_tool_call
 
 log = logging.getLogger("forja.kiro")
@@ -118,8 +119,22 @@ ESCRITA = (  # cabecalho para modos que alteram codigo (so com nivel de autonomi
 )
 
 
+PROTOCOLO_ESTUDO = (
+    "Voce e um agente de ESTUDO (somente leitura) da plataforma Forja: transforma uma pasta de codigo ou um topico em conhecimento "
+    "organizado para o segundo cerebro. Nao modifique arquivos nem acesse segredos; nunca copie segredos ou dados pessoais.\n"
+    "Divida o assunto em SUBTOPICOS pequenos (uma ideia por nota, 3 a 12 linhas, objetivas e reutilizaveis). Responda com:\n"
+    "## Resposta (2 a 4 frases: o que foi estudado e como as notas se organizam)\n"
+    "## Notas\n### Nota: <titulo curto e unico>\nTopico pai: <titulo de outra nota desta lista, ou vazio para o topico do estudo>\n"
+    "Tags: <ate 5>\nFontes: <URLs ou caminhos relativos; obrigatorio em pesquisa web>\n<corpo da nota>\n"
+    "(repita '### Nota:' para cada subtopico; ate 20 notas)\n"
+    "## Premissas (incertezas e o que nao foi verificado)\n"
+)
+
+
 def _protocolo(tarefa: dict[str, Any]) -> str:
     """Prefixo FIXO por modo (cacheavel pelo provedor). O que varia por usuario/tarefa (perfil, tarefa, contexto) vem depois."""
+    if tarefa.get("modo") == "estudo":
+        return PROTOCOLO_ESTUDO
     p = PROTOCOLO
     if tarefa.get("modo") in ("alteracao_codigo", "verificacao"):
         p = ESCRITA + p.split("\n", 1)[1]  # troca so a 1a linha (analise somente leitura); o formato da resposta e o mesmo
@@ -211,8 +226,23 @@ def montar_prompt_retomada(tarefa: dict[str, Any], sessao_carregada: bool = Fals
 # Dica curta (o Kiro carrega ferramentas MCP sob demanda): sem ela o agente costuma nao procurar as ferramentas da Forja.
 DICA_MCP = (
     "\nFerramentas da Forja (MCP 'forja', carregue com tool_load): forja::forja_listar_ferramentas, forja::forja_executar_ferramenta, "
-    "forja::forja_buscar_memoria, forja::forja_quadro_publicar, forja::forja_quadro_ler. Prefira-as a ler arquivos inteiros: "
-    "para localizar codigo use a ferramenta 'codigo.estrutura' (definicao, referencias, dependencias, mapa).\n"
+    "forja::forja_buscar_memoria, forja::forja_navegar_memoria, forja::forja_propor_nota, forja::forja_quadro_publicar, "
+    "forja::forja_quadro_ler. Prefira-as a ler arquivos inteiros: para localizar codigo use 'codigo.estrutura' (funcao, grafo, "
+    "definicao, referencias, impacto); para conhecimento busque e depois navegue so no subtopico que precisar. Registre "
+    "aprendizados reutilizaveis com forja_propor_nota.\n"
+)
+
+
+ORDEM_ESFORCO = ("low", "medium", "high", "xhigh", "max")
+PLANEJAR = (
+    "\nETAPA 1 DE 2 (PLANEJAMENTO; tarefa classificada como complexa): NAO altere arquivos nem rode comandos que mudem estado. "
+    "Investigue so o necessario (grafo de funcoes, 'codigo.estrutura', leitura pontual; pesquise na web se faltar conhecimento externo, "
+    "citando a fonte). Responda com '## Plano' (passos numerados; arquivos e funcoes afetados; riscos; como verificar) e, so se algo "
+    "realmente bloquear, '## Decisões para você'. A execucao vem no proximo turno.\n"
+)
+EXECUTAR_PLANO = (
+    "ETAPA 2 DE 2 (EXECUCAO): execute o plano acima, passo a passo, dentro da pasta de trabalho. Se um passo se mostrar errado, ajuste "
+    "e registre em '## Premissas'. Termine com as secoes do protocolo, incluindo '## Evidências' (o que realmente fez).\n"
 )
 
 
@@ -277,26 +307,48 @@ class ProvedorKiroAcp:
         except Exception:  # noqa: BLE001 - ler preferencias nunca derruba a execucao; cai no perfil mais restrito
             return PADRAO
 
-    def configuracao_da_execucao(self, tarefa: dict[str, Any]) -> tuple[str, str]:
-        """(modelo, esforco) configurados para a parte da tarefa; tarefas de revisao usam a parte `revisao`."""
-        parte = "revisao" if (tarefa.get("entrada") or {}).get("revisao") else "execucao"
+    @staticmethod
+    def _parte(tarefa: dict[str, Any]) -> str:
+        return (tarefa.get("rota") or {}).get("parte") or classificar(tarefa).parte
+
+    def configuracao_da_execucao(self, tarefa: dict[str, Any], parte: str | None = None) -> tuple[str, str]:
+        """(modelo, esforco) configurados para a parte (hierarquia: rapida/execucao/planejamento/revisao/estudo)."""
+        parte = parte or self._parte(tarefa)
         try:
             return (self.modelo_de(parte) if self.modelo_de else ""), (self.esforco_de(parte) if self.esforco_de else "")
         except Exception:  # noqa: BLE001 - ler a configuracao nunca pode derrubar a execucao
             return "", ""
 
-    def _alternativas(self, tarefa: dict[str, Any]) -> list[str]:
-        parte = "revisao" if (tarefa.get("entrada") or {}).get("revisao") else "execucao"
+    def _alternativas(self, tarefa: dict[str, Any], parte: str | None = None) -> list[str]:
+        parte = parte or self._parte(tarefa)
         try:
             return list(self.alternativas_de(parte)) if self.alternativas_de else []
         except Exception:  # noqa: BLE001
             return []
+
+    def _aplicar_parte(self, cliente: ClienteAcp, sid: str, tarefa: dict[str, Any], parte: str, ctl: ControleExecucao,
+                       esforco_minimo: str = "") -> str | None:
+        """Aplica modelo/esforco da parte na sessao. Devolve a mensagem de bloqueio (falha fechada) ou None."""
+        modelo, esforco = self.configuracao_da_execucao(tarefa, parte)
+        if esforco_minimo and esforco and ORDEM_ESFORCO.index(esforco) < ORDEM_ESFORCO.index(esforco_minimo):
+            esforco = esforco_minimo  # tarefa complexa: esforco minimo, mesmo que a parte esteja configurada mais baixa
+        if not (modelo or esforco):
+            return None
+        try:
+            ctl.evento("kiro.configuracao", {**aplicar_configuracao(cliente, sid, modelo, esforco, self.timeout_handshake,
+                                                                    self._alternativas(tarefa, parte)), "parte": parte})
+        except ConfiguracaoIndisponivel as e:  # nao roda num modelo diferente do escolhido
+            return f"modelo_indisponivel: {e}"
+        return None
 
     # --------------------------------------------------------------------------------
     def executar(self, tarefa: dict[str, Any], checkpoint: dict[str, Any], ctl: ControleExecucao) -> ResultadoAgente:
         t0 = time.monotonic()
         perfil = self._perfil()
         tarefa = {**tarefa, "perfil_texto": perfil.instrucoes()}
+        estudo = (tarefa.get("entrada") or {}).get("estudo") or {}
+        if tarefa.get("modo") == "estudo" and estudo.get("pastas") and not (tarefa.get("projeto_ctx") or {}).get("pastas"):
+            tarefa["projeto_ctx"] = {"projeto": "estudo", "pastas": estudo["pastas"], "anexos": []}  # pasta estudada = consulta
         if tarefa.get("modo") not in perfil.modos:
             return self._res(
                 "falhou",
@@ -432,16 +484,26 @@ class ProvedorKiroAcp:
                 pronto, sinal = self._aguardar_mcp([str(m.get("name")) for m in mcps], mcp_estado, tokens_ferramentas, ctl)
                 ctl.evento("kiro.mcp", {"pronto": pronto, "sinal": sinal, "espera_ms": int((time.monotonic() - t_mcp) * 1000),
                                         "servidores": {k: v for k, v in mcp_estado.items()}})
-            modelo, esforco = self.configuracao_da_execucao(tarefa)
-            if modelo or esforco:
+            rota = classificar(tarefa)
+            planejar = rota.planejar and not tarefa.get("retomada") and not sessao_carregada
+            grafo_texto = ""
+            if trabalho and not sessao_carregada and tarefa.get("modo") != "estudo":
+                t_g = time.monotonic()  # preparacao padrao de tarefas com codigo: o grafo de funcoes (incremental, em cache)
                 try:
-                    ctl.evento("kiro.configuracao", aplicar_configuracao(cliente, sid, modelo, esforco, self.timeout_handshake,
-                                                                         self._alternativas(tarefa)))
-                except ConfiguracaoIndisponivel as e:  # falha fechada: nao roda num modelo diferente do escolhido
-                    return self._res("bloqueada", "Modelo configurado indisponivel nesta conta.", t0,
-                                     pendencias=[f"modelo_indisponivel: {e}", "Ajuste a configuracao de modelos no painel."])
+                    grafo_texto = resumo_grafo(cwd, 150 if rota.nivel == "simples" else 400)
+                except Exception as e:  # noqa: BLE001 - o grafo e ajuda; falhar nunca impede a execucao
+                    log.warning("grafo de funcoes indisponivel: %s", type(e).__name__)
+                ctl.evento("kiro.grafo_funcoes", {"gerado": bool(grafo_texto), "tokens_estimados": estimar_tokens(grafo_texto),
+                                                  "ms": int((time.monotonic() - t_g) * 1000)})
+            ctl.evento("kiro.rota", {**rota.como_dict(), "planejar": planejar})
+            bloqueio = self._aplicar_parte(cliente, sid, tarefa, "planejamento" if planejar else rota.parte, ctl,
+                                           "high" if rota.nivel == "complexa" else "")
+            if bloqueio:  # falha fechada: nao roda num modelo diferente do escolhido
+                return self._res("bloqueada", "Modelo configurado indisponivel nesta conta.", t0,
+                                 pendencias=[bloqueio, "Ajuste a configuracao de modelos no painel."])
             ctl.registrar_checkpoint({"sessao": "carregada" if sessao_carregada else "criada", "session_id": sid})
-            prompt = montar_prompt(tarefa, sessao_carregada=sessao_carregada) + (DICA_MCP if mcps else "")
+            prompt = montar_prompt(tarefa, sessao_carregada=sessao_carregada) + (PLANEJAR if planejar else "") \
+                + (grafo_texto if grafo_texto else "") + (DICA_MCP if mcps else "")
             tokens_in = estimar_tokens(prompt)
             ctl.evento(
                 "kiro.prompt_montado",
@@ -458,6 +520,20 @@ class ProvedorKiroAcp:
                            for a in (tarefa.get("projeto_ctx") or {}).get("anexos") or [] if a.get("dados_b64")]
             fut = cliente.requisitar("session/prompt", {"sessionId": sid, "prompt": blocos})
             parada = self._aguardar(cliente, fut, sid, ctl, parar)
+            if planejar and parada == "end_turn" and not (ctl.cancelado() or ctl.pausado()):
+                plano = parse_briefing(redigir_segredos("".join(partes)))
+                ctl.evento("kiro.plano", {"com_plano": "plano" in plano.secoes, "decisoes": len(plano.decisoes)})
+                if not plano.precisa_do_usuario:  # plano bloqueado por decisao: para ANTES de mexer em qualquer coisa
+                    bloqueio = self._aplicar_parte(cliente, sid, tarefa, rota.parte, ctl, "high")
+                    if bloqueio:
+                        return self._res("bloqueada", "Modelo configurado indisponivel nesta conta.", t0,
+                                         pendencias=[bloqueio, "Ajuste a configuracao de modelos no painel."])
+                    partes.append("\n\n---\n### Execução do plano\n")
+                    seguimento = lembrete_objetivo(tarefa) + EXECUTAR_PLANO
+                    tokens_in += estimar_tokens(seguimento)
+                    fut_e = cliente.requisitar("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": seguimento}]})
+                    chamadas += 1
+                    parada = self._aguardar(cliente, fut_e, sid, ctl, parar)
             if parada == "end_turn" and mediador.adendos and not (ctl.cancelado() or ctl.pausado()):
                 # Adendos dados DURANTE a execucao nao podem ser injetados no meio do turno (ACP): entrega-se em
                 # UM turno de acompanhamento, contado no orcamento de chamadas.
@@ -470,7 +546,7 @@ class ProvedorKiroAcp:
                 chamadas += 1
                 parada = self._aguardar(cliente, fut2, sid, ctl, parar)
             extras: dict[str, Any] = {}
-            if (parada == "end_turn" and trabalho and tarefa.get("modo") in ("alteracao_codigo", "verificacao")
+            if (parada == "end_turn" and trabalho and tarefa.get("modo") in ("alteracao_codigo", "verificacao") and rota.corrigir
                     and perfil.correcao == "uma_rodada" and not (ctl.cancelado() or ctl.pausado())):
                 extras = self._rodada_correcao(cliente, sid, ctl, perfil, cwd, observadas, partes, tarefa, parar)
                 chamadas += extras.get("chamadas", 0)
@@ -501,6 +577,10 @@ class ProvedorKiroAcp:
             r = self._concluir(parada, texto, cliente, n_tools, t0, mediador, chamadas, tokens_in, alegacoes, extras)
             if r.estado == "concluida":
                 self._verificar_criterios(r, tarefa, cwd, extras)
+                if extras.get("testes_ok") is False or any(p.startswith("criterios_nao_atendidos") for p in r.pendencias):
+                    # entregue, mas a verificacao REAL nao passou: nao conta como concluida (o usuario decide: responder e retomar)
+                    r.estado = "bloqueada"
+                    r.resumo = "Trabalho entregue, mas a verificacao da Forja nao passou (testes ou criterios); veja as pendencias."
             return r
         except AcpAutenticacaoNecessaria as e:
             return self._res(
@@ -691,7 +771,7 @@ class ProvedorKiroAcp:
         if not b.estruturado:
             return [MensagemSaida(tipo="resposta", conteudo=cortar(texto))] if texto.strip() else []
         saida = []
-        for chave in ("entendimento", "resposta", "evidencias", "premissas", "riscos", "decisoes", "proximos_passos"):
+        for chave in ("entendimento", "plano", "resposta", "evidencias", "premissas", "riscos", "decisoes", "proximos_passos"):
             if chave in b.secoes:
                 dados = {"decisoes": [d.como_dict() for d in b.decisoes]} if chave == "decisoes" else None
                 saida.append(MensagemSaida(tipo=chave, conteudo=cortar(b.secoes[chave]), dados=dados))
