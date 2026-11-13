@@ -9,11 +9,13 @@ import * as config from "./views/config.js";
 import * as custos from "./views/custos.js";
 import * as ferramentas from "./views/ferramentas.js";
 import * as integracoes from "./views/integracoes.js";
+import * as master from "./views/master.js";
 import * as memoria from "./views/memoria.js";
 import * as quadro from "./views/quadro.js";
 import * as tarefas from "./views/tarefas.js";
 
 const VISTAS = [
+  { id: "master", rotulo: "Master", glifo: "✦", modulo: master }, // conversa com o coordenador (cria e acompanha tarefas)
   { id: "tarefas", rotulo: "Tarefas", glifo: "▦", modulo: tarefas },
   { id: "quadro", rotulo: "Quadro", glifo: "✉", modulo: quadro },
   { id: "memoria", rotulo: "Memória", glifo: "◉", modulo: memoria },
@@ -161,7 +163,7 @@ async function iniciar() {
 
   mostrarUsuario(await garantirAcesso()); // so segue depois de um login valido (ou se o servidor nao exige login)
   direita.iniciar(); inferior.iniciar();
-  ir((location.hash.match(/^#\/(\w+)/) || [])[1] || "tarefas");
+  ir((location.hash.match(/^#\/(\w+)/) || [])[1] || "master");
   conectarSse(); atualizarChip();
   config.recarregar().catch(() => {});
   config.carregarPreferencias().catch(() => {});

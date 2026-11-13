@@ -534,3 +534,49 @@ class Sessao(Base):
     criado_em: Mapped[str] = mapped_column(String(40))
     ultimo_uso: Mapped[str] = mapped_column(String(40))
     expira_em: Mapped[str] = mapped_column(String(40), index=True)  # absoluto; a inatividade e conferida por ultimo_uso
+
+
+# ============================ Contexto fora da janela, coordenacao (master/sub-masters) ============================
+class CadernoItem(Base):
+    """Caderno da tarefa: o que ja foi resolvido/decidido/entendido, guardado FORA da janela de contexto do agente (consulta sob
+    demanda pelo MCP e base da 'ficha de estado' quando a sessao e trocada). Texto curto e redigido."""
+
+    __tablename__ = "caderno_item"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tarefa_id: Mapped[str] = mapped_column(String(64), index=True)
+    execucao_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tipo: Mapped[str] = mapped_column(String(16))  # resolvido | decisao | arquivo | erro | pendencia | fato
+    texto: Mapped[str] = mapped_column(Text)
+    ref: Mapped[str] = mapped_column(String(200), default="")
+    origem: Mapped[str] = mapped_column(String(32), default="agente")  # agente | forja
+    criado_em: Mapped[str] = mapped_column(String(40))
+
+
+class Coordenacao(Base):
+    """Coordenador LLM: o master (conversa com o usuario) ou um sub-master de projeto. Propoe; quem decide e o orquestrador."""
+
+    __tablename__ = "coordenacao"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(16), index=True)  # master | submaster
+    pai_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    projeto_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    titulo: Mapped[str] = mapped_column(String(200))
+    objetivo: Mapped[str] = mapped_column(Text, default="")
+    estado: Mapped[str] = mapped_column(String(16), index=True)  # ativo | encerrado
+    chamadas_usadas: Mapped[int] = mapped_column(Integer, default=0)
+    max_chamadas: Mapped[int] = mapped_column(Integer, default=20)
+    criado_em: Mapped[str] = mapped_column(String(40))
+    atualizado_em: Mapped[str] = mapped_column(String(40))
+
+
+class MensagemCoordenacao(Base):
+    """Conversa com um coordenador (usuario <-> master) e relatorios (sub-master -> master, sistema -> master)."""
+
+    __tablename__ = "mensagem_coordenacao"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    coordenacao_id: Mapped[str] = mapped_column(String(64), index=True)
+    papel: Mapped[str] = mapped_column(String(16))  # usuario | master | submaster | sistema | status
+    conteudo: Mapped[str] = mapped_column(Text)
+    dados: Mapped[Any] = mapped_column(JSON, nullable=True)
+    tarefa_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    criado_em: Mapped[str] = mapped_column(String(40))

@@ -46,7 +46,9 @@ def test_configuracao_invalida_e_recusada(ruim):
 
 
 def test_partes_que_usam_modelo_sao_so_as_que_realmente_chamam_um():
-    assert {p.id for p in PARTES if p.usa_modelo} == {"rapida", "execucao", "planejamento", "revisao", "estudo"}
+    assert {p.id for p in PARTES if p.usa_modelo} == {
+        "rapida", "execucao", "planejamento", "revisao", "estudo", "coordenacao", "status",
+    }
 
 
 def test_padroes_seguem_a_hierarquia_e_nunca_bloqueiam(repo, relogio):

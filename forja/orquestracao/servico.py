@@ -18,6 +18,7 @@ from forja.adapters.sqlite import tabelas as T
 from forja.adapters.sqlite.repositorio import RepositorioSqlite, Tx, novo_id
 from forja.agentes.base import ControleExecucao, ProvedorAgente
 from forja.dominio.contratos import (
+    MensagemSaida,
     ObjetivoIn,
     ProjetoIn,
     ResultadoAgente,
@@ -100,6 +101,7 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
         self.pontos_ativos = True  # preferencia 'pontos_restauracao'
         self.isolamento: Any | None = None  # Isolamento: worktree quando duas execucoes disputam a mesma pasta
         self.retomar_apos_queda = "manual"  # preferencia: manual | automatico (no maximo 1 retomada automatica por execucao)
+        self.controle_escopo = "pausar"  # preferencia: pausar | avisar | desligado (orquestracao/escopo.py)
         self._pontos: dict[str, list[str]] = {}
         self._esperas: dict[str, _Espera] = {}
         self.repo = repo
@@ -508,6 +510,7 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
             self._ev(t, tipo, tarefa, execucao_id, payload)
 
     def _rodar(self, execucao_id: str, ctl: ControleExecucao) -> None:
+        tarefa: dict | None = None
         try:
             with self.repo.leitura() as t:
                 ex = t.obter(T.Execucao, execucao_id)
@@ -539,7 +542,9 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
                 agente_id=self.provedor.id,
                 mock=self.provedor.mock,
             )
-        liberadas = self._encerrar_pastas(execucao_id)
+        liberadas, resumos = self._encerrar_pastas(execucao_id)
+        if tarefa is not None and resumos:
+            res = self._conferir_escopo(execucao_id, tarefa, res, resumos)
         try:
             self._finalizar(execucao_id, ctl, res)
         except Exception:  # noqa: BLE001
@@ -606,18 +611,49 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
                 self._pontos[execucao_id] = pontos
         return None
 
-    def _encerrar_pastas(self, execucao_id: str) -> int:
-        """Fecha os pontos de restauracao e libera as pastas. Devolve quantas pastas foram liberadas."""
+    def _encerrar_pastas(self, execucao_id: str) -> tuple[int, list[dict]]:
+        """Fecha os pontos de restauracao e libera as pastas. Devolve (pastas liberadas, resumos do que mudou)."""
         with self._mu:
             pontos = self._pontos.pop(execucao_id, [])
-        for pid in pontos:
-            self.restauracao.finalizar(pid)  # type: ignore[union-attr] - so ha pontos se houver restauracao
+        resumos = [r for r in (self.restauracao.finalizar(pid) for pid in pontos) if r]  # type: ignore[union-attr]
         if self.isolamento is not None:
             try:
-                return int(self.isolamento.liberar(execucao_id) or 0)
+                return int(self.isolamento.liberar(execucao_id) or 0), resumos
             except Exception:  # noqa: BLE001
                 log.exception("falha ao liberar pastas", extra={"execucao_id": execucao_id})
-        return 0
+        return 0, resumos
+
+    def _conferir_escopo(self, execucao_id: str, tarefa: dict, res: ResultadoAgente, resumos: list[dict]) -> ResultadoAgente:
+        """Anti 'esticar' deterministico: arquivos alterados x plano e limite do nivel. Saiu do escopo e a preferencia e 'pausar':
+        a tarefa fica bloqueada com a lista (desfazer com um clique, ou responder para aceitar). Melhor esforco."""
+        if self.controle_escopo == "desligado" or res.estado != "concluida":
+            return res
+        try:
+            from forja.orquestracao import escopo
+            from forja.orquestracao.roteamento import classificar
+
+            with self.repo.leitura() as t:
+                rota = next((e["payload"] for e in t.eventos_da_execucao(execucao_id, 3000) if e["tipo"] == "kiro.rota"), None)
+            nivel = (rota or {}).get("nivel") or classificar(tarefa).nivel
+            plano = "\n".join(m.conteudo for m in res.mensagens if m.tipo == "plano")
+            av = escopo.avaliar(tarefa, nivel, resumos, plano)
+            if not av.saiu:
+                return res
+            self._emitir_exec(execucao_id, "execucao.fora_do_escopo", {"motivos": av.motivos, "arquivos": len(av.alterados),
+                                                                       "limite": av.limite, "modo": self.controle_escopo})
+            lista = "\n".join(f"- {a}" for a in (av.fora_do_plano or av.docs_nao_pedidos or av.alterados)[:30])
+            res.pendencias.append("fora_do_escopo: " + "; ".join(av.motivos)[:400])
+            res.mensagens.append(MensagemSaida(tipo="verificacao", conteudo=(
+                "A Forja conferiu os arquivos alterados e a tarefa saiu do escopo: " + "; ".join(av.motivos) + ".\n" + lista
+                + "\nSe não era isso, use 'Desfazer alterações' no cartão. Se estiver tudo certo, responda aceitando."),
+                dados={"escopo": {"motivos": av.motivos, "arquivos": av.alterados[:100]}}))
+            if self.controle_escopo == "pausar":
+                res.estado = "bloqueada"
+                res.resumo = "Trabalho entregue, mas fora do escopo pedido; confira a lista e desfaça ou aceite."
+            return res
+        except Exception:  # noqa: BLE001 - a conferencia e protecao extra; falhar nunca altera o resultado
+            log.exception("falha ao conferir escopo", extra={"execucao_id": execucao_id})
+            return res
 
 
     def _gravar_artefato(self, conteudo: str) -> tuple[str, str, int]:

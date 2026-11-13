@@ -104,8 +104,8 @@ function formEntrar(raiz, estado, resolver, aviso) {
 }
 
 function formConfigurar(raiz, estado, resolver) {
-  const usuario = el("input", { id: "login-usuario", autocomplete: "username", required: true, maxLength: 32, spellcheck: false, autocapitalize: "none",
-    placeholder: "ex.: ana" });
+  const usuario = el("input", { id: "login-usuario", autocomplete: "username", required: true, maxLength: 64, spellcheck: false, autocapitalize: "none",
+    placeholder: "ex.: ana ou ana@exemplo.com" });
   const senha = campoSenha("login-senha", "Senha", "new-password");
   const repete = campoSenha("login-senha2", "Repita a senha", "new-password");
   const barra = el("meter", { min: 0, max: 4, low: 2, high: 3, optimum: 4, value: 0, "aria-label": "Força da senha" });
@@ -115,7 +115,7 @@ function formConfigurar(raiz, estado, resolver) {
   const botao = el("button", { type: "submit", className: "primario login-botao", textContent: "Criar acesso e entrar" });
   const form = el("form", { className: "login-form", noValidate: true },
     el("div", { className: "campo-login" }, el("label", { htmlFor: "login-usuario", textContent: "Usuário" }), usuario,
-      el("small", { className: "mudo", textContent: "3 a 32 caracteres: letras minúsculas, números, ponto, hífen ou sublinhado." })),
+      el("small", { className: "mudo", textContent: "3 a 64 caracteres: letras, números, ponto, hífen, sublinhado, @ ou + (um e-mail serve)." })),
     senha.grupo, el("div", { className: "forca" }, barra, textoForca), repete.grupo,
     el("ul", { className: "login-regras mudo" }, el("li", { textContent: "Pelo menos 8 caracteres; uma frase longa é o melhor." }),
       el("li", { textContent: "Não use o nome de usuário nem senhas comuns." })),

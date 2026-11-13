@@ -169,6 +169,25 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
                    Exemplo("Automático", "automatico", "Volta a trabalhar sozinho ao reiniciar.")),
         se_ligar="Automático: nada fica parado; gasta créditos sem você olhar.", se_desligar="Manual: você retoma pelo cartão.",
         opcoes=(("manual", "Manual"), ("automatico", "Automático"))),
+    Preferencia(
+        "controle_escopo", "agentes", "avancado", "Controle de escopo (o agente não 'estica' a tarefa)", "selecao",
+        "A Forja confere os arquivos que o agente alterou contra o plano e um limite por nível (simples 3, normal 10, complexa 25). "
+        "Durante a execução, passar do limite faz cada nova escrita perguntar. Ao terminar, se saiu do escopo (arquivos demais, fora "
+        "do plano ou documentação não pedida), 'Pausar' deixa a tarefa esperando você: desfaça com um clique ou responda aceitando.",
+        "pausar", (Exemplo("Pausar", "pausar", "Nada fora do escopo passa sem você ver."),
+                   Exemplo("Avisar", "avisar", "Conclui e só avisa na conversa."),
+                   Exemplo("Desligado", "desligado", "Sem conferência (como antes).")),
+        se_ligar="Menos surpresas e diffs menores; tarefas grandes podem pedir uma confirmação a mais.",
+        se_desligar="O agente pode fazer mais do que foi pedido sem aviso.", risco="medio",
+        opcoes=(("pausar", "Pausar"), ("avisar", "Avisar"), ("desligado", "Desligado"))),
+    Preferencia(
+        "master_executar", "agentes", "avancado", "O master já executa as tarefas que cria", "selecao",
+        "Quando você conversa com o master, ele decide as tarefas (e sub-masters por projeto). 'Executar' já as coloca para rodar "
+        "(as aprovações por ação continuam valendo); 'Propor' deixa prontas no quadro para você iniciar.", "executar",
+        (Exemplo("Executar", "executar", "Você só conversa; o trabalho anda sozinho."),
+         Exemplo("Propor", "propor", "Você revisa as tarefas antes de rodar.")),
+        se_ligar="Mais rápido; gasta créditos sem você iniciar cada tarefa.", se_desligar="Mais controle; você inicia cada tarefa.",
+        risco="medio", opcoes=(("executar", "Executar"), ("propor", "Propor"))),
     # ------------------------------------------------------------------ aparencia
     Preferencia(
         "nivel_detalhe", "cosmetica", "geral", "Nível de detalhe da interface", "selecao",
@@ -249,6 +268,23 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         opcoes=tuple((p["id"], p["descricao"]) for p in _pacotes()),
         detalhes=tuple(_pacotes())),
     Preferencia(
+        "contexto_limite_sessao", "eficiencia", "avancado", "Limite de contexto por sessão do agente", "int",
+        "Quando o contexto medido pelo Kiro passa deste valor, a Forja abre uma sessão NOVA com uma ficha de estado (objetivo, o que já "
+        "foi resolvido, arquivos alterados, testes) em vez de deixar a conversa crescer. A qualidade dos modelos cai com contexto longo "
+        "(context rot); o que foi resolvido fica no caderno da tarefa e é consultado sob demanda.", 120_000,
+        (Exemplo("Enxuto", 60_000, "Sessões curtas: mais foco, mais trocas."), Exemplo("Médio", 120_000, "Padrão."),
+         Exemplo("Longo", 200_000, "Menos trocas; risco de perder qualidade.")),
+        se_ligar="Mais alto: menos trocas de sessão, mais risco de o agente se perder.",
+        se_desligar="Mais baixo: foco e custo menores; trocas mais frequentes.", minimo=20_000, maximo=400_000, unidade="tokens"),
+    Preferencia(
+        "status_resumos", "eficiencia", "avancado", "Resumos de status para você", "selecao",
+        "Ao terminar ou parar, cada tarefa ganha um resumo curto. 'Marcos' usa um modelo barato (parte 'Resumos de status'), em lote "
+        "(várias tarefas numa chamada, até 20 por hora); 'Determinístico' monta a frase sem IA; sem custo.", "marcos",
+        (Exemplo("Desligado", "desligado", "Sem resumo."), Exemplo("Determinístico", "deterministico", "Frase montada dos eventos, custo zero."),
+         Exemplo("Marcos", "marcos", "Texto legível por modelo barato, só no fim de cada tarefa.")),
+        se_ligar="Retorno mais claro; poucas chamadas baratas.", se_desligar="Só os eventos técnicos.",
+        opcoes=(("desligado", "Desligado"), ("deterministico", "Determinístico"), ("marcos", "Marcos"))),
+    Preferencia(
         "contexto_orcamento_tokens", "eficiencia", "avancado", "Orçamento de contexto por tarefa", "int",
         "Teto de tokens (estimados, ~4 caracteres cada) de memória anexada a cada tarefa. Itens pouco relevantes são descartados antes de atingir o teto.",
         2000, (Exemplo("Baixo", 500, "1 a 2 memórias curtas. Mais barato; pode faltar contexto."),
@@ -280,6 +316,22 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         se_ligar="Um modelo mais forte melhora o raciocínio e custa mais créditos.",
         se_desligar="Vazio = padrão da conta. Um nome inválido bloqueia a execução (não roda em outro modelo sem avisar).",
         risco="medio", persistida=False),
+    Preferencia(
+        "codex_ativo", "consumo", "avancado", "Usar também o Codex (OpenAI)", "bool",
+        "Liga o Codex como segundo agente, pelo mesmo protocolo (ACP). Exige o adaptador instalado (npm i -g @agentclientprotocol/codex-acp) "
+        "e 'codex login' com o seu plano. Por segurança, o Codex só trabalha em pastas SEM arquivos de segredo (.env, chaves): ele não "
+        "tem as regras de bloqueio que a Forja aplica no Kiro. Confirme se o uso com código da empresa é permitido.", False,
+        se_ligar="Mais capacidade e reserva quando o Kiro estiver sem cota; cada agente mantém o próprio contexto.",
+        se_desligar="Só o Kiro.", risco="alto"),
+    Preferencia(
+        "distribuicao_provedores", "consumo", "avancado", "Como dividir o trabalho entre Kiro e Codex", "selecao",
+        "Vale só com o Codex ligado. A retomada de uma conversa sempre volta ao agente que a começou.", "so_kiro",
+        (Exemplo("Só Kiro", "so_kiro", "O Codex fica parado."),
+         Exemplo("Automático", "auto", "Kiro primeiro; Codex quando o Kiro estiver indisponível ou sem cota."),
+         Exemplo("Equilibrar", "equilibrar", "Simples, revisões e resumos no Codex; o resto no Kiro."),
+         Exemplo("Codex primeiro", "codex_primeiro", "Codex primeiro; Kiro de reserva.")),
+        se_ligar="Usa os dois planos; menos espera por cota.", se_desligar="Tudo num agente só.", risco="medio",
+        opcoes=(("so_kiro", "Só Kiro"), ("auto", "Automático"), ("equilibrar", "Equilibrar"), ("codex_primeiro", "Codex primeiro"))),
     # ------------------------------------------------------------------ privacidade
     Preferencia(
         "ferramentas_arquivos_ativas", "privacidade", "geral", "Permitir que os agentes leiam arquivos do computador", "bool",

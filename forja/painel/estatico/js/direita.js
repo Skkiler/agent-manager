@@ -5,7 +5,7 @@ import { abas, el, limpar, recolhivel, toast } from "./ui.js";
 import { secaoAnexos } from "./views/projetos.js";
 
 const TITULOS = { entendimento: "Entendimento", plano: "Plano", resposta: "Resposta", evidencias: "Evidências", premissas: "Premissas", decisoes: "Decisões para você",
-  riscos: "Riscos", proximos_passos: "Próximos passos", resposta_operador: "Você", verificacao: "Verificação da Forja" };
+  riscos: "Riscos", proximos_passos: "Próximos passos", resposta_operador: "Você", verificacao: "Verificação da Forja", status: "Status" };
 let aba = "conversa";
 let pendentes = 0;
 

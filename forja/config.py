@@ -41,6 +41,9 @@ class Configuracoes(BaseSettings):
     app_kiro_prompt_timeout_seconds: int = 300
     # Coletor OpenTelemetry (OTLP/HTTP JSON) usado so quando a preferencia 'telemetria' = 'otlp_local'. Apenas loopback.
     app_otel_endpoint: str = "http://127.0.0.1:4318/v1/traces"
+    # Codex (opcional, segundo agente via ACP). Vazio = procura 'codex-acp' no PATH. Liga-se em Configuracoes > Consumo.
+    app_codex_acp_command: str = ""
+    app_codex_model: str = ""
     # Tempo maximo que um pedido de aprovacao aguarda o operador; expirado => negado (nunca aprova por omissao).
     app_approval_timeout_seconds: int = 900
     # Memoria: namespaces que o operador desta instancia pode ler/escrever.

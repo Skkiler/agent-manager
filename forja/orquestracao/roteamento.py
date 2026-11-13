@@ -51,6 +51,8 @@ def classificar(tarefa: dict[str, Any]) -> Rota:
     entrada = tarefa.get("entrada") or {}
     if entrada.get("revisao"):
         return Rota("complexa", "revisao", False, 1.0, False, ("revisao do esquema",))
+    if entrada.get("coordenacao"):  # turno do master/sub-master: texto curto + acoes tipadas, sem ferramentas e sem contexto extra
+        return Rota("normal", "coordenacao", False, 0.0, False, ("coordenacao (master/sub-master)",))
     if modo == "estudo" or entrada.get("estudo"):
         return Rota("normal", "estudo", False, 0.5, False, ("estudo/alimentacao do segundo cerebro",))
     forcado = ((tarefa.get("politicas") or {}).get("complexidade") or "").strip()

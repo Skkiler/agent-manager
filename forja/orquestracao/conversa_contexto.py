@@ -37,6 +37,10 @@ class ConversaContextoMixin:
             (m["conteudo"] for m in reversed(msgs) if m["papel"] == "agente" and m["tipo"] == "entendimento"), ""
         )
         progresso, contexto = self._progresso_anterior(t, execucao_id)
+        cad = [i for i in t.listar(T.CadernoItem, ordem=T.CadernoItem.criado_em, tarefa_id=tarefa["id"], limite=300)
+               if i["tipo"] in ("resolvido", "decisao", "erro")][-8:]
+        if cad:  # o que ja foi resolvido fica fora da janela: na retomada vai so a linha de cada item
+            progresso = (progresso + ". " if progresso else "") + "Caderno: " + "; ".join(i["texto"][:140] for i in cad)
         return {
             "entendimento": " ".join(entend.split())[:420],
             "decisoes": ((decisoes or {}).get("dados") or {}).get("decisoes", []),

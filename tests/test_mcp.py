@@ -58,7 +58,7 @@ def test_notificacao_nao_tem_resposta_e_metodo_desconhecido_e_erro(mcp):
 
 def test_lista_poucas_ferramentas_com_descricao_curta(mcp):
     ts = mcp.tratar({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-    assert {t["name"] for t in ts} == set(FERRAMENTAS) and len(ts) == 7
+    assert {t["name"] for t in ts} == set(FERRAMENTAS) and len(ts) == 9
     assert all(len(t["description"]) < 200 and t["inputSchema"]["additionalProperties"] is False for t in ts)
     assert len(json.dumps(ts)) < 4500  # custo fixo por sessao: mantido pequeno de proposito
 
@@ -96,7 +96,7 @@ def test_processo_real_responde_initialize_por_stdio():
     r = subprocess.run([sys.executable, "-m", "forja.mcp"], input=msgs, capture_output=True, text=True, timeout=60,
                        env={**__import__("os").environ, "FORJA_MCP_URL": "http://127.0.0.1:9", "APP_REQUIRE_AUTH": "false"})
     saidas = [json.loads(x) for x in r.stdout.splitlines()]
-    assert saidas[0]["result"]["serverInfo"]["name"] == "forja" and len(saidas[1]["result"]["tools"]) == 7
+    assert saidas[0]["result"]["serverInfo"]["name"] == "forja" and len(saidas[1]["result"]["tools"]) == 9
 
 
 def test_agente_nao_envia_comando_nem_escolhe_origem(mcp):

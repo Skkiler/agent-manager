@@ -382,3 +382,25 @@ dialog.janela-config .janela-corpo { padding: 0; display: flex; overflow: hidden
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } .cartao:hover { transform: none; } }
 @media (forced-colors: active) { .tag-opcao.ativa, button.primario, .amostra[aria-checked="true"] { border: 2px solid CanvasText; } }
+
+/* ---- Master: conversa com o coordenador + arvore de sub-masters e tarefas */
+.master-grade { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); gap: var(--e3); align-items: start; }
+@media (max-width: 900px) { .master-grade { grid-template-columns: minmax(0, 1fr); } }
+.master-chat { display: flex; flex-direction: column; gap: var(--e2); min-width: 0; }
+.conversa-master { max-height: calc(100vh - 300px); min-height: 200px; overflow: auto; padding-right: var(--e1); }
+.msg.msg-coord.usuario { border-color: var(--acento); }
+.msg.msg-coord.master, .msg.msg-coord.submaster { border-left: 3px solid var(--acento); }
+.msg.msg-coord.sistema, .msg.msg-coord.status, .msg.status { border-style: dashed; }
+.msg-coord .criadas { margin: var(--e1) 0 0; padding-left: var(--e4); }
+.form-master textarea { width: 100%; }
+.lado-master { background: var(--cartao); border: 1px solid var(--borda); border-radius: var(--raio); padding: var(--e2); min-width: 0; }
+.arvore-coord, .tarefas-coord { list-style: none; margin: 0; padding: 0; }
+.tarefas-coord { padding-left: var(--e3); margin: var(--e1) 0 var(--e2); border-left: 1px solid var(--borda); }
+.no-coord > .linha { gap: var(--e1); }
+.no-coord button.coord[aria-pressed="true"] { border-color: var(--acento); color: var(--titulo); font-weight: 600; }
+.tarefas-coord li { margin: 2px 0; min-width: 0; }
+.tarefas-coord .tag, .msg-coord h3 .tag { flex-shrink: 0; }
+button.link { background: none; border: 0; padding: 2px 0; color: var(--acento); cursor: pointer; text-align: left; max-width: 100%;
+  display: inline-flex; gap: var(--e1); align-items: center; min-width: 0; }
+button.link:hover .trunc, button.link:focus-visible .trunc { text-decoration: underline; }
+button.link .trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

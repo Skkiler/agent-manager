@@ -1,7 +1,9 @@
 # Estado da implementacao
 
-**Atualizado:** 2026-11-06 (Fase 9: melhorias da validação de mercado, gitleaks e Docker; ver a seção "Fase 9" abaixo). **Fases 0 a 4 testadas; Fase 9 implementada (9.12 parcial). Abertos: licença (Fase 8, decisão sua); planos em estudo: multi-provedor (Codex), master/sub-masters, gestão de contexto.** Padrao de agente continua sendo o **mock SIMULADO**;
-o Kiro real so e usado com `APP_KIRO_ACP_ENABLED=true` (validado em sessao autenticada na etapa anterior).
+**Atualizado:** 2026-11-13 (master/sub-masters, Kiro + Codex, gestão de contexto, controle de escopo, status barato, perfis por papel,
+hospedagem contínua e licença Apache-2.0; ver a seção "Master, Kiro + Codex…" abaixo). **Fases 0 a 4 e 9 testadas. Aberto: Codex real
+(instalação e login do usuário).** Sem `APP_KIRO_ACP_ENABLED=true` o agente é o **mock SIMULADO**; a instância hospedada nesta máquina
+usa o Kiro real.
 
 ## Regra de publicacao (repositorio publico)
 O repositorio publica apenas **logica, ferramentas, controle e orquestracao**. Nunca sobem: credenciais, tokens, dados internos
@@ -308,6 +310,36 @@ fila "Revisão (N)", editor de regras, pacotes de conhecimento (`forja/conhecime
   skills do workspace. Workflows do IDE nao aparecem no ACP.
 - README reescrito (sistema completo). `python -m pytest` -> 1083 passed.
 
+## Master, Kiro + Codex, contexto, escopo, status, perfis por papel e hospedagem continua (itens 4.42-4.49, ADR-023): resultados reais (2026-11-13)
+- **Master/sub-masters:** tela inicial "Master"; turnos como tarefas internas validadas pelo orquestrador (limites 6/12/8, 40/15 turnos,
+  profundidade 2); sub-master so com 2+ projetos; consolidacao por lote; turnos internos fora do Kanban. Migracao 0014.
+- **Kiro + Codex:** roteador com contextos separados (retomada volta ao mesmo agente), modos so_kiro/auto/equilibrar/codex_primeiro,
+  reserva so sem trabalho produzido. Codex em falha fechada (ambiente limpo, pastas sem segredo, somente leitura fora da execucao,
+  modo desconhecido bloqueia). **Codex NAO instalado nesta maquina** (`codex-acp` ausente): testado so com agente ACP falso.
+- **Gestao de contexto:** caderno por MCP (9 ferramentas no total), ficha de estado sem LLM, sessao renovada acima de 120 mil tokens.
+- **Status barato:** frases deterministicas + resumo em lote pela parte 'status' (haiku, baixo), com teto por hora e reserva.
+- **Escopo (anti 'esticar'):** contrato no perfil e no pedido, escrita alem do limite do nivel pergunta, conferencia pos-execucao
+  (limite, plano, documentacao nao pedida) com `controle_escopo = pausar` por padrao.
+- **2.8:** perfis `forja-planejador/executor/revisor/estudo/coordenador` com as mesmas regras deny; troca de modo por parte; fallback `forja`.
+- **Usuario por e-mail** aceito; conta do usuario criada no perfil real e login conferido no servidor hospedado (`POST /auth/entrar` ok).
+- **Testes executados:**
+  - `python -m pytest` -> **1118 passed** (222 s). Novos: `tests/test_contexto_escopo_agentes.py` (25) e `tests/test_coordenacao.py` (9);
+    ajustados `test_configuracao` (2 partes novas) e `test_mcp` (7 -> 9 ferramentas).
+  - `ruff check forja tests scripts` -> ok; `node --check` em 21 arquivos JS -> ok.
+  - Navegador real (`inspecionar_painel.py --interagir --a11y`, dados ficticios): **0 problemas**, incluindo o fluxo do master
+    (pedido -> tarefa criada e executada -> retorno -> consolidacao -> abrir a conversa da tarefa); axe-core sem violacao grave na
+    tela Master (uma violacao de contraste achada e corrigida). `--login --a11y`: 12 passos OK, 0 problemas (tela inicial agora e o Master).
+  - `benchmark_busca.py`: global 0.94/0.87/0.89 (recall@5/MRR/nDCG@5), igual ao anterior.
+- **Hospedagem continua:** `scripts/instalar.ps1` (Python, .venv, dependencias, diagnostico do Kiro, tarefa agendada, abre o navegador)
+  executado de verdade nesta maquina: Kiro 3.1.0 com login e ACP ok; tarefa "Forja (orquestrador local)" em execucao; servidor em
+  127.0.0.1:8787 respondendo. Supervisao provada: processo do servidor derrubado a forca -> voltou sozinho em poucos segundos (log em
+  `%LOCALAPPDATA%\Forja\supervisao.log`). Comandos `-Status`, `-Parar`, `-RemoverDaInicializacao`.
+- **Docker:** a demonstracao em execucao foi apagada (conteiner, volume e imagem local). Os arquivos `compose.yaml`/`Dockerfile` seguem
+  no repositorio como demonstracao com dados ficticios (README 2.6).
+- **Licenca:** Apache-2.0 (`LICENSE` oficial, `NOTICE`, `pyproject.toml`).
+- **Pendente:** Codex real (instalar `@agentclientprotocol/codex-acp` + `codex login`, com aprovacao do usuario e conferencia de
+  governanca); medir com o Kiro real a taxa de pausas por escopo (falso positivo) e a economia da renovacao de sessao.
+
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -326,7 +358,8 @@ fila "Revisão (N)", editor de regras, pacotes de conhecimento (`forja/conhecime
 - gitleaks e CI ativos (ver Fase 9). Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 1082 passed. Demo em Docker: README, secao 'Em Docker'. Proximo: licenca (Fase 8, decisao sua), resumo de clusters (9.12, opcional), 2.8.
+1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1118 passed. Proximo: Codex real (aprovacao
+   do usuario), medir pausas por escopo e renovacao de sessao com o Kiro real.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

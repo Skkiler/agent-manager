@@ -63,6 +63,24 @@ class MediadorPermissoes:
         self._lote: _Lote | None = None
         self._mu = threading.Lock()
         self._lembradas: set[str] = set()
+        self.limite_arquivos = 0  # 0 = sem limite; o provedor define pelo nivel da tarefa (controle de escopo)
+        self._escritos: set[str] = set()
+        self._avisou_escopo = False
+
+    def _conferir_escopo(self, item: dict[str, Any]) -> bool:
+        """Anti 'esticar': passou do limite de arquivos escritos da tarefa, cada nova escrita deixa de ser automatica e PERGUNTA
+        (mesmo nos niveis liberado/total). O usuario ve exatamente o que o agente quer mexer alem do esperado."""
+        if not self.limite_arquivos or item.get("categoria") not in ("modificar_arquivos", "mover", "excluir", "excluir_forcado"):
+            return False
+        with self._mu:
+            novos = [a for a in item.get("alvos") or [] if a not in self._escritos]
+            self._escritos.update(item.get("alvos") or [])
+            excedeu = len(self._escritos) > self.limite_arquivos and bool(novos)
+            avisar = excedeu and not self._avisou_escopo
+            self._avisou_escopo = self._avisou_escopo or excedeu
+        if avisar:
+            self.ctl.evento("kiro.escopo_excedido", {"limite": self.limite_arquivos, "arquivos": len(self._escritos)})
+        return excedeu
 
     @staticmethod
     def _chave(item: dict[str, Any]) -> str:
@@ -83,6 +101,7 @@ class MediadorPermissoes:
             return rejeitar
         if permitir is None:  # sem como permitir uma vez: nao arrisca allow_always
             return rejeitar
+        alem_do_escopo = self._conferir_escopo(item)
         decisao = avaliar_regras(self.perfil.regras, item) if self.perfil.regras else None
         if decisao is not None:  # regras do usuario: auditaveis (evento com o nome da regra)
             self.ctl.evento("kiro.regra_aplicada", {"regra": decisao[1].nome[:80], "acao": decisao[0], "descricao": item["descricao"]})
@@ -90,7 +109,7 @@ class MediadorPermissoes:
                 return rejeitar
             if decisao[0] == "aprovar":
                 return permitir
-        perguntar_sempre = decisao is not None and decisao[0] == "perguntar"
+        perguntar_sempre = (decisao is not None and decisao[0] == "perguntar") or alem_do_escopo
         if not perguntar_sempre and self.perfil.aprova_sozinho(item):  # auditavel: toda aprovacao automatica vira evento
             self.ctl.evento("kiro.permissao_automatica", {"nivel": self.perfil.nivel, "categoria": item["categoria"], "descricao": item["descricao"]})
             return permitir

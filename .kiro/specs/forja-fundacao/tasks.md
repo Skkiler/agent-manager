@@ -33,7 +33,7 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 2.6 Testes com agente ACP falso (subprocesso real) + handshake real + execucao real sem login (bloqueio correto).
 - [x] 2.7 Prompt real autenticado: end_turn em 4,7 s; escrita negada de fato; escrita aprovada de fato (sandbox vazio).
 - [x] 2.10 Aprovacao por acao: descritor, mediador/agrupamento, adendo, parcial, lembrar, lote, timeout/cancel/reinicio, painel, migracao 0002, ADR-006. (REQ-017..019)
-- [x] 2.8 Agentes e skills do workspace confirmados no kiro-cli 3.1.0 via ACP (modos arquiteto/explorador/implementador/revisor e skills como comandos). Workflows do Kiro IDE NAO sao expostos pelo ACP: a Forja orquestra por conta propria. As execucoes usam o modo 'forja' (deny de segredos); os modos do workspace nao tem essas regras e por isso nao sao usados pelo orquestrador.
+- [x] 2.8 Agentes e skills do workspace confirmados no kiro-cli 3.1.0 via ACP (modos arquiteto/explorador/implementador/revisor e skills como comandos). Workflows do Kiro IDE NAO sao expostos pelo ACP: a Forja orquestra por conta propria. As execucoes usam o modo 'forja' (deny de segredos); os modos do workspace nao tem essas regras e por isso nao sao usados pelo orquestrador. Continuacao (ADR-023): perfis proprios por papel (`forja-planejador/executor/revisor/estudo/coordenador`, mesmas regras deny, ferramentas por papel) com troca de modo a cada parte e fallback para `forja`.
 - [x] 2.9 `session/load` na retomada quando o agente anuncia `loadSession` (kiro-cli 3.1.0 anuncia; validado no Kiro real), replay descartado, queda segura para sessao nova. Pool de processos NAO feito: um processo por execucao continua (sem ganho medido que justifique).
 
 ## Fase 3 — Memoria textual e grafos
@@ -92,6 +92,14 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.37 Grafo de funcoes (`codigo.estrutura` funcao/grafo: assinatura, tipos, retorno, excecoes, quem chama e o que chama), gerado por padrao no preparo de tarefas com pasta de trabalho. ADR-020.
 - [x] 4.38 Agentes/modelos padrao por hierarquia (rapida=haiku-5.5, execucao=sonnet-5.5, planejamento/revisao=opus-5.5 high, estudo=haiku-5.5) com reserva `auto`; roteamento por complexidade (simples 1 turno barato; complexa plano+execucao). Medido no Kiro real (6/6). ADR-020.
 - [x] 4.39 Segundo cerebro: base inicial curada (63 notas, 10 areas, somente leitura, `publico/forja-base`), topicos->subtopicos ligados (SUBTOPICO_DE/RELACIONADO_A), navegacao (`forja_navegar_memoria`), dica de subtopicos no contexto. ADR-020.
+- [x] 4.42 Master e sub-masters: conversa com o coordenador, acoes tipadas validadas pelo orquestrador, sub-master so com 2+ projetos, limites e consolidacao por lote; tela "Master". Migracao 0014, ADR-023.
+- [x] 4.43 Kiro + Codex: roteador com contextos separados e distribuicao configuravel; Codex via `codex-acp` em falha fechada (ambiente limpo, pastas sem segredo, modos seguros). Testado com agente ACP falso; Codex real pendente de instalacao e login.
+- [x] 4.44 Gestao de contexto: caderno da tarefa (MCP), ficha de estado sem LLM e renovacao de sessao acima do limite.
+- [x] 4.45 Status barato: frases deterministicas e resumo em lote por modelo rapido, com teto por hora e reserva.
+- [x] 4.46 Controle de escopo (anti 'esticar'): contrato no perfil, escrita alem do limite pergunta, conferencia pos-execucao com pausa.
+- [x] 4.47 Usuario por e-mail no login.
+- [x] 4.48 Hospedagem continua: `scripts/instalar.ps1` e tarefa agendada supervisionada (`iniciar_forja.ps1 -Status/-Parar`).
+- [x] 4.49 Licenca Apache-2.0 (LICENSE, NOTICE) e README com fast-start, sumario e secoes numeradas.
 - [x] 4.41 Login do painel por usuario e senha (scrypt, sessao com expiracao, bloqueio progressivo, primeiro acesso so local ou por CLI), tela de acesso com retorno de erro/sucesso/bloqueio; token da API mantido para scripts e MCP. Migracao 0013, ADR-022.
 - [x] 4.40 Alimentacao e estudo: `POST /estudos` (pasta permitida ou topico) -> notas candidatas ligadas; registro automatico de decisoes/aprendizados por projeto; `forja_propor_nota`. ADR-020.
 

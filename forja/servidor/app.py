@@ -8,6 +8,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -15,12 +16,15 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from forja.adapters.agentes_mock.mock import AgenteMock
+from forja.adapters.codex_acp.provedor import ProvedorCodexAcp, resolver_codex
 from forja.adapters.kiro_acp import perfil_kiro
 from forja.adapters.kiro_acp.modelos import CatalogoModelos
 from forja.adapters.kiro_acp.provedor import ProvedorKiroAcp, montar_comando, resolver_cli
+from forja.adapters.sqlite import tabelas as T
 from forja.adapters.sqlite.banco import criar_engines, migrar
 from forja.adapters.sqlite.repositorio import RepositorioSqlite
 from forja.agentes.base import ProvedorAgente
+from forja.agentes.roteador import ProvedoresRoteados
 from forja.config import Configuracoes, obter_configuracoes
 from forja.contexto.construtor import ConstrutorContexto
 from forja.dominio.erros import ErroDominio
@@ -34,8 +38,10 @@ from forja.observabilidade.logs import configurar_logging, correlation_id_var
 from forja.observabilidade.telemetria import Telemetria
 from forja.orquestracao.acoes_externas import AcoesExternasServico
 from forja.orquestracao.aprendizado_rotas import AprendizadoRotas
+from forja.orquestracao.caderno import Caderno
 from forja.orquestracao.configuracao_servico import ConfiguracaoServico
 from forja.orquestracao.contas_servico import ContasServico
+from forja.orquestracao.coordenacao import CoordenacaoServico
 from forja.orquestracao.custos import CustosServico
 from forja.orquestracao.estudos import EstudoServico
 from forja.orquestracao.grafo_servico import GrafoServico
@@ -50,6 +56,7 @@ from forja.orquestracao.quadro_servico import QuadroServico
 from forja.orquestracao.restauracao import PontosRestauracao
 from forja.orquestracao.revisao import RevisaoServico
 from forja.orquestracao.servico import Servico
+from forja.orquestracao.status import StatusServico
 from forja.orquestracao.subtarefas import SubtarefasServico
 from forja.orquestracao.visoes import VisaoKanban
 from forja.preferencias.registro import POR_ID
@@ -58,6 +65,7 @@ from forja.seguranca.auth import LimitadorTaxa, carregar_token
 from forja.seguranca.pastas import definir_protegidas
 from forja.servidor.rotas import publico, r
 from forja.servidor.rotas_auth import ra
+from forja.servidor.rotas_coordenacao import rc
 from forja.servidor.rotas_ferramentas import rf
 from forja.servidor.rotas_integracoes import ri
 from forja.servidor.rotas_memoria import rm
@@ -84,6 +92,20 @@ def _mcp_forja(cfg: Configuracoes) -> list[dict]:
     return [{"name": "forja", "command": sys.executable, "args": ["-m", "forja.mcp"], "env": [{"name": k, "value": v} for k, v in env.items()]}]
 
 
+def kiro_de(prov: Any) -> ProvedorKiroAcp | None:
+    """O agente Kiro real (direto ou dentro do roteador de agentes). None = agente simulado (testes/demonstracao)."""
+    if isinstance(prov, ProvedoresRoteados):
+        return prov.kiro if isinstance(prov.kiro, ProvedorKiroAcp) else None
+    return prov if isinstance(prov, ProvedorKiroAcp) else None
+
+
+def agentes_reais(prov: Any) -> list[ProvedorKiroAcp]:
+    """Kiro e Codex (quando existem): recebem os mesmos controles (orcamentos, escopo, contexto, autonomia)."""
+    if isinstance(prov, ProvedoresRoteados):
+        return [a for a in (prov.kiro, prov.codex) if isinstance(a, ProvedorKiroAcp)]
+    return [prov] if isinstance(prov, ProvedorKiroAcp) else []
+
+
 def criar_provedor_kiro(cfg: Configuracoes) -> ProvedorKiroAcp:
     cli = resolver_cli(cfg.app_kiro_cli_path)
     comando = montar_comando(cli, cfg.app_kiro_agent, cfg.app_kiro_model) if cli else None
@@ -104,7 +126,10 @@ def criar_servico(cfg: Configuracoes, provedor: ProvedorAgente | None = None) ->
     repo = RepositorioSqlite(engine_w, engine_r)
     perfil_workers = 1 if cfg.app_resource_profile == "essencial" else cfg.app_max_parallel_cpu_tools
     if provedor is None and cfg.app_kiro_acp_enabled:
-        provedor = criar_provedor_kiro(cfg)
+        # Kiro (principal) + Codex (opcional, desligado ate voce ligar): mesma interface, contextos separados (agentes/roteador.py)
+        codex = ProvedorCodexAcp(resolver_codex(cfg.app_codex_acp_command), cfg.kiro_workspace_dir / "codex", cfg.app_codex_model,
+                                 timeout_prompt=float(cfg.app_kiro_prompt_timeout_seconds))
+        provedor = ProvedoresRoteados(criar_provedor_kiro(cfg), codex)
     return Servico(repo, provedor or AgenteMock(), cfg.artefatos_dir, max_workers=perfil_workers,
                    espera_aprovacao_s=float(cfg.app_approval_timeout_seconds),
                    lock_lease_seconds=cfg.app_lock_lease_seconds)
@@ -120,13 +145,18 @@ def _criar_preferencias(cfg: Configuracoes, servico: Servico, app: FastAPI) -> P
         if valor != POR_ID[pref].padrao:
             sementes[pref] = valor
     prefs = PreferenciasServico(servico.repo, sementes=sementes)
-    prov = servico.provedor
-    if isinstance(prov, ProvedorKiroAcp):
+    prov = kiro_de(servico.provedor)
+    if prov is not None:
         prefs.registrar_aplicador("kiro_mcp_ativo", lambda v: setattr(prov, "usar_mcp", bool(v)))
         prefs.registrar_aplicador("kiro_mcp_ativo", lambda v: setattr(servico.construtor_contexto, "referencias", bool(v))
                                   if servico.construtor_contexto is not None else None)
         prefs.registrar_aplicador("kiro_reusar_sessao", lambda v: setattr(prov, "reusar_sessao", bool(v)))
-        prefs.registrar_aplicador("limite_ferramentas_por_execucao", lambda v: setattr(prov, "max_ferramentas", int(v)))
+        for ag in agentes_reais(servico.provedor):  # orcamentos e controles valem para TODOS os agentes (Kiro e Codex)
+            prefs.registrar_aplicador("limite_ferramentas_por_execucao", lambda v, ag=ag: setattr(ag, "max_ferramentas", int(v)))
+            prefs.registrar_aplicador("controle_escopo", lambda v, ag=ag: setattr(ag, "controle_escopo", str(v)))
+            prefs.registrar_aplicador("contexto_limite_sessao", lambda v, ag=ag: (setattr(ag, "limite_contexto_sessao", int(v)),
+                                                                                  setattr(ag, "limite_contexto_reuso", int(v))))
+            prefs.registrar_aplicador("subagentes", lambda v, ag=ag: setattr(ag, "subagentes", str(v)))
     prefs.registrar_aplicador("contexto_ativo", lambda v: setattr(servico, "contexto_ativo", bool(v)))
     prefs.registrar_aplicador("aprovacao_timeout_segundos", lambda v: setattr(servico, "espera_aprovacao_s", float(v)))
     prefs.registrar_aplicador("contexto_orcamento_tokens", lambda v: setattr(servico.construtor_contexto, "orcamento", int(v))
@@ -146,14 +176,27 @@ def _melhorias_orquestrador(app: FastAPI, cfg: Configuracoes, servico: Servico) 
     app.state.aprendizado = AprendizadoRotas(repo)
     app.state.subtarefas = SubtarefasServico(servico)
     app.state.custos = CustosServico(repo, app.state.modelos)
-    real = isinstance(prov, ProvedorKiroAcp)
-    app.state.oficina = OficinaServico(repo, (lambda: prov.max_ferramentas) if real else None)
+    kiro = kiro_de(prov)
+    app.state.oficina = OficinaServico(repo, (lambda: kiro.max_ferramentas) if kiro is not None else None)
     app.state.organizador = OrganizadorMemoria(repo, app.state.memoria, app.state.grafo, Principal("organizacao", cfg.memoria_namespaces))
     app.state.organizador.resumir = app.state.estudos.solicitar_resumo  # topicos resumidos pelo Kiro (parte 'estudo')
-    servico.ao_finalizar += [app.state.telemetria.ao_finalizar, app.state.aprendizado.ao_finalizar, app.state.subtarefas.ao_finalizar]
-    if real:
-        prov.ajustar_rota = app.state.aprendizado.ajustar
-        prefs.registrar_aplicador("subagentes", lambda v: setattr(prov, "subagentes", str(v)))
+    # contexto fora da janela (caderno + ficha de estado), relatos de status baratos e coordenacao (master/sub-masters)
+    app.state.caderno = Caderno(repo)
+    app.state.status = StatusServico(repo, getattr(prov, "turno_rapido", None) if kiro is not None else None)
+    app.state.coordenacao = CoordenacaoServico(servico, prefs.perfil_trabalho)
+    app.state.status.publicar.append(app.state.coordenacao.publicar_status)
+    servico.ao_finalizar += [app.state.telemetria.ao_finalizar, app.state.aprendizado.ao_finalizar, app.state.subtarefas.ao_finalizar,
+                             app.state.coordenacao.ao_finalizar, app.state.status.ao_finalizar]
+    for ag in agentes_reais(prov):
+        ag.ajustar_rota = app.state.aprendizado.ajustar
+        ag.ficha_de = lambda tarefa: _ficha(repo, app.state.caderno, tarefa)
+    servico.controle_escopo = "pausar"
+    prefs.registrar_aplicador("controle_escopo", lambda v: setattr(servico, "controle_escopo", str(v)))
+    prefs.registrar_aplicador("status_resumos", lambda v: setattr(app.state.status, "modo", str(v)))
+    prefs.registrar_aplicador("master_executar", lambda v: setattr(app.state.coordenacao, "executar", str(v) == "executar"))
+    if isinstance(prov, ProvedoresRoteados):
+        prefs.registrar_aplicador("codex_ativo", lambda v: setattr(prov, "codex_ativo", bool(v)))
+        prefs.registrar_aplicador("distribuicao_provedores", lambda v: setattr(prov, "modo", str(v)))
     prefs.registrar_aplicador("subagentes", lambda v: setattr(app.state.subtarefas, "modo", str(v)))
     prefs.registrar_aplicador("pontos_restauracao", lambda v: setattr(servico, "pontos_ativos", bool(v)))
     prefs.registrar_aplicador("isolar_paralelas", lambda v: setattr(servico.isolamento, "ativo", bool(v)))
@@ -162,6 +205,13 @@ def _melhorias_orquestrador(app: FastAPI, cfg: Configuracoes, servico: Servico) 
     prefs.registrar_aplicador("organizacao_memoria", lambda v: setattr(app.state.organizador, "modo", str(v)))
     prefs.registrar_aplicador("telemetria", app.state.telemetria.definir_modo)
     prefs.registrar_aplicador("pacotes_conhecimento", lambda v: _pacotes_conhecimento(repo, v))
+
+
+def _ficha(repo: RepositorioSqlite, caderno: Caderno, tarefa: dict) -> str:
+    """Ficha de estado da tarefa (caderno + o que a execucao aberta ja fez), para trocar de sessao sem perder o fio."""
+    with repo.leitura() as t:
+        execs = [e for e in t.listar(T.Execucao, tarefa_id=tarefa["id"], limite=50)]
+        return caderno.ficha(t, tarefa, execs[-1]["id"] if execs else None)
 
 
 def _pacotes_conhecimento(repo: RepositorioSqlite, escolhidos: list[str]) -> None:
@@ -225,8 +275,8 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     _raizes_ingestao()
     app.state.projetos = provedor_servico.projetos = ProjetosServico(provedor_servico.repo, cfg.artefatos_dir, politica=app.state.prefs.politica_pastas)
     provedor_servico.perfil_de = app.state.prefs.perfil_trabalho  # autonomia/metodos/observacoes lidos a cada execucao
-    if isinstance(provedor_servico.provedor, ProvedorKiroAcp):
-        provedor_servico.provedor.perfil_de = app.state.prefs.perfil_trabalho
+    for ag in agentes_reais(provedor_servico.provedor):
+        ag.perfil_de = app.state.prefs.perfil_trabalho
     app.state.quadro = provedor_servico.quadro = QuadroServico(provedor_servico.repo)  # orquestrador avisa o quadro
     app.state.acoes_externas = AcoesExternasServico(provedor_servico.repo, app.state.integracoes, app.state.quadro)
     app.state.ferramentas = Catalogo((), app.state.integracoes, app.state.acoes_externas, politica=app.state.prefs.politica_pastas)
@@ -234,10 +284,11 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.state.grafo = GrafoServico(provedor_servico.repo)
     app.state.configuracao = ConfiguracaoServico(provedor_servico.repo, modelo_padrao=cfg.app_kiro_model)
     app.state.revisao = RevisaoServico(provedor_servico, app.state.ferramentas, app.state.configuracao)
-    if isinstance(provedor_servico.provedor, ProvedorKiroAcp):  # modelo por parte do sistema (configuravel no painel)
-        provedor_servico.provedor.modelo_de = app.state.configuracao.modelo_para
-        provedor_servico.provedor.esforco_de = app.state.configuracao.esforco_para
-        provedor_servico.provedor.alternativas_de = app.state.configuracao.alternativas_para
+    kiro = kiro_de(provedor_servico.provedor)
+    if kiro is not None:  # modelo por parte do sistema (configuravel no painel; o catalogo e o da conta Kiro)
+        kiro.modelo_de = app.state.configuracao.modelo_para
+        kiro.esforco_de = app.state.configuracao.esforco_para
+        kiro.alternativas_de = app.state.configuracao.alternativas_para
     app.state.modelos = CatalogoModelos(resolver_cli(cfg.app_kiro_cli_path))  # lista da conta (somente leitura)
     app.state.token = carregar_token(cfg)
     app.state.contas = ContasServico(provedor_servico.repo, cfg.app_session_ttl_minutes)  # login por usuario e senha
@@ -270,6 +321,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.include_router(rv)
     app.include_router(rj)
     app.include_router(rx)
+    app.include_router(rc)
     _ = provedor_servico  # servico ja referenciado em app.state
 
     if ESTATICO.exists():

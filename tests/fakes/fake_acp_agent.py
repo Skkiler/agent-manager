@@ -60,6 +60,10 @@ def opcoes() -> list[dict]:
     """Como o kiro-cli 3.1.0: perfis de ~/.kiro/agents aparecem como modos. Cenarios '*sem_perfil*' nao oferecem 'forja'."""
     ops = opcoes_modelos() if cenario == "modelos" or cenario.startswith("planeja") else []
     modos = ["vibe", "spec"] + ([] if "sem_perfil" in cenario else ["forja"])
+    if "papeis" in cenario:  # perfis por papel (forja-planejador, forja-executor...) gravados pela Forja em ~/.kiro/agents
+        modos += ["forja-planejador", "forja-executor", "forja-revisor", "forja-estudo", "forja-coordenador"]
+    if cenario.startswith("codex"):  # como o codex-acp: modos de aprovacao/sandbox
+        modos = ["yolo"] if cenario == "codex_estranho" else ["read-only", "auto", "full-access"]
     ops.append({"type": "select", "id": "mode", "currentValue": escolha.get("mode", "vibe"),
                 "options": [{"value": v, "name": v} for v in modos]})
     return ops
@@ -113,6 +117,9 @@ while True:
         elif cenario == "modelos":  # imita o kiro-cli 3.1.0 real (engine v3)
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "configOptions": opcoes()}})
         else:
+            globals()["n_sessoes"] = globals().get("n_sessoes", 0) + 1
+            if cenario == "planeja_contexto":  # cada sessao nova tem id proprio (prova a troca de sessao)
+                sid = f"sess-fake-{globals()['n_sessoes']}"
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "configOptions": opcoes()}})
     elif m == "session/load":
         if cenario == "carregavel_falha":
@@ -140,6 +147,12 @@ while True:
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": opcoes()}})
         else:
             enviar({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "modo desconhecido"}})
+    elif m == "session/prompt" and cenario.startswith("codex"):
+        import os
+
+        vazou = sorted(k for k in os.environ if k.startswith(("APP_", "FORJA_")) or "TOKEN" in k or "SECRET" in k)
+        chunk(sid, f"## Resposta\nmodo={escolha.get('mode', 'auto')} vazou={vazou}\n")
+        enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
     elif m == "session/prompt" and cenario.startswith("perfil"):
         chunk(sid, f"modo={escolha.get('mode', 'vibe')} meta={json.dumps(globals().get('meta_recebido'), sort_keys=True)}")
         enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
@@ -251,6 +264,11 @@ while True:
         elif cenario.startswith("planeja"):  # turno de plano (modelo de planejamento) e depois execucao (modelo executor)
             txt = ((msg.get("params") or {}).get("prompt") or [{}])[0].get("text", "")
             mod, esf = escolha.get("model", "auto"), escolha.get("effortLevel", "-")
+            if cenario == "planeja_contexto":  # janela grande: a Forja deve trocar de sessao antes da etapa 2
+                update(sid, {"sessionUpdate": "session_info_update", "_meta": {"kiro": {"kind": "context_usage",
+                                                                                         "breakdown": {"tools": {"tokens": 150_000}}}}})
+                if "ETAPA 2 DE 2" in txt:
+                    chunk(sid, f"[sessao={sid} ficha={'Ficha de estado' in txt} caderno={'CADERNO-OK' in txt}]\n")
             if "ETAPA 1 DE 2" in txt:
                 decisao = ("\n## Decisões para você\n1. Trocar o banco? — Recomendo: nao (risco).\n" if cenario == "planeja_decisao" else "")
                 if cenario == "planeja_subtarefas":  # so divide quando a Forja pede (prompt com '## Subtarefas')

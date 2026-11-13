@@ -38,6 +38,10 @@ PARTES: tuple[Parte, ...] = (
     Parte("revisao", "Revisao do esquema", "Agente que reavalia a arquitetura e sugere melhorias.", True, "revisor (mestre)"),
     Parte("estudo", "Estudo e alimentação do segundo cérebro", "Resume pastas e pesquisas em notas candidatas organizadas por tópico.",
           True, "pesquisador/resumidor (somente leitura)"),
+    Parte("coordenacao", "Master e sub-masters", "Conversa com você, entende o pedido e decide quais tarefas e sub-masters criar.",
+          True, "coordenador (não executa)"),
+    Parte("status", "Resumos de status", "Resume o que os agentes fizeram em frases curtas para você (só em marcos, em lote).",
+          True, "relator (barato)"),
     Parte("contexto", "Contexto e memoria", "Busca lexical e montagem de contexto: deterministico, sem modelo.", False, "determinístico"),
     Parte("ferramentas", "Ferramentas N0", "Resumos, mapas e varreduras: deterministicos, sem modelo.", False, "determinístico"),
 )
@@ -60,6 +64,9 @@ PADROES: dict[str, ParteConfig] = {
     "planejamento": ParteConfig(modelo="claude-opus-5.5", esforco="high", alternativas=["claude-sonnet-5.5", "auto"]),
     "revisao": ParteConfig(modelo="claude-opus-5.5", esforco="high", alternativas=["claude-sonnet-5.5", "auto"]),
     "estudo": ParteConfig(modelo="claude-haiku-5.5", esforco="medium", alternativas=["claude-sonnet-5.5", "auto"]),
+    # master: decide e distribui (texto curto + acoes tipadas), sem ferramentas: sonnet basta e custa menos que o opus
+    "coordenacao": ParteConfig(modelo="claude-sonnet-5.5", esforco="medium", alternativas=["claude-sonnet-5", "auto"]),
+    "status": ParteConfig(modelo="claude-haiku-5.5", esforco="low", alternativas=["claude-haiku-4.5", "auto"]),
 }
 
 

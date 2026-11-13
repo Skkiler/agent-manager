@@ -54,6 +54,8 @@ class VisaoKanban:
         with self.repo.leitura() as t:
             tarefas = t.listar(T.Tarefa, limite=5000, **filtros)
             prioridade = {o["id"]: o["prioridade"] for o in t.listar(T.Objetivo, limite=5000)}
+        # turnos internos do master/sub-masters vivem na tela Master, nao no quadro (seriam um cartao por fala)
+        tarefas = [tf for tf in tarefas if not (tf.get("entrada") or {}).get("coordenacao")]
         por_estado: dict[str, list[dict]] = {}
         for tf in tarefas:
             por_estado.setdefault(tf["estado"], []).append(tf)

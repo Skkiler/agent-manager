@@ -91,7 +91,9 @@ class ClienteAcp:
         on_update: Atualizacao | None = None,
         env_extra: dict[str, str] | None = None,
         on_notificacao: Callable[[str, dict[str, Any]], None] | None = None,
+        env_base: dict[str, str] | None = None,
     ) -> None:
+        self._env_base = env_base  # None = ambiente do processo; agentes de terceiros recebem um ambiente LIMPO (sem segredos)
         self._on_notificacao = on_notificacao  # extensoes do agente (ex.: _kiro/mcp/status), fora de session/update
         self.comando = comando
         self.cwd = cwd
@@ -117,7 +119,7 @@ class ClienteAcp:
 
     # ---------------------------------------------------------------- ciclo de vida
     def iniciar(self) -> None:
-        env = {**os.environ, **self._env_extra}
+        env = {**(os.environ if self._env_base is None else self._env_base), **self._env_extra}
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
             self._proc = subprocess.Popen(  # noqa: S603 - lista de args, sem shell

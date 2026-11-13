@@ -26,6 +26,7 @@ def anotar(titulo: str, msg: str) -> None:
         print(f"::error title={titulo[:80]}::{' '.join(msg.split())[:300]}")
 
 VISTAS = {
+    "master": ".master-grade .arvore-coord",
     "tarefas": ".kanban .coluna",
     "quadro": ".faixas .faixa",
     "memoria": ".grafo-caixa svg .no",
@@ -78,7 +79,7 @@ def login(nav, base: str, saida: Path, a11y: bool) -> int:
     expect(tela).to_contain_text("Bem-vindo, ana", timeout=6000)
     pg.screenshot(path=str(saida / "login-sucesso.png"))
     expect(tela).to_be_hidden(timeout=6000)
-    expect(pg.locator(".kanban .coluna").first).to_be_visible(timeout=8000)
+    expect(pg.locator(".master-grade .arvore-coord").first).to_be_visible(timeout=8000)  # tela inicial: Master
     passo("primeiro acesso cria a conta, mostra sucesso e abre o painel", pg.locator("#usuario-atual").inner_text() == "ana")
     pg.locator("#usuario-atual").click()
     pg.get_by_role("button", name="Sair da conta").click()
@@ -372,6 +373,26 @@ def fechar_menu(pagina) -> None:
     pagina.locator("#lateral").wait_for(state="hidden")
 
 
+def fluxo_master(pagina, base: str, saida: Path, expect, passo) -> None:
+    """Conversa com o master (agente simulado): pedido -> tarefa criada e executada -> retorno -> consolidacao; abrir a tarefa."""
+    pagina.goto(base + "#/master")
+    pagina.reload()
+    pagina.wait_for_selector(".master-grade .arvore-coord", timeout=8000)
+    pagina.wait_for_timeout(300)
+    antes = pagina.locator(".msg-coord.master").count()
+    pagina.get_by_label("Seu pedido ao master").fill("Revise o projeto demo-master e diga o que achou")
+    pagina.get_by_role("button", name="Enviar").click()
+    expect(pagina.locator(".msg-coord.master")).to_have_count(antes + 2, timeout=20000)  # resposta + consolidacao do lote
+    conversa = pagina.locator(".conversa-master").inner_text()
+    passo("master responde, cria a tarefa e consolida quando ela termina", "Lote concluído" in conversa and "Concluída" in conversa)
+    passo("a arvore mostra a tarefa criada pelo master", pagina.locator(".tarefas-coord li").count() >= 1)
+    pagina.screenshot(path=str(saida / "master.png"))
+    pagina.locator(".msg-coord .criadas button").first.click()
+    expect(pagina.locator("#direita-corpo")).to_contain_text("Tarefa T-", timeout=8000)
+    passo("clicar na tarefa criada abre a conversa dela", pagina.locator("#direita").is_visible())
+    pagina.keyboard.press("Escape")
+
+
 def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     from playwright.sync_api import expect  # a CSP da pagina proibe eval: wait_for_function nao funciona aqui
 
@@ -623,6 +644,7 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.locator("#dlg-geral").get_by_role("button", name="Fechar", exact=True).click()
 
     melhorias(pagina, base, saida, expect, passo)
+    fluxo_master(pagina, base, saida, expect, passo)
 
     pagina.goto(base + "#/ferramentas")
     pagina.reload()

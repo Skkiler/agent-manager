@@ -16,7 +16,7 @@ from forja.dominio.erros import ValidacaoDominio
 
 N, R, P, DKLEN = 2**14, 8, 1, 32  # ~16 MB e ~50 ms por verificacao: caro para forca bruta, imperceptivel para o usuario
 MIN_SENHA, MAX_SENHA = 8, 200
-_NOME = re.compile(r"^[a-z0-9][a-z0-9._-]{2,31}$")
+_NOME = re.compile(r"^[a-z0-9][a-z0-9._@+-]{2,63}$")  # inclui e-mail como nome de usuario
 # senhas mais comuns em vazamentos publicos (amostra pequena; o bloqueio por tentativas cobre o resto)
 _COMUNS = frozenset({"12345678", "123456789", "1234567890", "password", "password1", "senha123", "senha1234", "qwerty123",
                      "11111111", "00000000", "abc12345", "iloveyou", "admin123", "administrador", "forja123", "mudar123"})
@@ -25,7 +25,7 @@ _COMUNS = frozenset({"12345678", "123456789", "1234567890", "password", "passwor
 def normalizar_nome(nome: str) -> str:
     n = (nome or "").strip().casefold()
     if not _NOME.match(n):
-        raise ValidacaoDominio("Usuário: de 3 a 32 caracteres (letras minúsculas, números, ponto, hífen ou sublinhado).")
+        raise ValidacaoDominio("Usuário: de 3 a 64 caracteres (letras, números, ponto, hífen, sublinhado, @ ou +; um e-mail serve).")
     return n
 
 

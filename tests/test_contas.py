@@ -23,7 +23,8 @@ def test_hash_de_senha_com_sal_e_politica():
         with pytest.raises(ValidacaoDominio):
             senhas.validar_senha(ruim, "ana")
     assert senhas.normalizar_nome("  Ana.Silva ") == "ana.silva"
-    for ruim in ("a", "com espaco", "x" * 40, "-comeca"):
+    assert senhas.normalizar_nome("Ana.Silva+forja@Exemplo.com") == "ana.silva+forja@exemplo.com"  # e-mail como usuario
+    for ruim in ("a", "com espaco", "x" * 70, "-comeca"):
         with pytest.raises(ValidacaoDominio):
             senhas.normalizar_nome(ruim)
 

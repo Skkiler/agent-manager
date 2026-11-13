@@ -183,6 +183,33 @@ def _quadro_ler(c: ClienteForja, a: dict[str, Any]) -> Any:
     return c.chamar("POST", "/quadro/retirar", params={"destino": ORIGEM, "limite": limite})
 
 
+TIPOS_CADERNO = ("resolvido", "decisao", "arquivo", "erro", "pendencia", "fato")
+
+
+def _tarefa_atual() -> str:
+    import os
+
+    t = os.environ.get("FORJA_TAREFA_ID") or ""
+    if not t:
+        raise ErroFerramenta("Caderno indisponivel: esta sessao nao esta ligada a uma tarefa da Forja.")
+    return _id_seguro(t)
+
+
+def _caderno_salvar(c: ClienteForja, a: dict[str, Any]) -> Any:
+    """Guarda FORA da janela de contexto o que ja foi resolvido/entendido (consulte depois em vez de carregar de novo)."""
+    tipo, texto = a.get("tipo"), str(a.get("texto") or "").strip()
+    if tipo not in TIPOS_CADERNO or not texto:
+        raise ErroFerramenta(f"Informe `tipo` ({', '.join(TIPOS_CADERNO)}) e `texto`.")
+    r = c.chamar("POST", f"/tarefas/{_tarefa_atual()}/caderno", json_={"tipo": tipo, "texto": texto[:600], "ref": str(a.get("ref") or "")[:200]})
+    return {"id": r.get("id"), "ok": True}
+
+
+def _caderno_consultar(c: ClienteForja, a: dict[str, Any]) -> Any:
+    params = {k: a[k] for k in ("q", "tipo") if a.get(k)}
+    itens = c.chamar("GET", f"/tarefas/{_tarefa_atual()}/caderno", params=params)
+    return [{"tipo": i["tipo"], "texto": i["texto"], "ref": i.get("ref") or None} for i in itens[:30]]
+
+
 def _esquema(props: dict[str, Any], obrigatorios: list[str]) -> dict[str, Any]:
     return {"type": "object", "properties": props, "required": obrigatorios, "additionalProperties": False}
 
@@ -213,6 +240,14 @@ FERRAMENTAS: dict[str, tuple[str, dict[str, Any], Callable[[ClienteForja, dict[s
     "forja_quadro_ler": (
         "Le (e marca como entregues) as mensagens do quadro enderecadas a este agente.",
         _esquema({"limite": {"type": "integer", "minimum": 1, "maximum": 20}}, []), _quadro_ler),
+    "forja_caderno_salvar": (
+        "Caderno da tarefa (fora do contexto): registre em 1 linha o que foi RESOLVIDO, decidido ou entendido, ou uma pendencia. "
+        "Consulte-o em vez de reler arquivos.",
+        _esquema({"tipo": {"enum": list(TIPOS_CADERNO)}, "texto": {"type": "string", "maxLength": 600}, "ref": {"type": "string", "maxLength": 200}},
+                 ["tipo", "texto"]), _caderno_salvar),
+    "forja_caderno_consultar": (
+        "Consulta o caderno desta tarefa (o que ja foi resolvido/decidido, inclusive em sessoes anteriores). Filtro opcional.",
+        _esquema({"q": {"type": "string", "maxLength": 100}, "tipo": {"enum": list(TIPOS_CADERNO)}}, []), _caderno_consultar),
 }
 
 

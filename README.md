@@ -1,300 +1,488 @@
 # Forja
 
-Orquestrador **local** de agentes de IA para desenvolvimento de software. A Forja recebe tarefas, decide como executá-las,
-entrega o trabalho a agentes reais (o **Kiro CLI**, via protocolo ACP), media cada permissão que o agente pede, confere o
-resultado de forma determinística (testes, critérios, alegações) e guarda o conhecimento útil num **segundo cérebro**
-consultável. Tudo roda no seu computador: servidor em `127.0.0.1`, banco SQLite no seu perfil e um painel web no navegador.
+Orquestrador **local** de agentes de IA para desenvolvimento de software. Você conversa com o **master**; ele entende o
+pedido e cria tarefas. A Forja entrega cada tarefa a agentes reais (o **Kiro CLI** e, se você ligar, o **Codex**, ambos pelo
+protocolo ACP), media cada permissão que o agente pede, confere o resultado por código (testes, critérios, escopo, alegações) e
+guarda o conhecimento útil num **segundo cérebro** consultável. Tudo roda no seu computador: servidor em `127.0.0.1`, banco
+SQLite no seu perfil e um painel web no navegador.
 
-> Estado: em uso. Fases 0 a 4 e 9 implementadas e testadas (1080+ testes automatizados, inspeção em navegador real e CI).
-> Detalhes, números medidos e pendências em [`docs/STATUS_IMPLEMENTACAO.md`](docs/STATUS_IMPLEMENTACAO.md); decisões em
-> [`docs/adr/`](docs/adr/).
+> Estado: em uso. Fases 0 a 4 e 9 implementadas e testadas (1118 testes automatizados, inspeção em navegador real e CI).
+> Números medidos e pendências em [`docs/STATUS_IMPLEMENTACAO.md`](docs/STATUS_IMPLEMENTACAO.md); decisões em [`docs/adr/`](docs/adr/).
+> Licença [Apache-2.0](LICENSE).
+
+## Início rápido (fast-start)
+
+Windows, sem administrador. Precisa de **Python 3.12+**, **Git** e do **Kiro CLI** com login feito (`kiro-cli login`).
+
+```powershell
+git clone https://github.com/Skkiler/agent-manager.git forja
+cd forja
+powershell -ExecutionPolicy Bypass -File scripts\instalar.ps1
+```
+
+O instalador cria o ambiente `.venv`, instala as dependências, confere o Kiro, deixa a Forja **no ar continuamente** (sobe
+sozinha ao entrar no Windows e volta se cair) e abre `http://127.0.0.1:8787`. No primeiro acesso a tela pede para criar o
+usuário (pode ser um e-mail) e a senha. Depois:
+
+| Quero… | Comando (`powershell -ExecutionPolicy Bypass -File scripts\iniciar_forja.ps1 …`) |
+|---|---|
+| ver se está no ar | `-Status` |
+| parar agora (volta no próximo login) | `-Parar` |
+| tirar da inicialização | `-RemoverDaInicializacao` |
+| subir à mão, numa janela | `-Abrir` |
+
+Detalhes em [2 INSTALAÇÃO E HOSPEDAGEM](#2-instalação-e-hospedagem).
 
 ---
 
 ## Sumário
 
-1. [Início rápido](#início-rápido)
-2. [Como a Forja funciona](#como-a-forja-funciona)
-3. [O painel, tela por tela](#o-painel-tela-por-tela)
-4. [Ciclo de uma tarefa](#ciclo-de-uma-tarefa)
-5. [Roteamento e modelos](#roteamento-e-modelos)
-6. [Aprovações, autonomia e regras](#aprovações-autonomia-e-regras)
-7. [Verificação: o que a Forja confere sozinha](#verificação-o-que-a-forja-confere-sozinha)
-8. [Projetos, pastas e anexos](#projetos-pastas-e-anexos)
-9. [Desfazer, pastas isoladas e retomada](#desfazer-pastas-isoladas-e-retomada)
-10. [Segundo cérebro (memória)](#segundo-cérebro-memória)
-11. [Contexto econômico](#contexto-econômico)
-12. [Ferramentas dos agentes e MCP](#ferramentas-dos-agentes-e-mcp)
-13. [Integrações externas](#integrações-externas)
-14. [Custo, telemetria e observabilidade](#custo-telemetria-e-observabilidade)
-15. [Segurança](#segurança)
-16. [Onde ficam os seus dados](#onde-ficam-os-seus-dados)
-17. [Hospedagem](#hospedagem)
-18. [Configuração (.env e tela)](#configuração-env-e-tela)
-19. [API](#api)
-20. [Arquitetura do código](#arquitetura-do-código)
-21. [Desenvolvimento e testes](#desenvolvimento-e-testes)
-22. [Limites conhecidos](#limites-conhecidos)
+- [1 VISÃO GERAL](#1-visão-geral)
+  - [1.1 Como a Forja funciona](#11-como-a-forja-funciona)
+  - [1.2 Princípios](#12-princípios)
+- [2 INSTALAÇÃO E HOSPEDAGEM](#2-instalação-e-hospedagem)
+  - [2.1 Pré-requisitos](#21-pré-requisitos)
+  - [2.2 Instalador](#22-instalador)
+  - [2.3 Hospedagem contínua](#23-hospedagem-contínua)
+  - [2.4 Execução manual](#24-execução-manual)
+  - [2.5 Contas e acesso](#25-contas-e-acesso)
+  - [2.6 Docker (só demonstração)](#26-docker-só-demonstração)
+- [3 O PAINEL](#3-o-painel)
+  - [3.1 Áreas](#31-áreas)
+  - [3.2 Oficina pixel art](#32-oficina-pixel-art)
+- [4 MASTER E SUB-MASTERS](#4-master-e-sub-masters)
+  - [4.1 Conversa com o master](#41-conversa-com-o-master)
+  - [4.2 Quando nasce um sub-master](#42-quando-nasce-um-sub-master)
+  - [4.3 Limites](#43-limites)
+- [5 CICLO DE UMA TAREFA](#5-ciclo-de-uma-tarefa)
+  - [5.1 Estados](#51-estados)
+  - [5.2 Etapas](#52-etapas)
+  - [5.3 Subtarefas](#53-subtarefas)
+- [6 AGENTES E MODELOS](#6-agentes-e-modelos)
+  - [6.1 Roteamento por nível](#61-roteamento-por-nível)
+  - [6.2 Perfis por papel no Kiro](#62-perfis-por-papel-no-kiro)
+  - [6.3 Kiro e Codex](#63-kiro-e-codex)
+  - [6.4 Roteamento que aprende](#64-roteamento-que-aprende)
+- [7 CONTROLES DE QUALIDADE](#7-controles-de-qualidade)
+  - [7.1 Aprovações, autonomia e regras](#71-aprovações-autonomia-e-regras)
+  - [7.2 Controle de escopo](#72-controle-de-escopo)
+  - [7.3 Verificação determinística](#73-verificação-determinística)
+- [8 CONTEXTO E STATUS](#8-contexto-e-status)
+  - [8.1 Contexto econômico](#81-contexto-econômico)
+  - [8.2 Gestão de contexto](#82-gestão-de-contexto)
+  - [8.3 Relatos de status](#83-relatos-de-status)
+- [9 PROJETOS, DESFAZER E RETOMADA](#9-projetos-desfazer-e-retomada)
+- [10 SEGUNDO CÉREBRO](#10-segundo-cérebro)
+- [11 FERRAMENTAS, MCP E INTEGRAÇÕES](#11-ferramentas-mcp-e-integrações)
+- [12 CUSTO E OBSERVABILIDADE](#12-custo-e-observabilidade)
+- [13 SEGURANÇA](#13-segurança)
+  - [13.1 Camadas de proteção](#131-camadas-de-proteção)
+  - [13.2 Onde ficam os seus dados](#132-onde-ficam-os-seus-dados)
+- [14 CONFIGURAÇÃO](#14-configuração)
+  - [14.1 Variáveis de ambiente](#141-variáveis-de-ambiente)
+  - [14.2 Preferências da tela](#142-preferências-da-tela)
+- [15 API](#15-api)
+- [16 ARQUITETURA DO CÓDIGO](#16-arquitetura-do-código)
+- [17 DESENVOLVIMENTO E TESTES](#17-desenvolvimento-e-testes)
+- [18 LIMITES CONHECIDOS](#18-limites-conhecidos)
+- [19 LICENÇA](#19-licença)
 
 ---
 
-## Início rápido
+## 1 VISÃO GERAL
 
-Pré-requisitos (Windows, que é o alvo principal; Linux/macOS funcionam para desenvolvimento):
-
-- Python 3.12+ (testado em 3.13) e Git.
-- **Kiro CLI** instalado e autenticado (`kiro-cli login`). Sem ele, a Forja sobe com o agente **simulado** (mock).
-
-```powershell
-# 1. dependências (uma vez)
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-
-# 2. conferir o Kiro (não consome créditos)
-python scripts\diagnostico_kiro.py
-
-# 3. subir a Forja REAL (Kiro de verdade, seus dados, só 127.0.0.1) e abrir o navegador
-powershell -ExecutionPolicy Bypass -File scripts\iniciar_forja.ps1 -Abrir
-```
-
-No primeiro acesso a tela pede para **criar o usuário e a senha** (só funciona no próprio computador). Depois é só entrar.
-
-Para a Forja subir sozinha quando você entrar no Windows:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\iniciar_forja.ps1 -InstalarNaInicializacao   # cria a tarefa agendada
-powershell -ExecutionPolicy Bypass -File scripts\iniciar_forja.ps1 -RemoverDaInicializacao    # remove
-```
-
-`iniciar_forja.ps1` faz backup consistente do banco antes de subir (guarda os 5 mais recentes), liga o Kiro real,
-recusa porta ocupada e nunca lê nem mostra segredos.
-
----
-
-## Como a Forja funciona
+### 1.1 Como a Forja funciona
 
 ```
- Você (navegador)
-     │  login por usuário e senha
+ Você (navegador) ── login por usuário e senha
+     │
      ▼
- Painel web ──► API /api/v1 (FastAPI, só 127.0.0.1) ──► Orquestração (máquina de estados, locks, orçamentos)
+ Painel web ──► API /api/v1 (FastAPI, só 127.0.0.1) ──► Orquestração (estados, locks, orçamentos, escopo)
                                                            │
-                    ┌──────────────────────────────────────┼─────────────────────────────┐
-                    ▼                                      ▼                             ▼
-          Provedor de agente                       Segundo cérebro                 Ferramentas determinísticas
-   (Kiro CLI via ACP; mock nos testes)        (memória + grafo + código, FTS5)   (mapa, estrutura de código, testes…)
-          │   ▲                                             ▲
-          │   └── mediador de permissões (cada pedido do agente vira uma pergunta em linguagem natural)
-          └────── MCP local opcional: o agente consulta a memória e as ferramentas da Forja sem ler arquivos inteiros
+       ┌───────────────────────┬───────────────────────────┼──────────────────────────┐
+       ▼                       ▼                           ▼                          ▼
+ Master / sub-masters   Roteador de agentes         Segundo cérebro            Ferramentas determinísticas
+ (decidem as tarefas)   Kiro (principal) e Codex    (memória, grafo, código)   (mapa, testes, segredos…)
+                        (opcional), via ACP
+                              │   ▲
+                              │   └── mediador de permissões (cada pedido vira uma pergunta em linguagem natural)
+                              └────── MCP local: memória, ferramentas e caderno da tarefa sob demanda
 ```
 
-Princípios que valem em todo o código:
+### 1.2 Princípios
 
 - **Local-first.** O servidor só escuta no próprio computador. Kiro CLI, ACP, MCP e SQLite nunca ficam expostos na rede.
-- **Segredos nunca são lidos.** Nem pela Forja, nem pelo agente (perfil de segurança aplicado no Kiro, falha fechada).
-- **Ferramenta determinística antes de LLM.** Testes, critérios e alegações são conferidos por código, não pela palavra do modelo.
-- **Mock é rotulado.** Evidência simulada nunca valida nada.
+- **Segredos nunca são lidos.** Nem pela Forja, nem pelo agente (perfis de segurança no Kiro; o Codex só roda em pastas sem segredo).
+- **Ferramenta determinística antes de LLM.** Testes, critérios, escopo e alegações são conferidos por código.
+- **Mock é rotulado.** Evidência simulada nunca valida nada; telas mostram "simulado".
 - **Três grafos separados:** execução (tarefas), conhecimento (notas) e código (símbolos e chamadas).
 
 ---
 
-## O painel, tela por tela
+## 2 INSTALAÇÃO E HOSPEDAGEM
 
-Barra de atividades à esquerda; o menu de cada área abre por cima do conteúdo (Ctrl+B). Conversa à direita (Ctrl+Shift+B)
-e painel inferior (Ctrl+J). Tudo navegável por teclado, com descrição para leitores de tela e movimento reduzido respeitado.
+### 2.1 Pré-requisitos
 
-| Área | O que faz |
-|---|---|
-| **Tela de acesso** | Primeiro acesso (cria usuário e senha), login, erro visível, bloqueio com contagem regressiva, "Sua conta" (trocar senha, sair). |
-| **Tarefas** | Quadro Kanban (Backlog, Pronta, Em execução, Precisa de você, Concluída, Falhou). Criar tarefa com critérios sugeridos, preparar, executar, cancelar, **desfazer alterações**, ver **cópias isoladas** e projetos com pastas. |
-| **Conversa** (direita) | Briefing do agente em seções (entendimento, plano, resposta, evidências, premissas, decisões). Uma resposta sua cobre todas as decisões e retoma a execução. Anexos e @menção de arquivos do projeto. Aba **Decisões** com as aprovações pendentes. |
-| **Quadro** | Mensagens tipadas entre master, operador, sistema e agentes (comando, evento, apontamento, pergunta, resultado), por prioridade. |
-| **Memória** | Grafo do segundo cérebro (estilo Obsidian): notas, [[wikilinks]], backlinks, ligações tipadas, base curada da Forja sob demanda, **Revisão (N)**, **Estudar e alimentar**, **Avaliar a busca**. |
-| **Ferramentas** | Catálogo das ferramentas determinísticas, com execução e custo em tokens. |
-| **Integrações** | Jira, GitHub, Trello, Notion, Google Agenda, Gmail, busca web, webhooks: desligados até você configurar; escrita só como proposta aprovada. |
-| **Custo** | Créditos **estimados** por dia, parte, modelo e tarefa; alerta de desvio; taxa de sucesso do roteamento por nível. |
-| **Config** (janela) | Preferências em 7 categorias (Agentes, Aparência, Eficiência, Consumo, Privacidade, Segurança, Manutenção), cada opção com explicação, exemplos e consequências. |
-| **Painel inferior** | Eventos em tempo real (SSE), painel de controle do master e a **Oficina** pixel art. |
+- Windows 10/11 (alvo principal; Linux e macOS servem para desenvolvimento com `python -m forja`).
+- Python 3.12 ou mais novo (testado em 3.13) e Git.
+- **Kiro CLI** instalado e autenticado (`kiro-cli login`). Sem ele a Forja sobe, mas as execuções ficam bloqueadas com o motivo.
+- Opcional: Node.js, para o Codex ([6.3](#63-kiro-e-codex)).
 
-**Oficina pixel art** (só projeta o estado real; pode ser desligada): um personagem por papel (planejador, executor,
-testador, revisor, estudante), animação pela ação atual (lendo, editando, comando, web, pensando, aguardando), contorno pela
-complexidade, barra de orçamento, balão "aguardando você" que abre as decisões, cartão de detalhes, **replay** da execução
-com passos e velocidade, descrição em `aria-live` e som opcional (desligado).
+### 2.2 Instalador
+
+`scripts\instalar.ps1` faz, de forma idempotente (rodar de novo só completa o que falta):
+
+1. confere o Python;
+2. cria `.venv` e instala `requirements.txt`;
+3. diagnostica o Kiro (`scripts\diagnostico_kiro.py`: instalado, login, ACP respondendo), sem consumir créditos;
+4. instala a tarefa agendada e a inicia;
+5. espera o servidor responder e abre o navegador.
+
+Opções: `-Porta 8790`, `-SemInicializacao` (só instala), `-NaoAbrir`.
+
+### 2.3 Hospedagem contínua
+
+#### 2.3.1 Tarefa agendada
+
+A tarefa **"Forja (orquestrador local)"** roda na **sua** conta, sem privilégio de administrador, ao entrar no Windows, sem
+janela. Usa o `kiro-cli` e o login SSO do seu usuário, que é o que um contêiner não teria.
+
+#### 2.3.2 Supervisão e logs
+
+- Se o servidor cair, a supervisão sobe de novo com espera crescente (5 s até 5 min); desiste depois de 10 quedas na mesma hora.
+- Cada subida faz backup consistente do banco antes (guarda os 5 mais recentes) e limpa variáveis de teste do ambiente.
+- Logs em `%LOCALAPPDATA%\Forja\`: `servidor.log`, `servidor.erro.log` e `supervisao.log` (a execução anterior fica em `*.1`).
+
+#### 2.3.3 Comandos de controle
+
+```powershell
+$f = "scripts\iniciar_forja.ps1"
+powershell -ExecutionPolicy Bypass -File $f -Status                   # tarefa, servidor e logs
+powershell -ExecutionPolicy Bypass -File $f -Parar                    # para agora (encerra também os agentes abertos)
+powershell -ExecutionPolicy Bypass -File $f -InstalarNaInicializacao  # (re)instala e inicia
+powershell -ExecutionPolicy Bypass -File $f -RemoverDaInicializacao   # para e remove
+```
+
+### 2.4 Execução manual
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\iniciar_forja.ps1 -Abrir   # Kiro real, numa janela (Ctrl+C para parar)
+python -m forja --abrir                                                     # desenvolvimento (agente simulado por padrão)
+```
+
+O painel pode ser instalado como aplicativo (PWA) pelo Edge/Chrome: "Instalar Forja".
+
+### 2.5 Contas e acesso
+
+- Primeiro acesso pela tela (só no próprio computador). O usuário aceita letras, números, `.`, `_`, `-`, `+` e `@` (e-mail serve).
+- Senha com hash scrypt; sessão só na aba; bloqueio progressivo após erros.
+- Linha de comando: `python -m forja.usuario.contas_cli criar|redefinir|listar --usuario NOME` (pede a senha sem mostrar).
+- Acesso de outro computador só por túnel SSH ou HTTPS autenticado com firewall; nunca expondo a porta diretamente.
+
+### 2.6 Docker (só demonstração)
+
+`compose.yaml` sobe uma Forja **isolada, com agente simulado e dados fictícios**. Não é a forma de uso real: o Kiro CLI e o login
+do Windows não existem no contêiner. Use só para mostrar a interface:
+
+```powershell
+$env:FORJA_PORTA = 8790; docker compose up -d --build
+docker compose exec forja python scripts/semear_demo.py --porta 8787
+docker compose down -v --rmi local      # apaga a demonstração
+```
 
 ---
 
-## Ciclo de uma tarefa
+## 3 O PAINEL
 
-Estados (a interface nunca inventa transição; quem decide é o servidor):
+Barra de atividades à esquerda; o menu de cada área abre por cima do conteúdo (Ctrl+B). Conversa da tarefa à direita
+(Ctrl+Shift+B) e painel inferior (Ctrl+J). Tudo navegável por teclado, com descrição para leitores de tela e movimento reduzido.
+
+### 3.1 Áreas
+
+| Área | O que faz |
+|---|---|
+| **Master** (inicial) | Conversa com o coordenador. Ele cria tarefas e sub-masters, relata o andamento e consolida o resultado. Ao lado, a árvore master → sub-masters → tarefas, com link para cada conversa. |
+| **Tarefas** | Quadro Kanban (Backlog, Pronta, Em execução, Precisa de você, Concluída, Falhou): criar, preparar, executar, cancelar, **desfazer alterações**, cópias isoladas e projetos com pastas. |
+| **Conversa** (direita) | Briefing do agente em seções, relatos de status e verificação da Forja. Uma resposta sua cobre todas as decisões e retoma a execução. Anexos e @menção de arquivos. Aba **Decisões** com as aprovações pendentes. |
+| **Quadro** | Mensagens tipadas entre master, operador, sistema e agentes, por prioridade. |
+| **Memória** | Grafo do segundo cérebro (estilo Obsidian), backlinks, **Revisão (N)**, **Estudar e alimentar**, **Avaliar a busca**. |
+| **Ferramentas** | Catálogo das ferramentas determinísticas, com execução e custo em tokens. |
+| **Integrações** | Conectores externos, desligados até você configurar; escrita só como proposta aprovada. |
+| **Custo** | Créditos **estimados** por dia, parte, modelo e tarefa; alerta de desvio; sucesso do roteamento por nível. |
+| **Config** (janela) | Preferências em 7 categorias, cada opção com explicação, exemplos e consequências. |
+| **Tela de acesso** | Primeiro acesso, login, bloqueio com contagem regressiva, "Sua conta" (trocar senha, sair). |
+
+### 3.2 Oficina pixel art
+
+No painel inferior; só projeta o estado real e pode ser desligada. Um personagem por papel (planejador, executor, testador,
+revisor, estudante), animação pela ação atual, contorno pela complexidade, barra de orçamento, balão "aguardando você",
+**replay** da execução e descrição em `aria-live`.
+
+---
+
+## 4 MASTER E SUB-MASTERS
+
+### 4.1 Conversa com o master
+
+Você escreve o pedido na área **Master**. Cada fala vira um turno do coordenador (parte `coordenacao`, perfil Kiro
+`forja-coordenador`, sem ferramentas). Ele recebe o estado atual montado sem LLM (projetos, tarefas dele, sub-masters) e responde:
+
+- `## Resposta`: para você, curta;
+- `## Ações`: JSON com `criar_tarefa` e `criar_submaster`.
+
+Quem decide é a Forja: cada ação é validada (formato, modo permitido pela sua autonomia, projeto, limites) antes de qualquer coisa
+ser criada; as recusadas aparecem na conversa. Com a preferência `master_executar = executar`, as tarefas criadas já executam; com
+`propor`, ficam prontas para você. Quando todas as tarefas de um lote terminam, o master ganha **um** turno de consolidação.
+Decisões que só você pode tomar continuam na conversa da própria tarefa (o master avisa onde).
+
+### 4.2 Quando nasce um sub-master
+
+Só quando o pedido envolve **dois ou mais projetos** (ou já há sub-master ativo). Cada projeto ganha um coordenador próprio, que
+age só nele e reporta ao master. Em um projeto só, o pedido vira uma tarefa: um coordenador a mais custaria turnos sem ganho.
+
+### 4.3 Limites
+
+| Limite | Valor |
+|---|---|
+| Ações por turno | 6 |
+| Tarefas abertas por coordenador | 12 |
+| Sub-masters ativos | 8 |
+| Turnos do master / de cada sub-master | 40 / 15 |
+| Profundidade | 2 (master → sub-masters → tarefas; sub-master não cria sub-master) |
+
+Esgotado o orçamento, encerre a conversa ("Encerrar conversa") e um master novo é aberto. Os turnos internos não aparecem no Kanban.
+
+---
+
+## 5 CICLO DE UMA TAREFA
+
+### 5.1 Estados
+
+A interface nunca inventa transição; quem decide é o servidor.
 
 ```
 rascunho → classificada → preparada → (aguardando_dependencias) → pronta → atribuida → executando → validando → concluida
                                                                                 │
-                                         aguardando_aprovacao ◄──┤          bloqueada (decisão sua, pasta ocupada, testes)
+                                         aguardando_aprovacao ◄──┤          bloqueada (decisão sua, escopo, pasta, testes)
                                                                                 └──► falhou | cancelada | expirada
 ```
 
+### 5.2 Etapas
+
 1. **Criar**: título, descrição, modo (`analise`, `documentacao`, `alteracao_codigo`, `verificacao`, `estudo`) e critérios de aceite.
 2. **Preparar**: valida dependências; vira `pronta` quando todas concluírem.
-3. **Executar**: reserva as pastas, fotografa o que vai mudar (desfazer), monta o contexto e chama o agente.
-4. **Durante**: cada ferramenta que o agente quer usar passa pelo mediador; orçamentos rígidos (chamadas de ferramenta,
-   laço repetido, chamadas de modelo, tempo) interrompem com motivo.
-5. **Concluir**: a Forja confere testes, critérios e alegações. Sem evidência, não conclui. Precisa de você? Fica `bloqueada`
-   com as decisões agrupadas; responda na conversa e ela retoma.
+3. **Executar**: escolhe o agente, reserva as pastas, fotografa o que vai mudar (desfazer), monta o contexto e chama o agente.
+4. **Durante**: cada ferramenta passa pelo mediador; orçamentos rígidos (chamadas de ferramenta, laço, chamadas de modelo, tempo,
+   arquivos alterados) interrompem ou perguntam.
+5. **Concluir**: a Forja confere testes, critérios, escopo e alegações. Precisa de você? Fica `bloqueada` com as decisões agrupadas.
 
-Tarefas complexas podem ser **divididas em subtarefas** no planejamento (até 4, mais uma tarefa de consolidação), propostas
-no Backlog ou executadas em paralelo, conforme a preferência `subagentes`.
+### 5.3 Subtarefas
+
+Tarefas complexas podem ser divididas no planejamento (até 4, mais uma de consolidação), propostas no Backlog ou executadas em
+paralelo, conforme a preferência `subagentes`.
 
 ---
 
-## Roteamento e modelos
+## 6 AGENTES E MODELOS
 
-A Forja classifica cada tarefa sem LLM (texto, critérios, pastas, anexos, modo) e escolhe o fluxo:
+### 6.1 Roteamento por nível
 
-| Nível | Parte do modelo | Fluxo | Contexto |
-|---|---|---|---|
-| simples | `rapida` (claude-haiku-5.5) | 1 turno | ×0,5 |
-| normal | `execucao` (claude-sonnet-5.5) | 1 turno (+1 de correção se os testes falharem) | ×1 |
-| complexa | `planejamento` (claude-opus-5.5, high) → `execucao` | plano + execução (+1 correção) | ×1,5 |
+A Forja classifica cada tarefa sem LLM (texto, critérios, pastas, anexos, modo):
 
-Partes especiais: `revisao` (opus-5.5, high) e `estudo` (haiku-5.5, usado também para resumir tópicos do segundo cérebro).
-Cada parte tem modelos de reserva terminando em `auto`. Precedência: o que você salvou na tela > `APP_KIRO_MODEL` > padrão da Forja.
+| Nível | Parte do modelo | Fluxo | Contexto | Limite de arquivos |
+|---|---|---|---|---|
+| simples | `rapida` (claude-haiku-5.5) | 1 turno | ×0,5 | 3 |
+| normal | `execucao` (claude-sonnet-5.5) | 1 turno (+1 correção se os testes falharem) | ×1 | 10 |
+| complexa | `planejamento` (claude-opus-5.5, high) → `execucao` | plano + execução (+1 correção) | ×1,5 | 25 |
+
+Partes especiais: `revisao` (opus-5.5, high), `estudo` (haiku-5.5), `coordenacao` (sonnet-5.5, médio) e `status` (haiku-5.5,
+baixo). Cada parte tem reservas terminando em `auto`. Precedência: o que você salvou na tela > `APP_KIRO_MODEL` > padrão.
 Modelo inexistente na conta bloqueia a execução (nunca roda num modelo diferente sem avisar).
 
-**Roteamento que aprende:** se um nível tem menos de 60% de sucesso em 5+ execuções, as próximas sobem um degrau. Nunca rebaixa
-sozinho; nível forçado na tarefa (`politicas.complexidade`) nunca muda.
+### 6.2 Perfis por papel no Kiro
+
+A Forja grava em `~/.kiro/agents/` o perfil base `forja` e um por papel: `forja-planejador` (lê, sem escrita/shell),
+`forja-executor`, `forja-revisor` (só leitura), `forja-estudo` (só leitura) e `forja-coordenador` (sem ferramentas). Todos têm as
+mesmas regras **deny** de segredos e o contrato de escopo no prompt. A cada parte a sessão troca para o perfil do papel; se ele não
+existir, usa o `forja`; se nenhum existir, a execução é bloqueada (falha fechada).
+
+### 6.3 Kiro e Codex
+
+#### 6.3.1 Distribuição
+
+O Codex entra como segundo agente pelo mesmo protocolo (adaptador oficial `codex-acp`). Cada agente tem **contexto separado**: a
+sessão pertence a quem a abriu e uma retomada volta para ele. Preferência `distribuicao_provedores`:
+
+| Modo | Comportamento |
+|---|---|
+| `so_kiro` (padrão) | Tudo no Kiro; o Codex nem é consultado. |
+| `auto` | Kiro primeiro; Codex de reserva quando o Kiro está indisponível (sem CLI, sem login, limite de uso). |
+| `equilibrar` | Tarefas simples, revisões e status no Codex; o resto no Kiro (cada um é reserva do outro). |
+| `codex_primeiro` | Codex primeiro, Kiro de reserva. |
+
+A reserva só acontece quando o agente falhou **antes** de produzir trabalho; o que falhou fica 15 min em resfriamento.
+
+#### 6.3.2 Como ligar o Codex
+
+```powershell
+npm i -g @agentclientprotocol/codex-acp     # adaptador ACP (precisa de Node.js)
+codex login                                  # plano ChatGPT
+```
+
+Depois, em Config > Consumo: ligue `codex_ativo` e escolha a distribuição. `APP_CODEX_ACP_COMMAND` e `APP_CODEX_MODEL` são opcionais.
+Confira as regras da sua organização antes de usar o Codex com código de empresa.
+
+#### 6.3.3 Segurança do Codex
+
+O Codex não tem as regras deny que a Forja aplica no Kiro. Por isso, em falha fechada:
+
+- o processo recebe ambiente limpo (sem variáveis com cara de segredo e sem `APP_*`/`FORJA_*`; chave de API por variável não chega);
+- só trabalha em pastas **sem** arquivos com cara de segredo (`.env`, chaves, credenciais); se houver, a tarefa fica bloqueada;
+- modo da sessão: somente leitura para planejar, revisar, estudar, coordenar e status; escrita com aprovação para executar;
+  nunca acesso total. Modo desconhecido = bloqueio.
+
+### 6.4 Roteamento que aprende
+
+Se um nível tem menos de 60% de sucesso em 5+ execuções, as próximas sobem um degrau. Nunca rebaixa sozinho; nível forçado na
+tarefa (`politicas.complexidade`) nunca muda.
 
 ---
 
-## Aprovações, autonomia e regras
+## 7 CONTROLES DE QUALIDADE
 
-- **Por ação, agrupadas, com adendo.** "Posso excluir forçadamente `build`?" em vez do comando cru; pedidos simultâneos viram uma
-  decisão; você aprova todos, alguns ou nenhum e pode escrever um adendo, que o agente recebe. Sem resposta no prazo: **negado**.
-- **Nível de autonomia:** `restrito` (pergunta tudo), `liberado` (lê e edita na pasta de trabalho sem perguntar), `total`
-  (também roda comandos dentro da pasta). Em qualquer nível, **sempre perguntam**: excluir, publicar, descartar alterações, instalar
-  dependências, acessar a rede, agir fora da pasta e ações não identificadas.
-- **Métodos (tags)** como "Cauteloso" ou "Orientado a testes" e **observações guia** (regras suas enviadas em toda tarefa).
-- **Regras de controle** (Configurações > Segurança): negar, sempre perguntar ou aprovar por tipo de ação, trecho do comando e
-  caminho (ex.: `*migrations*`). Vale a mais restritiva. Nenhuma regra libera segredo, pasta de consulta ou ação que sempre pergunta.
+### 7.1 Aprovações, autonomia e regras
 
----
+- **Por ação, agrupadas, com adendo.** "Posso excluir forçadamente `build`?" em vez do comando cru; você aprova todos, alguns ou
+  nenhum e pode escrever um adendo, que o agente recebe. Sem resposta no prazo: **negado**.
+- **Autonomia:** `restrito` (pergunta tudo), `liberado` (lê e edita na pasta de trabalho), `total` (também roda comandos na pasta).
+  Sempre perguntam: excluir, publicar, descartar alterações, instalar dependências, rede, fora da pasta e ações não identificadas.
+- **Métodos (tags)** e **observações guia** enviadas em toda tarefa.
+- **Regras de controle** (Config > Segurança): negar, sempre perguntar ou aprovar por tipo de ação, comando e caminho. Vale a mais
+  restritiva; nenhuma regra libera segredo.
 
-## Verificação: o que a Forja confere sozinha
+### 7.2 Controle de escopo
 
-- **Testes do projeto** (pytest, npm, cargo, go, conforme o projeto declara): primeiro os afetados pelos arquivos alterados, depois a
-  suíte completa. Se falharem, a falha volta ao agente **uma vez** para correção. O resultado real vira evidência.
-- **Isolamento dos testes:** árvore de processos presa (Job Object no Windows), teto de memória, TMP próprio; modo estrito troca
-  o HOME e corta a rede. Proteção contra efeitos colaterais comuns, não contra código malicioso.
-- **Critérios verificáveis:** `testes passam` e `arquivo: caminho` são conferidos; os demais ficam para você.
-- **Alegações:** "rodei os testes", "criei o arquivo X" são comparadas com as ferramentas que o agente realmente usou.
-- **Plano com decisão:** se o plano tiver uma decisão sua, a execução para **antes** de mexer em qualquer coisa.
+Contra o agente "esticar" (fazer mais do que foi pedido, como criar documentação ou refatorar sem pedido). A causa medida é o
+prompt do kiro-cli priorizar proatividade sobre o prompt do agente. A Forja não confia só na instrução:
 
----
+1. **Contrato de escopo** forte e curto no perfil e em cada pedido.
+2. **Durante:** passou do limite de arquivos do nível ([6.1](#61-roteamento-por-nível)), cada nova escrita **pergunta**, mesmo em
+   autonomia `liberado`/`total`.
+3. **Depois:** compara os arquivos alterados (medidos pelo ponto de restauração) com o plano e o limite e detecta documentação não
+   pedida. Com `controle_escopo = pausar` (padrão), a tarefa fica `bloqueada` com a lista: desfaça com um clique ou responda
+   aceitando. `avisar` só registra; `desligado` não confere.
 
-## Projetos, pastas e anexos
+### 7.3 Verificação determinística
 
-Um projeto tem pastas de **trabalho** (o agente pode alterar, conforme a autonomia) e de **consulta** (só leitura, em qualquer
-nível). Anexos de texto (redigidos) e imagens entram no pedido marcados como dado, nunca como instrução (spotlighting com código
-aleatório por prompt). O explorador do projeto esconde `.env`, chaves e pastas ignoradas.
-
----
-
-## Desfazer, pastas isoladas e retomada
-
-- **Desfazer por tarefa:** antes de escrever, a Forja guarda uma cópia da pasta (fora do projeto e do Git). O botão volta só os
-  arquivos que ninguém alterou depois; os outros aparecem como conflito (forçar exige confirmação).
-- **Tarefas em paralelo:** pasta ocupada + Git = cópia isolada em `.worktrees/` num branch `forja/<tarefa>`; nada é mesclado sozinho.
-  Sem Git, a segunda tarefa espera e retoma sozinha quando a pasta libera.
-- **Queda do servidor:** execuções interrompidas ficam retomáveis pelo checkpoint; com `retomar_apos_queda = automatico`, retomam
-  sozinhas no máximo uma vez.
-- **Retomada compacta:** a Forja resume (sem LLM) o que a rodada anterior fez; se o contexto passou de 120 mil tokens, retoma numa
-  sessão nova com esse resumo em vez de recarregar o histórico.
+- **Testes do projeto** (pytest, npm, cargo, go): primeiro os afetados, depois a suíte. Falhou: volta ao agente **uma vez**.
+- **Isolamento dos testes:** árvore de processos presa (Job Object), teto de memória, TMP próprio; modo estrito troca HOME e corta rede.
+- **Critérios verificáveis:** `testes passam` e `arquivo: caminho`.
+- **Alegações** ("rodei os testes") comparadas com as ferramentas usadas de fato.
+- **Plano com decisão:** para **antes** de mexer em qualquer coisa.
 
 ---
 
-## Segundo cérebro (memória)
+## 8 CONTEXTO E STATUS
 
-- **Notas** com tipo, namespace (`publico`, `pessoal`, `terceiros`, `empresa/<id>`), fonte, tags e estado epistemológico
+### 8.1 Contexto econômico
+
+O agente recebe só o necessário: protocolo curto e fixo (cache de prefixo), memórias relevantes dentro de um orçamento
+(`contexto_orcamento_tokens`), resumo do **grafo de funções** do projeto e referências curtas (`[M1]`). Com o MCP ligado, consulta
+memória e índice de código sob demanda em vez de ler arquivos inteiros.
+
+### 8.2 Gestão de contexto
+
+O ACP não deixa a Forja apagar mensagens da janela do Kiro. Então:
+
+- **Caderno da tarefa** (fora da janela): o agente registra pelo MCP (`forja_caderno_salvar`) o que já resolveu, decidiu ou entendeu
+  e consulta depois (`forja_caderno_consultar`) em vez de reler arquivos. Itens são redigidos e sem duplicata.
+- **Ficha de estado** montada sem LLM: objetivo, critérios, caderno, alterações feitas e última verificação.
+- **Renovação de sessão:** antes da etapa de execução do plano, do turno de adendos e da rodada de correção, se a sessão passou de
+  `contexto_limite_sessao` (padrão 120 mil tokens medidos pelo Kiro), a Forja abre sessão nova com a ficha. O texto bruto continua
+  no banco e nos artefatos.
+- Aviso `kiro.contexto_inicial_alto` quando o primeiro turno já passa de 40% do limite (steering, skills ou arquivos grandes demais).
+
+### 8.3 Relatos de status
+
+Preferência `status_resumos`:
+
+- `deterministico`: frases montadas dos eventos ("lendo auth.py", "testes falharam"), sem custo. `GET /execucoes/{id}/status`.
+- `marcos` (padrão): quando uma tarefa termina ou para, um modelo barato (parte `status`, haiku, esforço baixo) escreve 1 a 3
+  frases claras, **em lote** (até 6 tarefas por chamada, espera de 45 s, no máximo 20 chamadas por hora), sem ferramentas, só com
+  os fatos dados. Falhou ou passou do teto: cai na frase determinística.
+- O relato vai para a conversa da tarefa (se o agente não falou nela) e para a conversa do master que a criou.
+
+---
+
+## 9 PROJETOS, DESFAZER E RETOMADA
+
+- **Projetos:** pastas de **trabalho** (o agente pode alterar, conforme a autonomia) e de **consulta** (só leitura). Anexos entram
+  marcados como dado, nunca como instrução (spotlighting com código aleatório por pedido).
+- **Desfazer por tarefa:** antes de escrever, a Forja guarda uma cópia (fora do projeto e do Git). O botão volta só os arquivos que
+  ninguém alterou depois; os outros aparecem como conflito.
+- **Paralelo:** pasta ocupada + Git = cópia isolada em `.worktrees/` num branch `forja/<tarefa>`; sem Git, a segunda tarefa espera.
+- **Queda do servidor:** execuções interrompidas ficam retomáveis pelo checkpoint (`retomar_apos_queda`).
+- **Retomada compacta:** resumo sem LLM do que a rodada anterior fez; contexto grande demais = sessão nova com a ficha.
+
+---
+
+## 10 SEGUNDO CÉREBRO
+
+- **Notas** com tipo, namespace (`publico`, `pessoal`, `terceiros`, `empresa/<id>`), fonte, tags e estado
   (`candidato → observado → verificado → validado`, além de contestado, obsoleto, substituído, revogado). Validar exige evidência
-  **real**; PII e segredos são redigidos antes de gravar; resultados são sempre dados não confiáveis.
-- **Busca** por termos (SQLite FTS5 com radicais, sinônimos e cobertura ponderada), símbolos de código, relações do grafo e,
-  opcionalmente, semântica local (inativa por padrão). Notas realmente usadas pelas tarefas ganham um reforço pequeno.
-- **Base curada da Forja** (`forja/conhecimento_base/`, ~70 notas em 10 áreas: engenharia, segurança, DevOps, banco, front-end,
-  UX, QA, RPA, Python e agentes), somente leitura, organizada em tópicos e subtópicos. **Pacotes opcionais** (ex.: FastAPI) em
-  `forja/conhecimento_pacotes/`.
-- **Alimentação:** "Estudar e alimentar" pede a um agente que estude uma pasta permitida ou um tópico (com fontes) e crie notas
-  candidatas ligadas por tópico. Ao concluir tarefas reais, a Forja registra decisões e aprendizados por projeto.
-- **Organização automática** (a cada 30 min ou "Organizar agora", local e sem IA): sugere unir duplicatas, marcar notas velhas,
-  ligar notas soltas e criar **tópicos**. Aceitar um tópico pede ao **Kiro** (parte `estudo`, modelo rápido) uma nota-tópico que
-  resume o grupo e liga todas as notas a ela. Nada muda sem você aceitar na fila **Revisão (N)**.
+  real; PII e segredos são redigidos antes de gravar.
+- **Busca** por termos (FTS5 com radicais e sinônimos), símbolos de código, relações do grafo e, opcionalmente, semântica local.
+- **Base curada** (`forja/conhecimento_base/`, ~70 notas em 10 áreas) e **pacotes opcionais** (`forja/conhecimento_pacotes/`).
+- **Alimentação:** "Estudar e alimentar" cria notas candidatas a partir de uma pasta permitida ou tópico; tarefas reais registram
+  decisões e aprendizados por projeto.
+- **Organização automática** (local, sem IA): sugere unir duplicatas, marcar notas velhas, ligar soltas e criar tópicos. Aceitar um
+  tópico pede ao Kiro (parte `estudo`) uma nota-tópico. Nada muda sem você aceitar em **Revisão (N)**.
 
 ---
 
-## Contexto econômico
+## 11 FERRAMENTAS, MCP E INTEGRAÇÕES
 
-O agente recebe só o necessário: protocolo curto e fixo (cache de prefixo), memórias relevantes dentro de um orçamento de tokens
-(`contexto_orcamento_tokens`), resumo do **grafo de funções** do projeto (até ~400 tokens) e referências curtas (`[M1]`) para citar.
-Só o que foi citado conta como útil. Na retomada, vai apenas o que a rodada anterior usou. Com o MCP ligado, o agente consulta a
-memória e o índice de código sob demanda em vez de ler arquivos inteiros.
-
----
-
-## Ferramentas dos agentes e MCP
-
-31 ferramentas determinísticas (`GET /api/v1/ferramentas`), entre elas:
-`codigo.estrutura` (mapa, definição, referências, impacto, testes afetados, função, grafo), `codigo.outline`, `repo.mapa`,
-`testes.resumir_saida`, `logs.agrupar_falhas`, `git.diff_analisar`, `segredos.varrer`, `sql.inspecionar`, `env.verificar`
-(só presença de variáveis, nunca valores), `tokens.orcar`, `vault.indexar`, `web.buscar`/`web.ler_pagina` e as de integrações.
-Ferramentas de arquivo só enxergam as **pastas permitidas** (desligado por padrão).
-
-**MCP da Forja** (opcional, stdio, sem porta): `forja_listar_ferramentas`, `forja_executar_ferramenta`, `forja_buscar_memoria`,
-`forja_navegar_memoria`, `forja_propor_nota`, `forja_quadro_ler`, `forja_quadro_publicar`. Cada uso passa pelas suas aprovações.
+- **31 ferramentas determinísticas** (`GET /api/v1/ferramentas`): `codigo.estrutura`, `repo.mapa`, `testes.resumir_saida`,
+  `logs.agrupar_falhas`, `git.diff_analisar`, `segredos.varrer`, `env.verificar` (só presença), `tokens.orcar` e outras. As de
+  arquivo só enxergam as **pastas permitidas**.
+- **MCP da Forja** (stdio, sem porta; 9 ferramentas): `forja_listar_ferramentas`, `forja_executar_ferramenta`,
+  `forja_buscar_memoria`, `forja_navegar_memoria`, `forja_propor_nota`, `forja_quadro_ler`, `forja_quadro_publicar`,
+  `forja_caderno_salvar`, `forja_caderno_consultar`. Cada uso passa pelas suas aprovações.
+- **Integrações** (Jira, GitHub, Trello, Notion, Google Agenda, Gmail, busca web, webhook e fontes locais): nascem desligadas; a
+  tela recebe só o **nome** da variável (`FORJA_INT_*`), o valor fica no `.env` do seu perfil; só HTTPS; escrita só como proposta.
 
 ---
 
-## Integrações externas
+## 12 CUSTO E OBSERVABILIDADE
 
-Jira, GitHub, Trello, Notion, Google Agenda, Gmail, agenda por URL, busca web (Brave ou SearXNG) e webhook de saída, além de
-fontes locais (cofre Markdown, `.ics`, `.mbox`, planilhas, SQLite). Todas nascem **desligadas**. A tela recebe só o **nome** da
-variável (`FORJA_INT_*`); o valor fica no `.env` do seu perfil. Somente HTTPS, restritas ao host configurado, com limite por
-minuto e auditoria. **Escrita** (comentar, criar cartão, transicionar) só como proposta que você aprova em Integrações.
-
----
-
-## Custo, telemetria e observabilidade
-
-- **Custo:** créditos estimados = turnos × multiplicador do modelo (lista da sua conta); mock custa zero; alerta quando a semana
-  passa do dobro da média. É estimativa: o valor cobrado aparece no painel da conta Kiro.
-- **Telemetria OpenTelemetry** (desligada por padrão): rastros `gen_ai.*` (`invoke_agent`, `chat`, `execute_tool`) em JSONL nos logs
-  ou enviados a um coletor OTLP **só em loopback** (`APP_OTEL_ENDPOINT`). Nunca levam prompt, resposta ou segredo.
-- **Eventos** de tudo (SSE com replay por `Last-Event-ID`), logs JSON sanitizados e `GET /api/v1/recursos` (CPU, RAM, disco).
+- **Custo:** créditos estimados = turnos × multiplicador do modelo; mock custa zero; alerta quando a semana passa do dobro da média.
+- **Telemetria OpenTelemetry** (desligada): rastros `gen_ai.*` em JSONL ou para coletor OTLP **só em loopback**; sem prompt nem segredo.
+- **Eventos** (SSE com replay), logs JSON sanitizados e `GET /api/v1/recursos`.
 
 ---
 
-## Segurança
+## 13 SEGURANÇA
+
+### 13.1 Camadas de proteção
 
 | Camada | Proteção |
 |---|---|
-| Rede | Bind em `127.0.0.1`; checagem de `Host` e `Origin` (CSRF/DNS rebinding); limite de requisições; CSP sem `unsafe-inline`. |
-| Acesso | Login por usuário e senha (scrypt com sal), sessão só na aba, expiração por inatividade e em 12 h, bloqueio progressivo por conta e por endereço, mesma resposta para usuário inexistente. Token da API para scripts/MCP. |
-| Agente | Perfil `forja` no Kiro com regras **deny** para segredos (falha fechada se o perfil não aparecer), mediador de permissões, pastas de consulta só leitura, orçamentos rígidos e detecção de laço. |
-| Dados | Redação de PII/segredos, conteúdo recuperado marcado como dado (spotlighting), ACL por namespace antes de qualquer busca. |
-| Repositório | `.gitignore`/`.kiroignore` testados (`tests/test_git_safe.py`), **gitleaks** no pre-commit e no CI (histórico inteiro, binário verificado por sha256). |
-| Testes | Ambiente limpo (sem variáveis com cara de segredo), caixa de areia, tempo máximo. |
+| Rede | Bind em `127.0.0.1`; checagem de `Host` e `Origin`; limite de requisições; CSP sem `unsafe-inline`. |
+| Acesso | Usuário e senha (scrypt), sessão só na aba, expiração, bloqueio progressivo, mesma resposta para usuário inexistente. |
+| Agentes | Perfis `forja*` no Kiro com **deny** para segredos (falha fechada); Codex com ambiente limpo e só em pastas sem segredo; mediador de permissões; orçamentos; controle de escopo. |
+| Coordenação | Ações do master validadas e limitadas; nunca aprova ação sensível nem executa trabalho. |
+| Dados | Redação de PII/segredos, conteúdo recuperado marcado como dado, ACL por namespace. |
+| Repositório | `.gitignore`/`.kiroignore` testados, **gitleaks** no pre-commit e no CI. |
 
-O que nunca é feito sem você: excluir, publicar (push), descartar alterações, instalar dependências, acessar a rede, agir fora
-da pasta, deploy ou produção.
+Nunca sem você: excluir, publicar, descartar alterações, instalar dependências, rede, fora da pasta, deploy ou produção.
 
----
+### 13.2 Onde ficam os seus dados
 
-## Onde ficam os seus dados
-
-Tudo que é seu fica **fora do repositório**, em `%LOCALAPPDATA%\Forja\perfis\<usuario>\` (mude com `APP_USER_HOME`/`APP_PROFILE`):
+Fora do repositório, em `%LOCALAPPDATA%\Forja\perfis\<usuario>\` (mude com `APP_USER_HOME`/`APP_PROFILE`):
 
 ```
-dados\forja.sqlite3        tarefas, memória, grafo, preferências, contas (hash), sessões
-dados\backups\             cópias consistentes feitas pelo iniciar_forja.ps1
+dados\forja.sqlite3        tarefas, master, caderno, memória, grafo, preferências, contas (hash), sessões
+dados\backups\             cópias consistentes feitas a cada subida
 dados\artefatos\           respostas e relatórios (endereçados por hash)
 dados\pontos\              cópias para o "desfazer"
 credenciais\api_token.txt  token da API (scripts e MCP)
@@ -302,133 +490,118 @@ credenciais\api_token.txt  token da API (scripts e MCP)
 logs\                      logs JSON sanitizados e telemetria opcional
 ```
 
-Backup manual: `python scripts\backup_banco.py`. Migrar de `./data` (modo legado): `python scripts\migrar_dados_usuario.py --executar`.
+Backup manual: `python scripts\backup_banco.py`. Migrar de `./data`: `python scripts\migrar_dados_usuario.py --executar`.
 
 ---
 
-## Hospedagem
+## 14 CONFIGURAÇÃO
 
-| Forma | Quando usar | Kiro real? |
-|---|---|---|
-| **Nativa (recomendada)**: `scripts\iniciar_forja.ps1` | Uso diário neste computador. | **Sim**: usa o `kiro-cli` e o login do seu usuário do Windows. |
-| `python -m forja --abrir` | Desenvolvimento. | Sim, com `APP_KIRO_ACP_ENABLED=true`. |
-| Docker (`compose.yaml`) | Demonstração isolada com dados fictícios. | **Não**: o Kiro CLI do Windows e o login não existem no contêiner. |
+### 14.1 Variáveis de ambiente
 
-A forma nativa é a certa para um computador só. O Docker não traz ganho aqui: o agente real depende do `kiro-cli` e do seu login
-SSO no Windows, e a Forja já isola o que importa (loopback, perfil de dados, perfil de segurança no Kiro, caixa de areia dos testes).
-O painel pode ser instalado como aplicativo (PWA) pelo Edge/Chrome: "Instalar Forja".
-
-Docker, se quiser a demonstração:
-
-```powershell
-$env:FORJA_PORTA = 8790
-docker compose up -d --build
-docker compose exec forja python scripts/semear_demo.py --porta 8787 --pasta-trabalho /tmp/forja-demo-proj
-docker compose exec forja python -m forja.usuario.contas_cli criar --usuario ana   # pede a senha
-# http://127.0.0.1:8790
-```
-
-Contas pela linha de comando (qualquer forma): `python -m forja.usuario.contas_cli criar|redefinir|listar --usuario NOME`.
-
----
-
-## Configuração (.env e tela)
-
-A maior parte se ajusta na tela (Config). O `.env` (modelo em `.env.example`; nunca commitado) define o que vale antes da tela:
+O `.env` (modelo em `.env.example`; nunca commitado) define o que vale antes da tela:
 
 | Variável | Padrão | Para quê |
 |---|---|---|
-| `APP_PORT` / `APP_BIND_HOST` | 8787 / 127.0.0.1 | Endereço do servidor. Fora de loopback exige `APP_ALLOW_LAN_BIND=true` e login. |
+| `APP_PORT` / `APP_BIND_HOST` | 8787 / 127.0.0.1 | Endereço. Fora de loopback exige `APP_ALLOW_LAN_BIND=true` e login. |
 | `APP_REQUIRE_AUTH` | true | Exige login (desligue só em testes). |
 | `APP_SESSION_TTL_MINUTES` | 60 | Inatividade máxima da sessão. |
 | `APP_KIRO_ACP_ENABLED` | false | Liga o Kiro real (o `iniciar_forja.ps1` liga). |
 | `APP_KIRO_CLI_PATH` / `APP_KIRO_MODEL` | (auto) | Caminho do CLI e modelo padrão. |
+| `APP_CODEX_ACP_COMMAND` / `APP_CODEX_MODEL` | (auto) | Comando do adaptador do Codex (`codex-acp` no PATH) e modelo. |
 | `APP_KIRO_PROMPT_TIMEOUT_SECONDS` | 300 | Tempo máximo por turno do agente. |
-| `APP_APPROVAL_TIMEOUT_SECONDS` | 900 | Prazo para responder a uma aprovação (depois: negado). |
+| `APP_APPROVAL_TIMEOUT_SECONDS` | 900 | Prazo de uma aprovação (depois: negado). |
 | `APP_CONTEXT_ENABLED` / `APP_CONTEXT_NAMESPACES` / `APP_CONTEXT_BUDGET_TOKENS` | true / publico / 2000 | Memória no contexto. |
 | `APP_MEMORY_ALLOWED_NAMESPACES` | publico,pessoal | Namespaces desta instância. |
 | `APP_OTEL_ENDPOINT` | 127.0.0.1:4318 | Coletor OpenTelemetry (só loopback). |
 | `APP_USER_HOME` / `APP_PROFILE` / `APP_DATA_DIR` | (perfil) | Onde ficam os dados. |
 
-Preferências da tela que mais mudam o comportamento: nível de autonomia, correção automática, limites de ferramentas e de tempo,
-desfazer, pastas isoladas, subagentes, roteamento que aprende, retomada após queda, isolamento dos testes, modelos por parte,
-pastas permitidas/proibidas, regras de controle, organização da memória, pacotes de conhecimento, MCP, busca semântica e telemetria.
+### 14.2 Preferências da tela
+
+As que mais mudam o comportamento:
+
+| Categoria | Preferências |
+|---|---|
+| Agentes | autonomia, correção automática, `subagentes`, `controle_escopo` (pausar/avisar/desligado), `master_executar` (executar/propor), métodos, observações guia |
+| Eficiência | limites de ferramentas e tempo, contexto e orçamento, `contexto_limite_sessao`, `status_resumos` (desligado/deterministico/marcos), roteamento que aprende, MCP |
+| Consumo | modelos por parte, `codex_ativo`, `distribuicao_provedores` |
+| Segurança | pastas permitidas/proibidas, regras de controle, isolamento dos testes |
+| Manutenção | desfazer, pastas isoladas, retomada após queda, organização da memória, pacotes, telemetria |
 
 ---
 
-## API
+## 15 API
 
-Documentação interativa em `http://127.0.0.1:8787/api/docs`. Principais grupos (todas sob `/api/v1`, com sessão ou token):
+Documentação interativa em `http://127.0.0.1:8787/api/docs`. Todas sob `/api/v1`, com sessão ou token:
 
 | Grupo | Exemplos |
 |---|---|
 | Acesso | `GET /auth/estado`, `POST /auth/configurar`, `POST /auth/entrar`, `POST /auth/sair`, `POST /auth/senha` |
+| Master | `GET /master`, `POST /master/conversa`, `GET /coordenacoes/{id}`, `POST /coordenacoes/{id}/encerrar` |
 | Tarefas | `POST /projetos`, `/objetivos`, `/tarefas`, `POST /tarefas/{id}/transicao`, `POST /tarefas/{id}/execucoes`, `POST /execucoes/{id}/iniciar\|pausar\|cancelar` |
-| Conversa | `GET/POST /tarefas/{id}/conversa`, `GET /tarefas/{id}/contexto`, anexos em `/tarefas/{id}/anexos/*` |
+| Conversa e contexto | `GET/POST /tarefas/{id}/conversa`, `GET /tarefas/{id}/contexto`, `GET/POST /tarefas/{id}/caderno`, `GET /execucoes/{id}/status`, anexos |
 | Aprovações | `GET /aprovacoes`, `POST /aprovacoes/{id}/decidir`, `POST /aprovacoes/decidir-lote` |
 | Desfazer e isolamento | `GET /tarefas/{id}/restauracao`, `POST /restauracao/{id}/desfazer`, `GET/DELETE /isolamentos` |
-| Memória | `POST /memorias`, `GET /memorias/buscar`, `GET /memorias/navegar`, `GET /memorias/revisao`, `POST /memorias/organizar`, `POST /memorias/sugestoes/{id}/decidir`, `/conhecimento/*`, `POST /estudos` |
+| Memória | `POST /memorias`, `GET /memorias/buscar`, `GET /memorias/navegar`, `GET /memorias/revisao`, `POST /memorias/organizar`, `POST /estudos` |
 | Visões | `GET /kanban`, `GET /conhecimento/grafo`, `GET /oficina`, `GET /execucoes/{id}/replay`, `GET /custos`, `GET /roteamento/estatisticas` |
-| Sistema | `GET /saude` (pública), `/recursos`, `/kiro/status`, `/preferencias`, `/configuracao`, `/ferramentas`, `/integracoes`, `/quadro`, `GET /eventos/stream` (SSE) |
+| Sistema | `GET /saude` (pública), `/recursos`, `/kiro/status`, `/provedores`, `/preferencias`, `/configuracao`, `/ferramentas`, `/integracoes`, `/quadro`, `GET /eventos/stream` |
 
 ---
 
-## Arquitetura do código
+## 16 ARQUITETURA DO CÓDIGO
 
 ```
 forja/
   servidor/        FastAPI: app, middleware de segurança, rotas por área (só tradução HTTP)
-  orquestracao/    casos de uso: servico (estados, execuções), aprovacoes, roteamento, restauracao, isolamento,
-                   subtarefas, aprendizado_rotas, custos, organizacao, oficina, estudos, contas_servico, memoria_servico…
-  adapters/        kiro_acp (cliente ACP, provedor, mediador, perfil, sessão), sqlite (tabelas, repositório, FTS), agentes_mock
-  dominio/         contratos Pydantic, estados, erros, tempo (sem dependências externas)
-  memoria/         modelo (namespaces/ACL/estados), saneamento, indexador, base curada, semântica opcional
-  contexto/        construtor de contexto com orçamento
-  conversa/        briefing (seções, decisões, subtarefas) e conferência de alegações
-  ferramentas/     ferramentas determinísticas, verificação de testes e caixa de areia
-  seguranca/       ações (descrição/risco), pastas, regras do usuário, spotlighting, senhas, autenticação
-  preferencias/    registro declarativo das opções e serviço com aplicação imediata
-  integracoes/     conectores de rede e locais
-  observabilidade/ logs, sanitização, recursos, telemetria OTel
-  mcp/             servidor MCP da Forja (stdio)
+  orquestracao/    casos de uso: servico, coordenacao (master), caderno, status, escopo, aprovacoes, roteamento,
+                   restauracao, isolamento, subtarefas, custos, organizacao, oficina, estudos…
+  agentes/         contrato do provedor, estilo/autonomia e roteador Kiro/Codex
+  adapters/        kiro_acp (cliente ACP, provedor, mediador, perfis), codex_acp, sqlite, agentes_mock
+  dominio/         contratos Pydantic, estados, erros, tempo
+  memoria/ contexto/ conversa/ ferramentas/ seguranca/ preferencias/ integracoes/ observabilidade/ mcp/
   painel/estatico/ HTML/CSS/JS sem build (módulos ES), só consome a API
-  migrations/      Alembic (0001…0013)
-scripts/           iniciar_forja.ps1, backup, diagnóstico do Kiro, demo, inspeção do painel, benchmarks
-tests/             pytest (unidade, integração, Kiro falso por subprocesso, API)
-docs/              STATUS_IMPLEMENTACAO.md e ADRs 0001…0022
+  migrations/      Alembic (0001…0014)
+scripts/           instalar.ps1, iniciar_forja.ps1, backup, diagnóstico do Kiro, demo, inspeção do painel, benchmarks
+tests/             pytest (unidade, integração, agente ACP falso por subprocesso, API)
+docs/              STATUS_IMPLEMENTACAO.md e ADRs 0001…0023
 ```
 
 Camadas não se misturam: rotas não têm SQL, a orquestração não conhece HTTP, adaptadores não têm regra de negócio.
 
 ---
 
-## Desenvolvimento e testes
+## 17 DESENVOLVIMENTO E TESTES
 
 ```powershell
 pip install -r requirements-dev.txt          # + requirements-ui.txt para o navegador real
-python -m pytest -q                          # ~1080 testes (Kiro falso por subprocesso; nada real é chamado)
+python -m pytest -q                          # 1118 testes (agente ACP falso por subprocesso; nada real é chamado)
 python -m ruff check forja tests scripts
 pre-commit install                           # gitleaks + ruff a cada commit
 
 # painel num navegador real (Playwright), com dados fictícios
 $env:APP_REQUIRE_AUTH="false"; $env:APP_PORT="8799"; python -m forja      # outro terminal
 python scripts\semear_demo.py --porta 8799
-python scripts\inspecionar_painel.py --porta 8799 --interagir --a11y      # fluxos + acessibilidade (axe-core)
+python scripts\inspecionar_painel.py --porta 8799 --interagir --a11y      # fluxos (inclui o master) + acessibilidade
 python scripts\inspecionar_painel.py --porta 8798 --login --a11y          # tela de acesso (servidor com login, sem conta)
 
 python scripts\benchmark_busca.py            # qualidade da busca (recall/MRR/nDCG)
-python scripts\benchmark_tarefas.py [--real] # roteamento e conclusão de tarefas (--real usa o Kiro e consome créditos)
+python scripts\benchmark_tarefas.py [--real] # roteamento e conclusão (--real usa o Kiro e consome créditos)
 ```
 
 O CI (GitHub Actions) roda gitleaks, ruff, a suíte, o painel em Chromium com acessibilidade e a tela de acesso.
 
 ---
 
-## Limites conhecidos
+## 18 LIMITES CONHECIDOS
 
-- Um agente real por enquanto: o Kiro. A integração com outros (ex.: Codex) está em estudo.
-- Workflows do Kiro IDE não são expostos pelo ACP; a Forja orquestra por conta própria.
-- Pastas isoladas exigem Git e partem do último commit; sem Git, tarefas na mesma pasta rodam uma por vez.
+- O Codex foi testado contra um agente ACP falso; a integração com o `codex-acp` real depende de você instalar e fazer login.
+- Workflows do Kiro IDE e `/compact` não são expostos pelo ACP; a Forja orquestra e gerencia o contexto por conta própria.
+- A hospedagem contínua é por sessão do Windows: a Forja fica no ar enquanto você estiver conectado.
+- Pastas isoladas exigem Git; sem Git, tarefas na mesma pasta rodam uma por vez.
 - A caixa de areia dos testes não é contêiner; créditos são estimativa; busca semântica é opcional e pesada.
-- Recuperar senha esquecida é pela linha de comando no próprio computador (não há e-mail).
-- Licença ainda não definida (ver `docs/STATUS_IMPLEMENTACAO.md`).
+- Recuperar senha esquecida é pela linha de comando no próprio computador.
+
+---
+
+## 19 LICENÇA
+
+[Apache License 2.0](LICENSE). Avisos de atribuição em [`NOTICE`](NOTICE).
