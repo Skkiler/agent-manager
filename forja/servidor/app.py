@@ -149,6 +149,7 @@ def _melhorias_orquestrador(app: FastAPI, cfg: Configuracoes, servico: Servico) 
     real = isinstance(prov, ProvedorKiroAcp)
     app.state.oficina = OficinaServico(repo, (lambda: prov.max_ferramentas) if real else None)
     app.state.organizador = OrganizadorMemoria(repo, app.state.memoria, app.state.grafo, Principal("organizacao", cfg.memoria_namespaces))
+    app.state.organizador.resumir = app.state.estudos.solicitar_resumo  # topicos resumidos pelo Kiro (parte 'estudo')
     servico.ao_finalizar += [app.state.telemetria.ao_finalizar, app.state.aprendizado.ao_finalizar, app.state.subtarefas.ao_finalizar]
     if real:
         prov.ajustar_rota = app.state.aprendizado.ajustar

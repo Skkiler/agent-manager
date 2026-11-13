@@ -33,6 +33,8 @@ log = logging.getLogger("forja.estudos")
 PROJETO = "forja-estudos"
 MAX_NOTAS = 30
 MAX_FATOS = 2600
+MAX_NOTAS_RESUMO = 25
+MAX_FATOS_RESUMO = 3000
 _NOTA = re.compile(r"^#{2,4}\s*Nota\s*:\s*(?P<t>.+?)\s*$", re.IGNORECASE | re.MULTILINE)
 _CAMPO = re.compile(r"^\s*(?P<k>t[oó]pico pai|pai|tags|fontes?)\s*:\s*(?P<v>.*)$", re.IGNORECASE)
 _SLUG = re.compile(r"[^a-z0-9._-]+")
@@ -158,6 +160,68 @@ class EstudoServico:
             self.servico.iniciar_execucao(execucao["id"], "operador")
         return {"tarefa": tarefa, "execucao_id": execucao["id"] if execucao else None, "fatos_tokens": len(fatos) // 4}
 
+    def solicitar_resumo(self, p: Principal, namespace: str, tema: str, memorias: list[str], executar: bool = True) -> dict[str, Any]:
+        """9.12: pede ao Kiro (parte 'estudo' da configuracao: modelo rapido e barato, somente leitura) UMA nota-topico que resume
+        um grupo de notas. O conteudo das notas vai MARCADO como dado (spotlighting). Ao concluir, `criar_notas` cria o topico
+        como candidato e liga as notas a ele (SUBTOPICO_DE). Nada e apagado nem alterado nas notas originais."""
+        from forja.seguranca import spotlight
+
+        p.exigir(namespace)
+        notas = []
+        with self.memoria.repo.leitura() as t:
+            for mid in memorias[:MAX_NOTAS_RESUMO]:
+                m = t.obter(T.Memoria, mid)
+                if m and m["namespace"] == namespace and p.pode(m["namespace"]) and m["estado"] not in ("revogado", "substituido", "obsoleto"):
+                    notas.append(m)
+        if len(notas) < 3:
+            raise ValidacaoDominio("O grupo precisa de pelo menos 3 notas ativas para virar um tópico.")
+        por_nota = max(120, MAX_FATOS_RESUMO // len(notas))
+        blocos = "\n".join(f"- {m['titulo']}: {' '.join((m['resumo'] or m['conteudo'] or '').split())[:por_nota]}" for m in notas)
+        cod = spotlight.codigo()
+        descricao = (f"Organize o segundo cerebro: escreva UMA nota-topico que resuma as {len(notas)} notas abaixo (tema: '{tema}'). "
+                     "Use SO o que esta nas notas (nao invente, nao pesquise na web). Corpo de 5 a 12 linhas: o que une as notas, os "
+                     "pontos principais, contradicoes ou lacunas, e um [[titulo]] para cada nota. Formato: '## Notas' e uma unica "
+                     "'### Nota: <titulo curto do topico>' com 'Tags:'.\n" + spotlight.REGRA + "\n"
+                     + spotlight.envolver("NOTAS", blocos, cod))[:3990]
+        projeto = next(iter(self.servico.listar(T.Projeto, nome=PROJETO)), None)
+        if projeto is None:
+            projeto, _ = self.servico.criar_projeto(ProjetoIn(nome=PROJETO, descricao="Estudos para alimentar o segundo cerebro"))
+        objetivo, _ = self.servico.criar_objetivo(ObjetivoIn(projeto_id=projeto["id"], titulo=f"Topico: {tema}"[:200], prioridade=4,
+                                                             criterios_sucesso=["Nota-topico candidata criada e ligada as notas"]))
+        tarefa, _ = self.servico.criar_tarefa(TarefaIn(
+            objetivo_id=objetivo["id"], titulo=f"Resumo em topico: {tema}"[:200], descricao=descricao, modo="estudo", especialidade="estudo",
+            criterios_aceite=["Uma nota-topico curta, fiel as notas e com [[titulo]] de cada uma"],
+            entrada={"estudo": {"tipo": "resumo", "alvo": tema[:200], "namespace": namespace, "assunto": f"Topico: {tema}"[:200],
+                                "pastas": [], "memorias": [m["id"] for m in notas]}}))
+        for destino in (EstadoTarefa.CLASSIFICADA, EstadoTarefa.PREPARADA):
+            tarefa, _ = self.servico.transicionar(tarefa["id"], TransicaoIn(para=destino, expected_version=tarefa["versao_estado"]))
+        execucao = None
+        if executar:
+            execucao = self.servico.criar_execucao(tarefa["id"])
+            self.servico.iniciar_execucao(execucao["id"], "sistema:organizacao")
+        return {"tarefa_id": tarefa["id"], "execucao_id": execucao["id"] if execucao else None, "notas": len(notas)}
+
+    def _criar_topico_resumo(self, tarefa: dict[str, Any], cfg: dict[str, Any], notas: list[NotaEstudo]) -> dict[str, Any]:
+        ns = cfg.get("namespace") or "pessoal/estudos"
+        if not notas:
+            return {"raiz": None, "criadas": [], "puladas": 0, "ligacoes": 0}
+        n = notas[0]
+        with self.memoria.repo.leitura() as t:
+            ocupado = any(m["titulo"].casefold() == n.titulo.casefold() for m in t.listar(T.Memoria, namespace=ns, limite=5000))
+        titulo = (f"{n.titulo} (tópico)" if ocupado else n.titulo)[:200]
+        topico = self.memoria.criar(self.principal, MemoriaIn(
+            tipo="estrutural", titulo=titulo, resumo=next((x.strip(" -*") for x in n.corpo.splitlines() if x.strip()), titulo)[:300],
+            conteudo=n.corpo, namespace=ns, tags=["topico", *[x for x in [cfg.get("alvo", "")] if x], *n.tags][:15],
+            fonte=FonteIn(tipo="execucao", caminho=f"tarefas/{tarefa['id']}"), refs=[f"tarefa:{tarefa['id']}"], confianca=0.3), "agente:estudo")
+        ligacoes = 0
+        for mid in cfg.get("memorias") or []:
+            try:
+                self.grafo.ligar(self.principal, mid, topico["id"], "SUBTOPICO_DE", "resumida no topico", ator="agente:estudo")
+                ligacoes += 1
+            except ErroDominio:  # nota removida/inativa depois do pedido: segue sem ela
+                pass
+        return {"raiz": topico["id"], "criadas": [topico["id"]], "puladas": max(0, len(notas) - 1), "ligacoes": ligacoes}
+
     # ------------------------------------------------------------------ ganchos pos-execucao
     def _tarefa_de(self, execucao_id: str) -> dict[str, Any] | None:
         with self.servico.repo.leitura() as t:
@@ -191,6 +255,12 @@ class EstudoServico:
         ns = cfg.get("namespace") or "pessoal/estudos"
         texto = next((a.conteudo for a in res.artefatos if a.nome.endswith(".md")), "") or "\n".join(m.conteudo for m in res.mensagens)
         notas = extrair_notas(texto)
+        if cfg.get("tipo") == "resumo":  # 9.12: uma nota-topico sobre notas existentes
+            r = self._criar_topico_resumo(tarefa, cfg, notas)
+            with self.servico.repo.escrita() as t:
+                t.emitir_evento("estudo.topico_criado", self.servico._ts(), {"tarefa_id": tarefa["id"], "topico": r["raiz"],
+                                                                           "ligacoes": r["ligacoes"]})
+            return r
         raiz = self._topico(ns, f"Estudo: {cfg.get('assunto') or tarefa['titulo']}",
                             f"Notas do estudo ({cfg.get('tipo')}) '{cfg.get('alvo', '')}'. Subtopicos ligados a esta nota.",
                             ["estudo", cfg.get("tipo") or "topico"])

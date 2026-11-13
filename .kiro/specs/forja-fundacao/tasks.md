@@ -33,7 +33,7 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 2.6 Testes com agente ACP falso (subprocesso real) + handshake real + execucao real sem login (bloqueio correto).
 - [x] 2.7 Prompt real autenticado: end_turn em 4,7 s; escrita negada de fato; escrita aprovada de fato (sandbox vazio).
 - [x] 2.10 Aprovacao por acao: descritor, mediador/agrupamento, adendo, parcial, lembrar, lote, timeout/cancel/reinicio, painel, migracao 0002, ADR-006. (REQ-017..019)
-- [ ] 2.8 Agentes/skills/Specs-templates Kiro e primeiro Workflow de producao (Workflows nao confirmado na conta).
+- [x] 2.8 Agentes e skills do workspace confirmados no kiro-cli 3.1.0 via ACP (modos arquiteto/explorador/implementador/revisor e skills como comandos). Workflows do Kiro IDE NAO sao expostos pelo ACP: a Forja orquestra por conta propria. As execucoes usam o modo 'forja' (deny de segredos); os modos do workspace nao tem essas regras e por isso nao sao usados pelo orquestrador.
 - [x] 2.9 `session/load` na retomada quando o agente anuncia `loadSession` (kiro-cli 3.1.0 anuncia; validado no Kiro real), replay descartado, queda segura para sessao nova. Pool de processos NAO feito: um processo por execucao continua (sem ganho medido que justifique).
 
 ## Fase 3 — Memoria textual e grafos
@@ -109,7 +109,7 @@ Orquestracao e controle:
 - [x] 9.10 Painel de custo: creditos estimados por parte, tarefa e semana; alerta de desvio.
 - [x] 9.11 Hooks de politica do usuario (antes de ferramenta / apos tarefa), declarativos e auditados.
 Segundo cerebro:
-- [~] 9.12 Consolidacao em segundo plano ("sono"): unir duplicatas, propor promocoes, marcar notas desatualizadas e resumir clusters em topicos, sem apagar (nao destrutiva). Feito: duplicatas, desatualizadas, ligacoes sugeridas e fila de revisao; falta resumir clusters em topicos (exigiria LLM; fica opcional).
+- [x] 9.12 Consolidacao em segundo plano, nao destrutiva: duplicatas, desatualizadas, ligacoes e TOPICOS; aceitar um topico pede ao Kiro (parte 'estudo', claude-haiku-5.5) uma nota-topico candidata ligada as notas (SUBTOPICO_DE). Validado no Kiro real (19 s).
 - [x] 9.13 Validacao assistida das notas candidatas (fila de revisao com fonte, diff e um clique para promover/contestar).
 - [x] 9.14 Pacotes de conhecimento opcionais (ex.: frameworks especificos) instalaveis como base somente leitura, versionados.
 Tela pixel art (oficina):

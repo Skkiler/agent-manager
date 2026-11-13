@@ -189,3 +189,34 @@ def test_oficina_informa_o_nivel_da_tarefa():
     p = Projecao("analise")
     p.aplicar("kiro.rota", {"nivel": "simples", "parte": "rapida"})
     assert p.nivel == "simples"
+
+
+# ------------------------------------------------------------------ 9.12: topico resumido pelo Kiro
+def test_topico_sugerido_vira_tarefa_de_estudo_e_nota_ligada(client):
+    from forja.dominio.contratos import ArtefatoSaida, ResultadoAgente
+
+    notas = [_nota(client, f"Cache item {i}", f"Detalhe {i} sobre cache distribuido e expiracao numero {i * 7}.", ["cache", f"x{i}"])
+             for i in range(5)]
+    r = client.post(f"{API}/memorias/organizar").json()
+    assert r["novas"].get("topico") == 1
+    sug = next(s for s in client.get(f"{API}/memorias/revisao").json()["sugestoes"] if s["tipo"] == "topico")
+    assert set(sug["memorias"]) == {n["id"] for n in notas} and sug["dados"]["tag"] == "cache"
+    dec = client.post(f"{API}/memorias/sugestoes/{sug['id']}/decidir", json={"aceitar": True})
+    assert dec.status_code == 200, dec.text
+    res = dec.json()["resultado"]
+    tarefa = client.get(f"{API}/tarefas/{res['tarefa_id']}").json()
+    assert tarefa["modo"] == "estudo" and tarefa["entrada"]["estudo"]["tipo"] == "resumo" and res["notas"] == 5
+    assert "<<NOTAS #" in tarefa["descricao"] and "Cache item 0" in tarefa["descricao"]  # dado marcado (spotlighting)
+    from forja.orquestracao.roteamento import classificar
+
+    assert classificar(tarefa).parte == "estudo"  # modelo da parte 'estudo' (rapido e barato)
+    texto = ("## Resposta\nResumi.\n## Notas\n### Nota: Cache distribuido\nTags: cache\n"
+             "O cache guarda respostas e expira por tempo. Ver [[Cache item 0]] e [[Cache item 1]].\n")
+    feito = client.app.state.estudos.criar_notas(tarefa, ResultadoAgente(estado="concluida", resumo="ok", agente_id="kiro",
+                                                                         artefatos=[ArtefatoSaida(nome="resposta_kiro.md", conteudo=texto)]))
+    assert feito["ligacoes"] == 5
+    topico = client.get(f"{API}/memorias/{feito['raiz']}").json()
+    assert topico["titulo"] == "Cache distribuido" and topico["estado"] == "candidato" and "topico" in topico["tags"]
+    nav = client.get(f"{API}/memorias/navegar", params={"ref": feito["raiz"]}).json()
+    assert len(nav["subtopicos"]) == 5
+    assert client.post(f"{API}/memorias/organizar").json()["novas"].get("topico") is None  # ja organizado: nao sugere de novo

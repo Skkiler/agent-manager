@@ -34,6 +34,8 @@ LIMIAR_TITULO = 0.5
 MAX_POR_NAMESPACE = 3000
 MAX_LIGACOES_POR_RODADA = 50
 INTERVALO_S = 30 * 60
+MIN_TOPICO, MAX_TOPICO, MAX_TOPICOS_POR_RODADA = 4, 25, 5
+TAGS_GENERICAS = frozenset({"estudo", "base", "topico", "registro", "projeto", "pessoal", "nota", "geral"})
 _RANK = {"validado": 5, "verificado": 4, "observado": 3, "candidato": 2, "contestado": 1}
 _PALAVRA = re.compile(r"[a-z0-9_]{3,}")
 _VAZIAS = frozenset("que para com uma por dos das nos nas como mais sem sobre entre quando onde este esta isso essa the and for with".split())
@@ -56,6 +58,7 @@ class OrganizadorMemoria:
         self.principal = principal
         self.relogio = relogio or RelogioSistema()
         self.modo = "sugerir"  # desligada | sugerir (preferencia 'organizacao_memoria')
+        self.resumir: Any | None = None  # EstudoServico.solicitar_resumo: o Kiro escreve a nota-topico (9.12)
         self._parar = threading.Event()
         self._thread: threading.Thread | None = None
         self._mu = threading.Lock()
@@ -74,10 +77,13 @@ class OrganizadorMemoria:
             por_ns: dict[str, list[dict]] = {}
             for m in ativas:
                 por_ns.setdefault(m["namespace"], []).append(m)
+            with self.repo.leitura() as t:
+                pais = {(x["origem"], x["destino"]) for x in t.listar(T.LigacaoGrafo, tipo="SUBTOPICO_DE", limite=100_000)}
             for ns, lista in por_ns.items():
                 lista = sorted(lista, key=lambda m: m["atualizado_em"], reverse=True)[:MAX_POR_NAMESPACE]
                 novas += self._duplicatas(ns, lista)
                 novas += self._ligacoes(ns, lista, ligadas)
+                novas += self._topicos(ns, lista, pais)
             novas += self._desatualizadas(ativas, agora)
             criadas: dict[str, int] = {}
             with self.repo.escrita() as t:
@@ -175,6 +181,33 @@ class OrganizadorMemoria:
                 break
         return saida
 
+    def _topicos(self, ns: str, lista: list[dict], pais: set[tuple[str, str]]) -> list[dict[str, Any]]:
+        """Grupos de notas com a mesma tag e SEM um topico que ja organize a maioria delas: candidatos a resumo pelo Kiro."""
+        saida: list[dict[str, Any]] = []
+        por_tag: dict[str, list[dict]] = {}
+        for m in lista:
+            for tag in {str(x).casefold() for x in (m["tags"] or [])} - TAGS_GENERICAS:
+                por_tag.setdefault(tag, []).append(m)
+        titulos_ns = {m["titulo"].casefold() for m in lista}
+        for tag, ms in sorted(por_tag.items(), key=lambda kv: -len(kv[1])):
+            ms = [m for m in ms if "topico" not in {str(x).casefold() for x in (m["tags"] or [])}]  # o proprio topico nao conta
+            if not MIN_TOPICO <= len(ms) <= MAX_TOPICO:
+                continue
+            ids = {m["id"] for m in ms}
+            destinos: dict[str, int] = {}
+            for origem, destino in pais:
+                if origem in ids:
+                    destinos[destino] = destinos.get(destino, 0) + 1
+            if destinos and max(destinos.values()) * 2 >= len(ids) or f"topico: {tag}" in titulos_ns:
+                continue  # a maioria ja esta pendurada num mesmo topico
+            saida.append({"tipo": "topico", "chave": f"topico:{ns}:{tag}"[:200], "memorias": sorted(ids), "namespace": ns,
+                          "motivo": f"{len(ids)} notas com a tag '{tag}' sem um tópico que as organize. Aceitar pede ao Kiro "
+                                    "(modelo da parte 'Estudo', rápido e barato) uma nota-tópico que resume e liga todas.",
+                          "dados": {"tag": tag, "titulos": {m["id"]: m["titulo"][:120] for m in ms}}})
+            if len(saida) >= MAX_TOPICOS_POR_RODADA:
+                break
+        return saida
+
     # ------------------------------------------------------------------ fila de revisao
     def fila(self, p: Principal, limite: int = 100) -> dict[str, Any]:
         with self.repo.leitura() as t:
@@ -185,7 +218,9 @@ class OrganizadorMemoria:
         validas, obsoletas = [], []
         inativos = {e.value for e in INATIVOS}
         for s in sugestoes:  # notas que ja mudaram de estado (ou sumiram) invalidam a sugestao
-            (obsoletas if any(estados.get(i) in inativos or i not in estados for i in s["memorias"]) else validas).append(s)
+            fora = [i for i in s["memorias"] if estados.get(i) in inativos or i not in estados]
+            vencida = len(s["memorias"]) - len(fora) < 3 if s["tipo"] == "topico" else bool(fora)  # topico tolera perder algumas
+            (obsoletas if vencida else validas).append(s)
         if obsoletas:
             with self.repo.escrita() as t:
                 for s in obsoletas:
@@ -229,6 +264,10 @@ class OrganizadorMemoria:
         if s["tipo"] == "ligacao":
             a, b = s["memorias"][:2]
             return self.grafo.ligar(p, a, b, dados.get("tipo_ligacao", "RELACIONADO_A"), "sugerida pela organizacao automatica", ator)
+        if s["tipo"] == "topico":
+            if self.resumir is None:
+                raise ValidacaoDominio("Resumo por IA indisponível neste servidor.")
+            return self.resumir(p, s["namespace"], dados.get("tag") or "tema", list(s["memorias"]))
         raise ValidacaoDominio(f"tipo de sugestao desconhecido: {s['tipo']}")
 
     # ------------------------------------------------------------------ segundo plano

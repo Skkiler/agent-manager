@@ -3,7 +3,8 @@
 import { api } from "../api.js";
 import { dataCurta, el, janela, limpar, tag, toast } from "../ui.js";
 
-const TIPOS = { duplicata: ["Duplicata", "aviso"], desatualizada: ["Desatualizada", "aviso"], ligacao: ["Ligação sugerida", ""] };
+const TIPOS = { duplicata: ["Duplicata", "aviso"], desatualizada: ["Desatualizada", "aviso"], ligacao: ["Ligação sugerida", ""],
+  topico: ["Tópico sugerido", "ok"] };
 
 export async function contarRevisao() {
   try { return (await api("GET", "/memorias/revisao?limite=200")).total; } catch { return null; }
@@ -27,10 +28,12 @@ function cartaoSugestao(s, aoMudar) {
   const decidir = async (aceitar) => {
     try {
       await api("POST", `/memorias/sugestoes/${s.id}/decidir`, { aceitar, vencedora_id: fica ? fica.value : null });
-      toast(aceitar ? "Sugestão aplicada" : "Sugestão rejeitada", "ok"); aoMudar();
+      toast(!aceitar ? "Sugestão rejeitada" : s.tipo === "topico" ? "O Kiro está escrevendo o tópico: acompanhe a tarefa no quadro." : "Sugestão aplicada", "ok");
+      aoMudar();
     } catch (e) { toast(e.message, "erro"); }
   };
-  const acao = { duplicata: "Unir", desatualizada: s.dados?.destino === "revogado" ? "Revogar" : "Marcar obsoleta", ligacao: "Ligar" }[s.tipo] || "Aceitar";
+  const acao = { duplicata: "Unir", desatualizada: s.dados?.destino === "revogado" ? "Revogar" : "Marcar obsoleta", ligacao: "Ligar",
+    topico: "Resumir com o Kiro" }[s.tipo] || "Aceitar";
   return el("article", { className: "card sugestao", "aria-label": `${rotulo}: ${s.motivo}` },
     el("div", { className: "linha" }, tag(rotulo, cls), el("span", { className: "mudo", textContent: dataCurta(s.criado_em) })),
     el("p", { textContent: s.motivo }), lista, ...extras,

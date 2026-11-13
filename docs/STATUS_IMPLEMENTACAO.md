@@ -1,6 +1,6 @@
 # Estado da implementacao
 
-**Atualizado:** 2026-11-06 (Fase 9: melhorias da validação de mercado, gitleaks e Docker; ver a seção "Fase 9" abaixo). **Fases 0 a 4 testadas; Fase 9 implementada (9.12 parcial). Abertos: 2.8 (Workflows na conta Kiro), resumo automático de clusters (9.12), licença (Fase 8, decisão sua).** Padrao de agente continua sendo o **mock SIMULADO**;
+**Atualizado:** 2026-11-06 (Fase 9: melhorias da validação de mercado, gitleaks e Docker; ver a seção "Fase 9" abaixo). **Fases 0 a 4 testadas; Fase 9 implementada (9.12 parcial). Abertos: licença (Fase 8, decisão sua); planos em estudo: multi-provedor (Codex), master/sub-masters, gestão de contexto.** Padrao de agente continua sendo o **mock SIMULADO**;
 o Kiro real so e usado com `APP_KIRO_ACP_ENABLED=true` (validado em sessao autenticada na etapa anterior).
 
 ## Regra de publicacao (repositorio publico)
@@ -295,6 +295,18 @@ fila "Revisão (N)", editor de regras, pacotes de conhecimento (`forja/conhecime
 - Sem regressao no painel sem login: `--interagir --a11y` -> 91 passos OK, 0 problemas.
 - Docker: conta `demo` criada pela linha de comando (senha lida da entrada padrao); login, erro e sair conferidos no navegador.
 - CI ganhou o passo "Tela de acesso" (servidor com login na porta 8798).
+
+## Uso real, topicos pelo Kiro (9.12) e 2.8 (2026-11-06)
+- **Forja real em uso:** `scripts/iniciar_forja.ps1` (backup do banco antes de subir, Kiro real, so 127.0.0.1:8787, tarefa agendada
+  opcional). Subiu com o perfil real do usuario; primeiro acesso pendente de o usuario criar a conta na tela.
+- **9.12 concluido:** a organizacao sugere TOPICOS (4 a 25 notas com a mesma tag sem um topico comum). Aceitar cria uma tarefa de estudo
+  (parte 'estudo' = claude-haiku-5.5) com as notas marcadas como dado; ao concluir, a nota-topico candidata e criada e as notas ligadas.
+  **Kiro real:** 4 notas sinteticas -> tarefa concluida em 19,1 s com claude-haiku-5.5; topico "Fila: regras de saida, prioridade e
+  concorrencia" com 4 subtopicos, sem inventar fatos e apontando lacunas.
+- **2.8:** sonda sem creditos no kiro-cli 3.1.0 aberto no repositorio: modos `vibe, spec, quick-spec, bug-fix, plan, autonomous,
+  semantic_reviewer, forja, arquiteto, explorador, implementador, revisor`; comandos `context-gatherer, general-task-execution` e as
+  skills do workspace. Workflows do IDE nao aparecem no ACP.
+- README reescrito (sistema completo). `python -m pytest` -> 1083 passed.
 
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
