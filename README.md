@@ -37,8 +37,11 @@ python -m ruff check forja tests
 python -m forja
 ```
 
-Na primeira execucao e gerado um token em `data\api_token.txt` (ignorado no Git). Abra
-`http://127.0.0.1:8787`, cole o token no painel e crie uma tarefa de exemplo (agente **mock**, dados sinteticos).
+Abra `http://127.0.0.1:8787`. No primeiro acesso a tela pede para **criar o usuário e a senha** (só no próprio computador
+do servidor); depois é só entrar. A sessão fica só na aba e expira após `APP_SESSION_TTL_MINUTES` sem uso; 5 senhas erradas
+seguidas bloqueiam a conta por alguns segundos (dobrando até 15 min). Contas pela linha de comando:
+`python -m forja.usuario.contas_cli criar|redefinir|listar --usuario NOME` (a senha é pedida sem aparecer na tela).
+O token da API (`api_token.txt`, fora do Git) continua valendo para scripts e para o MCP.
 
 Smoke test ponta a ponta contra o servidor em execucao:
 
@@ -148,15 +151,17 @@ Detalhes em `docs/adr/0011-catalogo-de-ferramentas-quadro-e-propostas.md`.
 - Avaliar a busca no seu codigo: `python scripts\avaliar_busca_codigo.py --raiz <pasta> [--embeddings]` (copia temporaria, so numeros na saida). Detalhes no ADR-016.
 
 ### Em Docker (demonstração local, agente simulado)
-A porta é publicada **só** no loopback do host (`127.0.0.1`) e o token da API é obrigatório. O Kiro CLI não existe no contêiner.
+A porta é publicada **só** no loopback do host (`127.0.0.1`) e o login é obrigatório. O Kiro CLI não existe no contêiner.
+Como o navegador não está "dentro" do contêiner, a primeira conta é criada pela linha de comando:
+`docker compose exec forja python -m forja.usuario.contas_cli criar --usuario SEU_NOME`.
 
 ```powershell
 $env:FORJA_PORTA = 8790                       # qualquer porta livre
 $env:FORJA_ENV_FILE = "C:\fora-do-git\forja.env"   # opcional: APP_API_TOKEN=<seu token com 24+ caracteres>
 docker compose up -d --build
 docker compose exec forja python scripts/semear_demo.py --porta 8787 --pasta-trabalho /tmp/forja-demo-proj   # dados sinteticos
-docker compose exec forja cat /dados/data/credenciais/api_token.txt   # so se nao definiu APP_API_TOKEN
-# abra http://127.0.0.1:8790 e cole o token
+docker compose exec forja python -m forja.usuario.contas_cli criar --usuario ana   # pede a senha
+# abra http://127.0.0.1:8790 e entre com usuario e senha
 ```
 
 ### Desfazer, pastas isoladas, custo, regras e oficina (Fase 9, ADR-021)

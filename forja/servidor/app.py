@@ -35,6 +35,7 @@ from forja.observabilidade.telemetria import Telemetria
 from forja.orquestracao.acoes_externas import AcoesExternasServico
 from forja.orquestracao.aprendizado_rotas import AprendizadoRotas
 from forja.orquestracao.configuracao_servico import ConfiguracaoServico
+from forja.orquestracao.contas_servico import ContasServico
 from forja.orquestracao.custos import CustosServico
 from forja.orquestracao.estudos import EstudoServico
 from forja.orquestracao.grafo_servico import GrafoServico
@@ -56,6 +57,7 @@ from forja.preferencias.servico import PreferenciasServico
 from forja.seguranca.auth import LimitadorTaxa, carregar_token
 from forja.seguranca.pastas import definir_protegidas
 from forja.servidor.rotas import publico, r
+from forja.servidor.rotas_auth import ra
 from forja.servidor.rotas_ferramentas import rf
 from forja.servidor.rotas_integracoes import ri
 from forja.servidor.rotas_memoria import rm
@@ -237,6 +239,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
         provedor_servico.provedor.alternativas_de = app.state.configuracao.alternativas_para
     app.state.modelos = CatalogoModelos(resolver_cli(cfg.app_kiro_cli_path))  # lista da conta (somente leitura)
     app.state.token = carregar_token(cfg)
+    app.state.contas = ContasServico(provedor_servico.repo, cfg.app_session_ttl_minutes)  # login por usuario e senha
     app.state.limitador = LimitadorTaxa(cfg.app_rate_limit_per_minute)
     app.state.prefs.registrar_aplicador("limite_requisicoes_por_minuto", lambda v: setattr(app.state.limitador, "limite", int(v)))
     if app.state.memoria.semantica is not None:
@@ -255,6 +258,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     _registrar_middleware(app, cfg)
     _registrar_handlers(app)
     app.include_router(publico)
+    app.include_router(ra)
     app.include_router(r)
     app.include_router(rm)
     app.include_router(rf)
@@ -308,7 +312,10 @@ def _registrar_middleware(app: FastAPI, cfg: Configuracoes) -> None:
 def _registrar_handlers(app: FastAPI) -> None:
     @app.exception_handler(ErroDominio)
     async def _dominio(request: Request, exc: ErroDominio):  # noqa: ANN202, ARG001
-        return JSONResponse(status_code=exc.status, content={"erro": exc.codigo, "mensagem": exc.mensagem})
+        espera = getattr(exc, "tentar_em_s", None)  # bloqueio de login: o painel mostra a contagem regressiva
+        return JSONResponse(status_code=exc.status, content={"erro": exc.codigo, "mensagem": exc.mensagem,
+                                                             **({"tentar_em_s": espera} if espera else {})},
+                            headers={"Retry-After": str(espera)} if espera else None)
 
     @app.exception_handler(RequestValidationError)
     async def _validacao(request: Request, exc: RequestValidationError):  # noqa: ANN202, ARG001

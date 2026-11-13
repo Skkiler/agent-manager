@@ -34,6 +34,18 @@ class TransicaoReservada(Conflito):
     codigo = "transicao_reservada"
 
 
+class CredenciaisInvalidas(ErroDominio):
+    codigo, status = "credenciais_invalidas", 401
+
+
+class AcessoBloqueado(ErroDominio):
+    codigo, status = "acesso_bloqueado", 429
+
+    def __init__(self, mensagem: str, tentar_em_s: int) -> None:
+        super().__init__(mensagem)
+        self.tentar_em_s = tentar_em_s
+
+
 class OrcamentoExcedido(Conflito):
     codigo = "orcamento_excedido"
 

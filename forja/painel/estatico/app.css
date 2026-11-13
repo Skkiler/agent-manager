@@ -303,7 +303,48 @@ dialog::backdrop { background: var(--veu); backdrop-filter: blur(1px); }
 .janela-cabeca .fechar { width: 32px; height: 32px; padding: 0; border: 0; background: transparent; color: var(--mudo); cursor: pointer; }
 .janela-cabeca .fechar:hover:not(:disabled) { background: var(--hover); color: var(--titulo); }
 .janela-corpo { padding: var(--e3) var(--e4) var(--e4); overflow: auto; min-height: 0; flex: 1; }
-#dlg-token form { padding: var(--e4); }
+/* tela de acesso (login por usuario e senha): sobrepoe o painel inteiro, que fica inerte por baixo */
+#tela-login { position: fixed; inset: 0; z-index: calc(var(--z-dica) + 10); display: grid; place-items: center; padding: var(--e4);
+  overflow: auto; background:
+    radial-gradient(circle at 20% 15%, color-mix(in srgb, var(--acento-forte) 28%, transparent), transparent 45%),
+    radial-gradient(circle at 85% 90%, color-mix(in srgb, #f97316 18%, transparent), transparent 40%),
+    repeating-conic-gradient(var(--bg) 0 25%, color-mix(in srgb, var(--borda) 35%, var(--bg)) 0 50%) 0 0 / 22px 22px; }
+#tela-login[hidden] { display: none; }
+#tela-login.saindo { animation: login-sair .22s ease-in forwards; }
+.login-cartao { width: min(420px, 100%); background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio-g);
+  padding: var(--e5, 28px) var(--e5, 28px) var(--e4); box-shadow: 0 18px 50px rgb(0 0 0 / .35); animation: surgir .25s var(--curva); }
+.login-cartao h1 { font-size: 22px; margin: var(--e3) 0 var(--e1); }
+.login-marca { display: flex; align-items: center; gap: var(--e2); }
+.login-marca strong { display: block; font-size: var(--fs-l); color: var(--titulo); letter-spacing: .02em; }
+.login-marca span { display: block; color: var(--mudo); font-size: var(--fs-s); }
+.login-form { display: grid; gap: var(--e3); margin-top: var(--e3); }
+.campo-login { display: grid; gap: 4px; }
+.campo-login label { font-weight: 600; font-size: var(--fs-s); color: var(--titulo); }
+.campo-login input { height: 38px; padding: 0 var(--e3); border: 1px solid var(--borda); border-radius: var(--raio); background: var(--entrada);
+  font-size: var(--fs-l); width: 100%; }
+.campo-login input:focus-visible { outline: 2px solid var(--acento); outline-offset: 0; border-color: var(--acento); }
+.senha-caixa { position: relative; display: flex; }
+.senha-caixa input { padding-right: 44px; }
+.mostrar-senha { position: absolute; right: 3px; top: 3px; height: 32px; width: 36px; padding: 0; border-color: transparent; background: transparent; }
+.mostrar-senha[aria-pressed="true"] { color: var(--acento); }
+.campo-login .caps { color: var(--aviso); font-weight: 600; }
+.login-botao { height: 40px; font-size: var(--fs-l); width: 100%; }
+.login-botao[aria-busy="true"] { cursor: progress; opacity: .85; }
+.login-erro { display: flex; gap: var(--e2); align-items: flex-start; padding: var(--e2) var(--e3); border-radius: var(--raio);
+  border: 1px solid color-mix(in srgb, var(--erro) 60%, transparent); background: color-mix(in srgb, var(--erro) 12%, transparent); color: var(--titulo); font-size: var(--fs-s); }
+.login-erro::before { content: "⚠"; color: var(--erro); font-weight: 700; }
+.login-erro[hidden] { display: none; }
+.login-aviso { margin: 0; padding: var(--e2) var(--e3); border-radius: var(--raio); border-left: 3px solid var(--aviso);
+  background: color-mix(in srgb, var(--aviso) 12%, transparent); font-size: var(--fs-s); }
+.login-regras { margin: 0; padding-left: 18px; font-size: var(--fs-xs); }
+.login-rodape { font-size: var(--fs-xs); margin: 0; text-align: center; }
+.forca { display: flex; align-items: center; gap: var(--e2); } .forca meter { flex: 1; height: 8px; }
+.login-ok { display: grid; place-items: center; width: 64px; height: 64px; margin: var(--e3) auto; border-radius: 50%; font-size: 34px;
+  color: var(--sobre-acento); background: var(--ok); animation: surgir .25s var(--curva); }
+.login-form.tremer { animation: login-tremer .35s; }
+@keyframes login-tremer { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+@keyframes login-sair { to { opacity: 0; transform: scale(.98); } }
+#usuario-atual { max-width: 160px; }
 dialog.janela-config { width: min(1120px, calc(100vw - 24px)); max-width: none; height: min(820px, calc(100vh - 32px)); }
 dialog.janela-config .janela-corpo { padding: 0; display: flex; overflow: hidden; }
 .config-janela { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px minmax(0, 1fr); }

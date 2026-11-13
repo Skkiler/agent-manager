@@ -36,11 +36,23 @@ def servico(request: Request) -> Servico:
     return request.app.state.servico
 
 
-def autenticar(request: Request) -> None:
+def credencial_valida(request: Request, enviado: str | None) -> bool:
+    """Token da API (scripts, MCP) OU sessao de login (painel, usuario e senha)."""
     esperado = request.app.state.token
     if esperado is None:
-        return
-    if not token_confere(extrair_bearer(request.headers.get("authorization")), esperado):
+        return True
+    if token_confere(enviado, esperado):
+        return True
+    contas = getattr(request.app.state, "contas", None)
+    sessao = contas.sessao(enviado) if contas is not None else None
+    if sessao is not None:
+        request.state.usuario = sessao["usuario"]
+        return True
+    return False
+
+
+def autenticar(request: Request) -> None:
+    if not credencial_valida(request, extrair_bearer(request.headers.get("authorization"))):
         raise HTTPException(status_code=401, detail="Credenciais ausentes ou invalidas.",
                             headers={"WWW-Authenticate": "Bearer"})
 
@@ -235,9 +247,8 @@ def stream(
     token: str | None = Query(default=None, max_length=256),
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID", max_length=20)] = None,
 ) -> StreamingResponse:
-    esperado = request.app.state.token
     enviado = token or extrair_bearer(request.headers.get("authorization"))
-    if esperado is not None and not token_confere(enviado, esperado):
+    if not credencial_valida(request, enviado):
         raise HTTPException(status_code=401, detail="Token invalido para stream.")
     cursor = after_id
     if last_event_id is not None:

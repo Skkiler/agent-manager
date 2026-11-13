@@ -1,5 +1,6 @@
 // Shell do orquestrador: barra de atividades, barra lateral, area principal, conversa/decisoes, painel inferior e SSE.
-import { api, definirToken, lerToken } from "./api.js";
+import { api, lerToken } from "./api.js";
+import { dialogoConta, garantirAcesso } from "./login.js";
 import * as direita from "./direita.js";
 import { agrupar, alternarPainel, definirNivel, definirPainel, emitir, estado, ouvir, painelAberto } from "./estado.js";
 import * as inferior from "./inferior.js";
@@ -126,13 +127,19 @@ async function atualizarChip() {
 }
 const agendarChip = agrupar(() => { atualizarChip(); if (atual === "tarefas") tarefas.atualizar(); });
 
-async function autenticarSeNecessario() {
-  try { await api("GET", "/configuracao"); return true; } catch (e) { if (e.status !== 401) return true; }
-  const d = $("#dlg-token");
-  d.showModal();
-  return new Promise((resolver) => {
-    $("#form-token").addEventListener("submit", () => { definirToken($("#token").value); $("#token").value = ""; resolver(true); }, { once: true });
-  });
+function mostrarUsuario(usuario) {
+  const b = $("#usuario-atual");
+  b.hidden = !usuario;
+  if (usuario) { b.textContent = usuario; b.title = `Conectado como ${usuario}: trocar senha ou sair`; }
+}
+
+let reautenticando = false;
+async function sessaoExpirou() {
+  if (reautenticando) return;
+  reautenticando = true;
+  if (fonte) fonte.close();
+  await garantirAcesso("Sua sessão expirou. Entre de novo para continuar.");
+  location.reload(); // recarrega as telas com a sessao nova
 }
 
 async function iniciar() {
@@ -141,7 +148,8 @@ async function iniciar() {
   const nivel = $("#nivel");
   nivel.value = estado.nivel; definirNivel(estado.nivel);
   nivel.addEventListener("change", () => { definirNivel(nivel.value); config.definirPreferencia("nivel_detalhe", nivel.value).catch(() => {}); });
-  document.addEventListener("forja:auth", () => { if (!$("#dlg-token").open) autenticarSeNecessario().then(() => location.reload()); });
+  document.addEventListener("forja:auth", sessaoExpirou);
+  $("#usuario-atual").addEventListener("click", () => dialogoConta($("#usuario-atual").textContent));
   ouvir("ir", ir);
   ouvir("evento", (e) => {
     const t = String(e.tipo);
@@ -151,7 +159,7 @@ async function iniciar() {
   $("#atalho-precisa").addEventListener("click", () => ir("tarefas"));
   setInterval(() => { $("#st-hora").textContent = new Date().toLocaleTimeString("pt-BR"); }, 1000);
 
-  await autenticarSeNecessario();
+  mostrarUsuario(await garantirAcesso()); // so segue depois de um login valido (ou se o servidor nao exige login)
   direita.iniciar(); inferior.iniciar();
   ir((location.hash.match(/^#\/(\w+)/) || [])[1] || "tarefas");
   conectarSse(); atualizarChip();

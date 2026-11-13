@@ -57,6 +57,18 @@ jobs:
           for i in $(seq 1 60); do curl -fs http://127.0.0.1:8799/api/v1/saude > /dev/null && break; sleep 0.5; done
           python scripts/semear_demo.py --porta 8799
           python scripts/inspecionar_painel.py --porta 8799 --saida "$RUNNER_TEMP/capturas" --navegador chromium --interagir --a11y
+      - name: Tela de acesso (usuario e senha) em servidor com login
+        env:
+          APP_DATA_DIR: ${{ runner.temp }}/forja-login/data
+          APP_LOG_DIR: ${{ runner.temp }}/forja-login/logs
+          APP_REQUIRE_AUTH: "true"
+          APP_PORT: "8798"
+          APP_KIRO_ACP_ENABLED: "false"
+          APP_RATE_LIMIT_PER_MINUTE: "3000"
+        run: |
+          python -m forja > "$RUNNER_TEMP/servidor-login.log" 2>&1 &
+          for i in $(seq 1 60); do curl -fs http://127.0.0.1:8798/api/v1/saude > /dev/null && break; sleep 0.5; done
+          python scripts/inspecionar_painel.py --porta 8798 --saida "$RUNNER_TEMP/capturas/login" --navegador chromium --login --a11y
       - name: Capturas e relatorio de acessibilidade
         if: always()
         uses: actions/upload-artifact@v5

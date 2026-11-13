@@ -282,6 +282,20 @@ fila "Revisão (N)", editor de regras, pacotes de conhecimento (`forja/conhecime
 - Limites honestos: worktree exige Git e parte do último commit; o sandbox não é contêiner; créditos são estimativa; 9.12 não resume
   clusters em tópicos (só sugere duplicata, nota velha e ligação); subtarefas sem Git na mesma pasta rodam uma de cada vez.
 
+## Login por usuario e senha (item 4.41, ADR-022): resultados reais (2026-11-06)
+- Antes: o dialogo do token nao conferia nada, nao mostrava erro nem sucesso e voltava para a mesma pagina.
+- Agora: contas locais (scrypt com sal, migracao 0013), primeiro acesso so no proprio computador (ou pela linha de comando
+  `python -m forja.usuario.contas_cli`), sessao de 256 bits guardada so como sha256, inatividade de `APP_SESSION_TTL_MINUTES`
+  e teto de 12 h, bloqueio progressivo por conta e por endereco, mesma mensagem para usuario inexistente. O token da API
+  continua valendo para scripts, MCP e CI.
+- `python -m pytest` -> **1082 passed** (206 s); `tests/test_contas.py` (6 testes) repetido 3x sem falha intermitente.
+- Navegador real, servidor COM login e sem conta (`inspecionar_painel.py --login --a11y`): **12 passos OK, 0 problemas**, axe-core
+  sem violacao na tela de acesso (primeiro acesso, senhas diferentes, senha comum recusada, medidor de forca, mostrar senha,
+  sucesso -> painel, sair, senha errada com alerta, sessao invalida volta ao login, bloqueio com contagem regressiva).
+- Sem regressao no painel sem login: `--interagir --a11y` -> 91 passos OK, 0 problemas.
+- Docker: conta `demo` criada pela linha de comando (senha lida da entrada padrao); login, erro e sair conferidos no navegador.
+- CI ganhou o passo "Tela de acesso" (servidor com login na porta 8798).
+
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -300,7 +314,7 @@ fila "Revisão (N)", editor de regras, pacotes de conhecimento (`forja/conhecime
 - gitleaks e CI ativos (ver Fase 9). Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 1075 passed. Demo em Docker: README, secao 'Em Docker'. Proximo: licenca (Fase 8, decisao sua), resumo de clusters (9.12, opcional), 2.8.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 1082 passed. Demo em Docker: README, secao 'Em Docker'. Proximo: licenca (Fase 8, decisao sua), resumo de clusters (9.12, opcional), 2.8.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

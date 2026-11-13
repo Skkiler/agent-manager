@@ -92,6 +92,7 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.37 Grafo de funcoes (`codigo.estrutura` funcao/grafo: assinatura, tipos, retorno, excecoes, quem chama e o que chama), gerado por padrao no preparo de tarefas com pasta de trabalho. ADR-020.
 - [x] 4.38 Agentes/modelos padrao por hierarquia (rapida=haiku-5.5, execucao=sonnet-5.5, planejamento/revisao=opus-5.5 high, estudo=haiku-5.5) com reserva `auto`; roteamento por complexidade (simples 1 turno barato; complexa plano+execucao). Medido no Kiro real (6/6). ADR-020.
 - [x] 4.39 Segundo cerebro: base inicial curada (63 notas, 10 areas, somente leitura, `publico/forja-base`), topicos->subtopicos ligados (SUBTOPICO_DE/RELACIONADO_A), navegacao (`forja_navegar_memoria`), dica de subtopicos no contexto. ADR-020.
+- [x] 4.41 Login do painel por usuario e senha (scrypt, sessao com expiracao, bloqueio progressivo, primeiro acesso so local ou por CLI), tela de acesso com retorno de erro/sucesso/bloqueio; token da API mantido para scripts e MCP. Migracao 0013, ADR-022.
 - [x] 4.40 Alimentacao e estudo: `POST /estudos` (pasta permitida ou topico) -> notas candidatas ligadas; registro automatico de decisoes/aprendizados por projeto; `forja_propor_nota`. ADR-020.
 
 ## Fase 9 — Validacao de mercado nov/2026 (implementada; ADR-021, migracao 0012)

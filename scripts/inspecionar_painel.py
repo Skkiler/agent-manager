@@ -36,6 +36,96 @@ VISTAS = {
 }
 
 
+def login(nav, base: str, saida: Path, a11y: bool) -> int:
+    """Tela de acesso num servidor COM login (servidor novo, sem conta): primeiro acesso, erros, sucesso, sair, bloqueio."""
+    from playwright.sync_api import expect
+
+    falhas = 0
+
+    def passo(nome: str, condicao: bool) -> None:
+        nonlocal falhas
+        print(f"  [{'OK' if condicao else 'FALHA'}] login: {nome}")
+        falhas += 0 if condicao else 1
+        if not condicao:
+            anotar("tela de login", nome)
+
+    ctx = nav.new_context(viewport={"width": 1280, "height": 860})
+    pg = ctx.new_page()
+    erros: list[str] = []
+    pg.on("pageerror", lambda e: erros.append(str(e)))
+    pg.goto(base)
+    tela = pg.locator("#tela-login")
+    expect(tela).to_be_visible(timeout=8000)
+    passo("servidor sem conta abre o primeiro acesso (por cima do painel inerte)",
+          "Primeiro acesso" in tela.inner_text() and pg.evaluate("document.querySelector('#area').inert"))
+    pg.screenshot(path=str(saida / "login-primeiro-acesso.png"))
+    pg.get_by_label("Usuário").fill("ana")
+    pg.locator("#login-senha").fill("uma frase longa e boa")
+    pg.locator("#login-senha2").fill("outra frase diferente")
+    pg.get_by_role("button", name="Criar acesso e entrar").click()
+    passo("senhas diferentes: aviso claro sem enviar", "não conferem" in pg.locator(".login-erro").inner_text())
+    pg.locator("#login-senha").fill("12345678")
+    pg.locator("#login-senha2").fill("12345678")
+    pg.get_by_role("button", name="Criar acesso e entrar").click()
+    expect(pg.locator(".login-erro")).to_contain_text("fácil", timeout=6000)
+    passo("senha comum: o servidor recusa e a tela explica", True)
+    pg.locator("#login-senha").fill("uma frase longa e boa")
+    passo("medidor de forca da senha reage", pg.locator(".forca meter").get_attribute("value") not in (None, "0"))
+    pg.locator("#login-senha2").fill("uma frase longa e boa")
+    pg.get_by_role("button", name="Mostrar senha").click()
+    passo("mostrar/esconder senha", pg.locator("#login-senha").get_attribute("type") == "text")
+    pg.get_by_role("button", name="Criar acesso e entrar").click()
+    expect(tela).to_contain_text("Bem-vindo, ana", timeout=6000)
+    pg.screenshot(path=str(saida / "login-sucesso.png"))
+    expect(tela).to_be_hidden(timeout=6000)
+    expect(pg.locator(".kanban .coluna").first).to_be_visible(timeout=8000)
+    passo("primeiro acesso cria a conta, mostra sucesso e abre o painel", pg.locator("#usuario-atual").inner_text() == "ana")
+    pg.locator("#usuario-atual").click()
+    pg.get_by_role("button", name="Sair da conta").click()
+    expect(tela).to_be_visible(timeout=8000)
+    passo("sair volta para a tela 'Entrar'", "Entrar" in tela.locator("h1").inner_text())
+    pg.get_by_label("Usuário").fill("ana")
+    pg.locator("#login-senha").fill("senha-errada-1")
+    pg.get_by_role("button", name="Entrar", exact=True).click()
+    expect(pg.locator(".login-erro")).to_contain_text("incorretos", timeout=6000)
+    passo("senha errada: erro visivel (role=alert) e o painel continua fechado", pg.locator(".login-erro").get_attribute("role") == "alert"
+          and tela.is_visible())
+    pg.screenshot(path=str(saida / "login-erro.png"))
+    if a11y:
+        from axe_playwright_python.sync_playwright import Axe
+
+        ctx2 = nav.new_context(viewport={"width": 1280, "height": 860}, bypass_csp=True)
+        p2 = ctx2.new_page()
+        p2.goto(base)
+        p2.locator("#tela-login").wait_for(state="visible")
+        r = Axe().run(p2, options={"runOnly": {"type": "tag", "values": ["wcag2a", "wcag2aa", "wcag21aa"]}})
+        graves = [v for v in r.response.get("violations", []) if v.get("impact") in ("critical", "serious")]
+        print(f"  [a11y] login        violacoes={len(r.response.get('violations', []))} graves={len(graves)}")
+        falhas += len(graves)
+        ctx2.close()
+    pg.locator("#login-senha").fill("uma frase longa e boa")
+    pg.get_by_role("button", name="Entrar", exact=True).click()
+    expect(tela).to_be_hidden(timeout=8000)
+    passo("senha certa entra no painel", pg.locator("#usuario-atual").inner_text() == "ana")
+    pg.evaluate("sessionStorage.setItem('forja_token', 'sessao-que-nao-existe-mais')")
+    pg.reload()
+    expect(tela).to_be_visible(timeout=8000)
+    passo("sessao invalida/expirada volta para o login", "Entrar" in tela.locator("h1").inner_text())
+    for _ in range(5):
+        pg.get_by_label("Usuário").fill("ana")
+        pg.locator("#login-senha").fill("senha-errada-2")
+        pg.get_by_role("button", name="Entrar", exact=True).click()
+        pg.wait_for_timeout(250)
+    pg.locator("#login-senha").fill("senha-errada-2")
+    pg.locator(".login-botao").click()
+    expect(pg.locator(".login-botao")).to_contain_text("Aguarde", timeout=6000)
+    passo("bloqueio apos erros seguidos mostra contagem regressiva e desativa o botao", pg.locator(".login-botao").is_disabled())
+    pg.screenshot(path=str(saida / "login-bloqueio.png"))
+    passo("sem erro de JavaScript", not erros)
+    ctx.close()
+    return falhas
+
+
 def melhorias(pagina, base: str, saida: Path, expect, passo) -> None:
     """9.x: desfazer por tarefa, copias isoladas, painel de custo, fila de revisao do segundo cerebro, regras e oficina."""
     pagina.goto(base + "#/tarefas")
@@ -551,6 +641,7 @@ def main() -> int:
     ap.add_argument("--altura", type=int, default=900)
     ap.add_argument("--navegador", choices=("msedge", "chromium"), default="msedge", help="chromium = o do Playwright (CI)")
     ap.add_argument("--a11y", action="store_true", help="auditoria axe-core em cada vista (falha em violacao critica/seria)")
+    ap.add_argument("--login", action="store_true", help="testa a tela de acesso num servidor com login e SEM conta criada")
     ap.add_argument("--so-melhorias", action="store_true", help="so os fluxos das melhorias 9.x (desfazer, custo, revisao, regras, oficina)")
     a = ap.parse_args()
     from playwright.sync_api import sync_playwright  # import tardio: dependencia opcional
@@ -573,6 +664,11 @@ def main() -> int:
         pagina.on("pageerror", lambda e: erros.append(f"pageerror: {e}"))
         pagina.on("response", lambda r: erros.append(f"http {r.status} {r.request.method}: {r.url.split('/api/v1')[-1]} (apos: {ultimo_passo[0]})") if r.status >= 400 else None)
         base = f"http://127.0.0.1:{a.porta}/"
+        if a.login:  # servidor proprio, COM login e sem conta: so a tela de acesso
+            problemas = login(nav, base, saida, a.a11y)
+            nav.close()
+            print("problemas:", problemas)
+            return 1 if problemas else 0
         for vista, seletor in VISTAS.items():
             erros.clear()
             pagina.goto(f"{base}#/{vista}")

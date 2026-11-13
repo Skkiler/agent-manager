@@ -30,6 +30,7 @@
     <button id="alternar-lateral" type="button" aria-pressed="false" aria-controls="lateral" title="Menu lateral (Ctrl+B)">Menu</button>
     <button id="alternar-direita" type="button" aria-pressed="false" aria-controls="direita" title="Conversa e decisões (Ctrl+Shift+B)">Conversa</button>
     <button id="alternar-inferior" type="button" aria-pressed="false" aria-controls="inferior" title="Painel inferior (Ctrl+J)">Painel</button>
+    <button id="usuario-atual" type="button" class="chip" hidden aria-label="Sua conta"></button>
     <span id="conexao" role="status" aria-live="polite" class="pill">desconectado</span>
   </header>
 
@@ -61,15 +62,7 @@
     <span id="st-hora"></span>
   </footer>
 
-  <dialog id="dlg-token" aria-labelledby="dlg-token-t">
-    <form method="dialog" id="form-token">
-      <h2 id="dlg-token-t">Acesso</h2>
-      <p class="aviso">Servidor local-first. Informe o token da API (arquivo <code>data/api_token.txt</code>).
-        Ele fica só nesta aba e nunca é versionado.</p>
-      <label>Token <input id="token" type="password" autocomplete="off" required /></label>
-      <div class="linha"><button value="ok" id="salvar-token" class="primario">Usar token</button></div>
-    </form>
-  </dialog>
+  <div id="tela-login" hidden></div>
   <dialog id="dlg-geral" aria-labelledby="dlg-geral-t"><div id="dlg-geral-corpo"></div></dialog>
   <div id="avisos" role="status" aria-live="polite" popover="manual"></div>
 

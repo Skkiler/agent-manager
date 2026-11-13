@@ -508,3 +508,29 @@ class SugestaoMemoria(Base):
     criado_em: Mapped[str] = mapped_column(String(40))
     decidido_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
     decidido_por: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+# ============================ Contas de acesso ao painel (usuario e senha) ============================
+class Usuario(Base):
+    """Conta local do painel. A senha so existe como hash scrypt com sal (nunca em texto, log ou evento)."""
+
+    __tablename__ = "usuario"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    nome: Mapped[str] = mapped_column(String(64), unique=True)  # normalizado (minusculas)
+    senha_hash: Mapped[str] = mapped_column(String(300))
+    falhas: Mapped[int] = mapped_column(Integer, default=0)
+    bloqueado_ate: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    ultimo_acesso: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    criado_em: Mapped[str] = mapped_column(String(40))
+    atualizado_em: Mapped[str] = mapped_column(String(40))
+
+
+class Sessao(Base):
+    """Sessao de login. `id` = sha256 do token entregue ao navegador (o token em si nunca e guardado)."""
+
+    __tablename__ = "sessao"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    usuario_id: Mapped[str] = mapped_column(String(64), index=True)
+    criado_em: Mapped[str] = mapped_column(String(40))
+    ultimo_uso: Mapped[str] = mapped_column(String(40))
+    expira_em: Mapped[str] = mapped_column(String(40), index=True)  # absoluto; a inatividade e conferida por ultimo_uso
