@@ -101,6 +101,10 @@ def login(nav, base: str, saida: Path, a11y: bool) -> int:
         r = Axe().run(p2, options={"runOnly": {"type": "tag", "values": ["wcag2a", "wcag2aa", "wcag21aa"]}})
         graves = [v for v in r.response.get("violations", []) if v.get("impact") in ("critical", "serious")]
         print(f"  [a11y] login        violacoes={len(r.response.get('violations', []))} graves={len(graves)}")
+        for v in graves:
+            alvos = [str(n.get("target")) for n in v.get("nodes", [])[:3]]
+            print(f"      {v.get('impact')}: {v.get('id')} {alvos}")
+            anotar("acessibilidade da tela de login", f"{v.get('impact')}: {v.get('id')} em {alvos}")
         falhas += len(graves)
         ctx2.close()
     pg.locator("#login-senha").fill("uma frase longa e boa")
