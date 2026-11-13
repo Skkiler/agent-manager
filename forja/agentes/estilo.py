@@ -119,6 +119,8 @@ class PerfilTrabalho:
     observacoes: str = ""
     correcao: str = "uma_rodada"  # desligada | uma_rodada: a Forja roda os testes e devolve UMA falha ao agente (alteracao de codigo)
     testes_timeout_s: int = 300
+    isolamento_testes: str = "basico"  # basico | estrito (forja/ferramentas/sandbox.py)
+    regras: tuple[Any, ...] = ()  # regras de controle do usuario (forja/seguranca/regras.py); nunca afrouxam invariantes
 
     @property
     def modos(self) -> frozenset[str]:

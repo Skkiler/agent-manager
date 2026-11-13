@@ -125,6 +125,14 @@ class Tx:
     def ultimo_seq(self) -> int:
         return self.s.scalar(select(func.max(T.Evento.seq))) or 0
 
+    def contar_eventos(self, tipo: str, execucao_id: str) -> int:
+        q = select(func.count()).select_from(T.Evento).where(T.Evento.tipo == tipo, T.Evento.execucao_id == execucao_id)
+        return self.s.scalar(q) or 0
+
+    def eventos_da_execucao(self, execucao_id: str, limite: int = 2000) -> list[dict[str, Any]]:
+        q = select(T.Evento).where(T.Evento.execucao_id == execucao_id).order_by(T.Evento.seq).limit(limite)
+        return [_dict(e) for e in self.s.scalars(q)]
+
     # ---- locks ----
     def purgar_locks_expirados(self, agora_iso: str) -> int:
         return self.s.execute(delete(T.RecursoLock).where(T.RecursoLock.expira_em <= agora_iso)).rowcount

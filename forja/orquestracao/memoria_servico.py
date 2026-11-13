@@ -716,7 +716,10 @@ class ServicoMemoria:
                     "conteudo_nao_confiavel": True,
                     "tokens_estimados": estimar_tokens(m["resumo"] + h["trecho"]),
                     "cobertura": h.get("cobertura", 1.0),
-                    "_fator": PESO_ESTADO.get(m["estado"], 0.3) * (0.5 if m["necessita_revalidacao"] else 1.0),
+                    "usos": m.get("usos") or 0,
+                    # utilidade medida (citada pela resposta de tarefas reais) reforca ate +20%; nunca supera o estado
+                    "_fator": PESO_ESTADO.get(m["estado"], 0.3) * (0.5 if m["necessita_revalidacao"] else 1.0)
+                    * (1.0 + 0.02 * min(int(m.get("usos") or 0), 10)),
                 }
             )
         return itens

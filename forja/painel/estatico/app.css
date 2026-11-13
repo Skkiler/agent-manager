@@ -93,7 +93,9 @@ button.chip:hover:not(:disabled) { background: var(--aviso); filter: brightness(
 #barra-status span { padding: 0 6px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 #barra-status span:hover { background: #ffffff26; }
 
-#area { position: relative; overflow: hidden; display: grid; min-height: 0; grid-template-columns: var(--larg-ativ) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+/* clip (e nao hidden): paineis recolhidos ficam transladados para fora; com 'hidden' um foco programatico rolava a area inteira
+   para o lado (conteudo deslocado sem barra de rolagem, achado na inspecao da oficina) */
+#area { position: relative; overflow: clip; display: grid; min-height: 0; grid-template-columns: var(--larg-ativ) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 #atividades { grid-column: 1; background: var(--ativ); border-right: 1px solid var(--borda); display: flex; flex-direction: column; align-items: center;
   padding-top: 6px; gap: 2px; position: relative; z-index: calc(var(--z-painel) + 1); overflow-y: auto; scrollbar-width: none; }
 #atividades button { width: 48px; height: 48px; flex: none; display: grid; place-items: center; align-content: center; gap: 1px; padding: 2px;
@@ -218,11 +220,64 @@ dl.perfil { display: grid; grid-template-columns: max-content 1fr; gap: 2px var(
 /* eventos e oficina (pixel art: so projeta o estado real; pode ser desligada) */
 #eventos { list-style: none; margin: 0; padding: 0; font-family: var(--mono); font-size: var(--fs-xs); }
 #eventos li { padding: 1px 0; border-bottom: 1px dotted var(--borda); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.oficina { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; padding: 6px; image-rendering: pixelated; }
-.of-agente { display: grid; justify-items: center; gap: 2px; width: 92px; font-size: 10px; text-align: center; } .of-agente svg { width: 48px; height: 48px; }
-.of-agente.trabalhando svg { animation: balanca .8s steps(2) infinite; }
-.of-agente .balao { border: 1px solid var(--borda); background: var(--cartao); border-radius: 3px; padding: 0 var(--e1); max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* chao do escritorio em pixel: xadrez com as cores da paleta ativa (muda junto com o tema) */
+.oficina { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; padding: 8px; image-rendering: pixelated; border-radius: var(--raio);
+  background: repeating-conic-gradient(var(--cartao) 0 25%, color-mix(in srgb, var(--borda) 55%, var(--cartao)) 0 50%) 0 0 / 16px 16px;
+  border: 1px solid var(--borda); }
+.of-agente .palco { outline: 2px solid transparent; outline-offset: 2px; border-radius: 2px; }
+.nivel-simples .palco { outline-color: var(--ok); } .nivel-normal .palco { outline-color: var(--acento); }
+.nivel-complexa .palco { outline-color: #a855f7; }
+.oficina-raiz { display: grid; gap: var(--e2); }
+.of-agente { position: relative; display: grid; justify-items: center; gap: 3px; width: 108px; font-size: 10px; text-align: center; }
+.of-agente .sprite { width: 56px; height: 56px; }
+.of-agente .of-corpo { display: grid; justify-items: center; height: auto; padding: 4px; background: transparent; border-color: transparent; white-space: normal; }
+.of-agente .of-corpo:hover, .of-agente .of-corpo:focus-visible { border-color: var(--acento); background: var(--hover); }
+.of-agente .nome { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.of-agente .palco { position: relative; display: inline-block; }
+.of-agente .balao { border: 1px solid var(--borda); background: var(--cartao); border-radius: 3px; padding: 0 var(--e1); max-width: 104px; height: auto;
+  min-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.of-agente .balao.clicavel { border-color: var(--aviso); color: var(--aviso); font-weight: 600; cursor: pointer; }
 .of-agente.precisa .balao { border-color: var(--aviso); color: var(--aviso); }
+.of-agente meter.orcamento { width: 84px; height: 6px; }
+.of-agente .pequeno { height: var(--alt-ctl-p); padding: 0 var(--e1); font-size: 10px; }
+.of-detalhe { display: none; position: absolute; z-index: var(--z-dica); top: 0; left: 100%; translate: 4px 0; width: 210px; text-align: left;
+  background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: var(--e2); box-shadow: 0 4px 14px rgb(0 0 0 / .35); font-size: var(--fs-xs); }
+.of-agente:hover .of-detalhe, .of-agente:focus-within .of-detalhe { display: block; }
+/* animacao pela acao (desligada com prefers-reduced-motion) */
+.acao-lendo .sprite { animation: of-ler 1.6s steps(2) infinite; }
+.acao-digitando .sprite { animation: of-digitar .35s steps(2) infinite; }
+.acao-comando .sprite { animation: of-digitar .6s steps(2) infinite; }
+.acao-web .sprite { animation: of-ler 1s steps(4) infinite; }
+.acao-pensando .sprite { animation: of-respirar 2.4s ease-in-out infinite; }
+.acao-aguardando .sprite { animation: of-pular .9s steps(2) infinite; }
+.acao-parado .sprite, .acao-concluido .sprite { filter: grayscale(.7); }
+.of-agente .efeito::after { position: absolute; top: -4px; right: -10px; font-size: 12px; }
+.acao-lendo .efeito::after { content: "📖"; } .acao-digitando .efeito::after { content: "⌨"; } .acao-comando .efeito::after { content: "▶"; color: var(--ok); }
+.acao-web .efeito::after { content: "🌐"; } .acao-pensando .efeito::after { content: "…"; } .acao-concluido .efeito::after { content: "✓"; color: var(--ok); }
+@keyframes of-ler { 50% { transform: translateY(1px) rotate(-3deg); } }
+@keyframes of-digitar { 50% { transform: translateY(-1px); } }
+@keyframes of-respirar { 50% { transform: scale(1.04); } }
+@keyframes of-pular { 50% { transform: translateY(-4px); } }
+.of-legenda ul { list-style: none; margin: var(--e1) 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--e2); font-size: var(--fs-xs); }
+.of-legenda li { display: inline-flex; align-items: center; gap: 4px; } .of-legenda .sprite { width: 20px; height: 20px; }
+.replay { display: grid; gap: var(--e2); padding: var(--e2); }
+.replay .replay-ator { width: 64px; } .replay input[type="range"] { flex: 1; min-width: 120px; }
+.replay-legenda { flex: 1; min-width: 200px; font-size: var(--fs-s); }
+
+/* custo, revisao, regras e desfazer */
+.metricas { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--e2); }
+.card.metrica { display: grid; gap: 2px; padding: var(--e2) var(--e3); } .card.metrica strong { font-size: var(--fs-xl); color: var(--titulo); }
+.barras { list-style: none; display: flex; align-items: flex-end; gap: 3px; height: 120px; margin: 0; padding: 0; overflow-x: auto; }
+.barras li { display: grid; align-content: end; justify-items: center; gap: 2px; min-width: 22px; height: 100%; }
+.barras .barra { display: block; width: 14px; height: calc(var(--v, 0) * 96px + 2px); background: var(--acento-forte); border-radius: 2px 2px 0 0; }
+.barras small { font-size: 9px; color: var(--mudo); }
+.tabela { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
+.tabela th, .tabela td { text-align: left; padding: 3px var(--e2); border-bottom: 1px solid var(--borda); }
+.revisao { display: grid; gap: var(--e2); } .revisao .card { padding: var(--e2) var(--e3); display: grid; gap: var(--e1); }
+.regras { display: grid; gap: var(--e2); }
+.regra { display: flex; flex-wrap: wrap; gap: var(--e1); align-items: center; border: 1px solid var(--borda); border-radius: var(--raio); padding: var(--e1) var(--e2); }
+.regra input:not([type="checkbox"]) { flex: 1 1 140px; min-width: 120px; } .regra legend { font-size: var(--fs-xs); color: var(--mudo); }
+.desfazer { display: grid; gap: var(--e2); } .desfazer .card { display: grid; gap: var(--e1); padding: var(--e2) var(--e3); }
 
 /* configuracoes */
 .grade-config { grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); }

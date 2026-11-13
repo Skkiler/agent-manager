@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from forja.adapters.sqlite import tabelas as T
 from forja.adapters.sqlite.repositorio import Tx, novo_id
@@ -36,11 +36,45 @@ class ConversaContextoMixin:
         entend = next(
             (m["conteudo"] for m in reversed(msgs) if m["papel"] == "agente" and m["tipo"] == "entendimento"), ""
         )
+        progresso, contexto = self._progresso_anterior(t, execucao_id)
         return {
             "entendimento": " ".join(entend.split())[:420],
             "decisoes": ((decisoes or {}).get("dados") or {}).get("decisoes", []),
             "respostas": [m["conteudo"] for m in msgs if m["papel"] == "operador" and m["ordem"] > corte],
+            "progresso": progresso,
+            "contexto_anterior": contexto,
         }
+
+    @staticmethod
+    def _progresso_anterior(t: Tx, execucao_id: str, limite: int = 600) -> tuple[str, int]:
+        """Resumo compacto e deterministico das rodadas anteriores desta execucao (ferramentas concluidas, testes) e o
+        ultimo tamanho de contexto medido pelo Kiro. Base da retomada em sessao nova quando a antiga ficou grande."""
+        eventos = t.eventos_da_execucao(execucao_id, 3000)
+        feitas: dict[str, int] = {}
+        titulos: list[str] = []
+        testes = ""
+        contexto = 0
+        for e in eventos:
+            p = e["payload"] or {}
+            if e["tipo"] == "kiro.ferramenta" and p.get("status") == "completed":
+                feitas[str(p.get("tipo") or "outra")] = feitas.get(str(p.get("tipo") or "outra"), 0) + 1
+                tit = " ".join(str(p.get("titulo") or "").split())[:60]
+                if tit and tit not in titulos:
+                    titulos.append(tit)
+            elif e["tipo"] == "kiro.testes_forja":
+                testes = f"testes da Forja {'passaram' if p.get('ok') else 'falharam'} ({p.get('falhas', 0)} falha(s))"
+            elif e["tipo"] == "kiro.contexto":
+                contexto = int(p.get("total") or 0)
+        if not (feitas or testes):
+            return "", contexto
+        partes = []
+        if feitas:
+            partes.append("ferramentas concluidas: " + ", ".join(f"{k} x{v}" for k, v in sorted(feitas.items())))
+            partes.append("ultimas: " + "; ".join(titulos[-8:]))
+        if testes:
+            partes.append(testes)
+        texto = ". ".join(partes)
+        return (texto if len(texto) <= limite else texto[: limite - 1] + "…"), contexto
 
     def _montar_contexto(self, execucao_id: str, tarefa: dict) -> Any | None:
         """Monta o pacote de contexto e o grava (o que entrou, quanto custou, o que foi omitido). Nunca derruba a execucao."""
@@ -104,6 +138,10 @@ class ConversaContextoMixin:
                         T.ContextoUso, linhas[0]["id"], uteis=uteis, tokens_prompt=res.consumo.tokens_input or 0
                     )
                 ex = t.obter(T.Execucao, execucao_id)
+                usadas = {i.id for i in pacote.itens if i.origem == "memoria" and i.ref in set(uteis)}
+                if usadas and not res.mock:  # utilidade medida: reforco leve no ranking (memoria_servico._hidratar_memorias)
+                    t.s.execute(update(T.Memoria).where(T.Memoria.id.in_(usadas))
+                                .values(usos=T.Memoria.usos + 1, ultimo_uso=self._ts()))
                 self._ev(
                     t,
                     "contexto.uteis",

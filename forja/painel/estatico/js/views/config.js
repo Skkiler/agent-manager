@@ -161,7 +161,60 @@ function controle(p) {
     c.value = (v || []).join("\n");
     return { no: c, aplicar: (x) => { c.value = (x || []).join("\n"); } };
   }
+  if (p.tipo === "regras") return editorRegras(p, v, definir);
+  if (p.tipo === "pacotes") {
+    let marcados = new Set(v || []);
+    const caixas = p.detalhes.map((d) => {
+      const c = el("input", { type: "checkbox", value: d.id, checked: marcados.has(d.id),
+        onchange: () => { if (c.checked) marcados.add(d.id); else marcados.delete(d.id); definir([...marcados].sort()); } });
+      return el("label", { className: "linha" }, c, el("span", {}, el("strong", { textContent: d.id }), ` — ${d.descricao} (${d.notas} notas)`));
+    });
+    const no = el("div", { role: "group", "aria-label": rotulo }, ...(caixas.length ? caixas : [el("p", { className: "mudo", textContent: "Nenhum pacote disponível." })]));
+    return { no, aplicar: (x) => { marcados = new Set(x || []); caixas.forEach((l) => { const c = l.querySelector("input"); c.checked = marcados.has(c.value); }); } };
+  }
   return null;
+}
+
+// Regras de controle: uma linha por regra (nome, tipo de acao, trecho do comando, caminho, decisao, ativa). O servidor valida.
+const CATEGORIAS_REGRA = [["qualquer", "Qualquer ação"], ["ler", "Ler arquivos"], ["modificar_arquivos", "Criar/alterar arquivos"],
+  ["executar_comando", "Executar comando"], ["mover", "Mover/renomear"], ["excluir", "Excluir"], ["publicar", "Publicar (push)"],
+  ["descartar_alteracoes", "Descartar alterações"], ["instalar_dependencias", "Instalar dependências"], ["acessar_rede", "Acessar a rede"],
+  ["ferramenta_forja", "Ferramenta da Forja"], ["outra", "Não identificada"]];
+const ACOES_REGRA = [["perguntar", "Sempre perguntar"], ["negar", "Negar"], ["aprovar", "Aprovar sem perguntar"]];
+
+function editorRegras(p, valor, definir) {
+  let regras = (valor || []).map((r) => ({ ...r }));
+  const corpo = el("div", { className: "regras" });
+  const publicar = () => definir(regras.map((r) => ({ ...r })));
+  const selecao = (opcoes, atual, rotulo, aoMudar) => {
+    const s = el("select", { "aria-label": rotulo, onchange: () => aoMudar(s.value) }, ...opcoes.map(([v, r]) => el("option", { value: v, textContent: r })));
+    s.value = atual; return s;
+  };
+  const texto = (atual, rotulo, max, dica, aoMudar) => el("input", { value: atual || "", maxLength: max, "aria-label": rotulo, placeholder: dica, oninput: (ev) => aoMudar(ev.target.value) });
+  function desenhar() {
+    limpar(corpo);
+    if (!regras.length) corpo.append(el("p", { className: "mudo", textContent: "Nenhuma regra. Vale só o nível de autonomia." }));
+    regras.forEach((r, i) => {
+      const mudar = (campo) => (v) => { r[campo] = v; publicar(); };
+      corpo.append(el("fieldset", { className: "regra" }, el("legend", { textContent: `Regra ${i + 1}` }),
+        texto(r.nome, `Nome da regra ${i + 1}`, 80, "nome (ex.: proteger migrações)", mudar("nome")),
+        selecao(CATEGORIAS_REGRA, r.categoria || "qualquer", `Tipo de ação da regra ${i + 1}`, mudar("categoria")),
+        texto(r.comando_contem, `Trecho do comando da regra ${i + 1}`, 120, "comando contém (ex.: pytest)", mudar("comando_contem")),
+        texto(r.caminho_glob, `Caminho da regra ${i + 1}`, 200, "caminho (ex.: *migrations*)", mudar("caminho_glob")),
+        selecao(ACOES_REGRA, r.acao || "perguntar", `Decisão da regra ${i + 1}`, mudar("acao")),
+        el("label", {}, el("input", { type: "checkbox", checked: r.ativa !== false, onchange: (ev) => { r.ativa = ev.target.checked; publicar(); } }), " ativa"),
+        el("button", { type: "button", className: "pequeno", textContent: "Remover", "aria-label": `Remover regra ${i + 1}`,
+          onclick: () => { regras.splice(i, 1); publicar(); desenhar(); } })));
+    });
+  }
+  const adicionar = el("button", { type: "button", textContent: "+ Regra", onclick: () => {
+    if (regras.length >= 30) return toast("No máximo 30 regras.", "erro");
+    regras.push({ nome: `regra ${regras.length + 1}`, categoria: "executar_comando", comando_contem: "", caminho_glob: "", acao: "perguntar", ativa: true });
+    publicar(); desenhar(); corpo.querySelector("fieldset:last-of-type input")?.focus();
+  } });
+  desenhar();
+  return { no: el("div", {}, corpo, adicionar, el("p", { className: "mudo", textContent: "Quando várias casam, vale a mais restritiva (negar > perguntar > aprovar). Aprovar nunca vale para excluir, publicar, rede, segredos ou fora da pasta de trabalho." })),
+    aplicar: (x) => { regras = (x || []).map((r) => ({ ...r })); desenhar(); } };
 }
 
 function cartao(p) {
@@ -201,6 +254,8 @@ function padraoTexto(p) {
   if (p.tipo === "pastas") return "nenhuma pasta";
   if (p.tipo === "tags") return "nenhuma tag";
   if (p.tipo === "texto") return "vazio";
+  if (p.tipo === "regras") return "nenhuma regra";
+  if (p.tipo === "pacotes") return "nenhum pacote";
   if (p.tipo === "selecao") return (p.opcoes.find(([v]) => v === p.padrao) || [null, p.padrao])[1];
   return `${p.padrao} ${p.unidade}`.trim();
 }

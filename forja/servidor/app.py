@@ -27,20 +27,29 @@ from forja.dominio.erros import ErroDominio
 from forja.ferramentas.catalogo import Catalogo
 from forja.integracoes import ambiente
 from forja.memoria.base import semear as semear_base
+from forja.memoria.base import sincronizar_pacotes
 from forja.memoria.modelo import Principal
 from forja.memoria.rotulagem import RotulagemServico
 from forja.observabilidade.logs import configurar_logging, correlation_id_var
+from forja.observabilidade.telemetria import Telemetria
 from forja.orquestracao.acoes_externas import AcoesExternasServico
+from forja.orquestracao.aprendizado_rotas import AprendizadoRotas
 from forja.orquestracao.configuracao_servico import ConfiguracaoServico
+from forja.orquestracao.custos import CustosServico
 from forja.orquestracao.estudos import EstudoServico
 from forja.orquestracao.grafo_servico import GrafoServico
 from forja.orquestracao.integracao_servico import IntegracaoServico
+from forja.orquestracao.isolamento import Isolamento
 from forja.orquestracao.memoria_servico import ServicoMemoria
+from forja.orquestracao.oficina import OficinaServico
+from forja.orquestracao.organizacao import OrganizadorMemoria
 from forja.orquestracao.projetos_servico import ProjetosServico
 from forja.orquestracao.propostas import PropostasMemoria
 from forja.orquestracao.quadro_servico import QuadroServico
+from forja.orquestracao.restauracao import PontosRestauracao
 from forja.orquestracao.revisao import RevisaoServico
 from forja.orquestracao.servico import Servico
+from forja.orquestracao.subtarefas import SubtarefasServico
 from forja.orquestracao.visoes import VisaoKanban
 from forja.preferencias.registro import POR_ID
 from forja.preferencias.servico import PreferenciasServico
@@ -50,6 +59,7 @@ from forja.servidor.rotas import publico, r
 from forja.servidor.rotas_ferramentas import rf
 from forja.servidor.rotas_integracoes import ri
 from forja.servidor.rotas_memoria import rm
+from forja.servidor.rotas_orquestracao import rx
 from forja.servidor.rotas_preferencias import rp
 from forja.servidor.rotas_projetos import rj
 from forja.servidor.rotas_quadro import rq
@@ -123,6 +133,41 @@ def _criar_preferencias(cfg: Configuracoes, servico: Servico, app: FastAPI) -> P
     return prefs
 
 
+def _melhorias_orquestrador(app: FastAPI, cfg: Configuracoes, servico: Servico) -> None:
+    """Desfazer por tarefa, pastas isoladas, telemetria, roteamento aprendido, subagentes, custo, oficina e organizacao do
+    segundo cerebro. Cada peca e opcional e de melhor esforco: falhar nela nunca altera o resultado de uma execucao."""
+    prefs, repo, prov = app.state.prefs, servico.repo, servico.provedor
+    servico.restauracao = app.state.restauracao = PontosRestauracao(repo, cfg.artefatos_dir.parent / "pontos")
+    servico.isolamento = app.state.isolamento = Isolamento(repo)
+    app.state.kanban.restauracao = app.state.restauracao
+    app.state.telemetria = Telemetria(repo, cfg.logs_dir, cfg.app_otel_endpoint)
+    app.state.aprendizado = AprendizadoRotas(repo)
+    app.state.subtarefas = SubtarefasServico(servico)
+    app.state.custos = CustosServico(repo, app.state.modelos)
+    real = isinstance(prov, ProvedorKiroAcp)
+    app.state.oficina = OficinaServico(repo, (lambda: prov.max_ferramentas) if real else None)
+    app.state.organizador = OrganizadorMemoria(repo, app.state.memoria, app.state.grafo, Principal("organizacao", cfg.memoria_namespaces))
+    servico.ao_finalizar += [app.state.telemetria.ao_finalizar, app.state.aprendizado.ao_finalizar, app.state.subtarefas.ao_finalizar]
+    if real:
+        prov.ajustar_rota = app.state.aprendizado.ajustar
+        prefs.registrar_aplicador("subagentes", lambda v: setattr(prov, "subagentes", str(v)))
+    prefs.registrar_aplicador("subagentes", lambda v: setattr(app.state.subtarefas, "modo", str(v)))
+    prefs.registrar_aplicador("pontos_restauracao", lambda v: setattr(servico, "pontos_ativos", bool(v)))
+    prefs.registrar_aplicador("isolar_paralelas", lambda v: setattr(servico.isolamento, "ativo", bool(v)))
+    prefs.registrar_aplicador("roteamento_aprende", lambda v: setattr(app.state.aprendizado, "ativo", bool(v)))
+    prefs.registrar_aplicador("retomar_apos_queda", lambda v: setattr(servico, "retomar_apos_queda", str(v)))
+    prefs.registrar_aplicador("organizacao_memoria", lambda v: setattr(app.state.organizador, "modo", str(v)))
+    prefs.registrar_aplicador("telemetria", app.state.telemetria.definir_modo)
+    prefs.registrar_aplicador("pacotes_conhecimento", lambda v: _pacotes_conhecimento(repo, v))
+
+
+def _pacotes_conhecimento(repo: RepositorioSqlite, escolhidos: list[str]) -> None:
+    try:  # instala os marcados e remove os desmarcados (idempotente; so grava o que mudou)
+        sincronizar_pacotes(repo, list(escolhidos or []))
+    except Exception as e:  # noqa: BLE001 - pacote e conhecimento extra; falhar nao impede o servidor
+        log.warning("nao foi possivel sincronizar os pacotes de conhecimento: %s", type(e).__name__)
+
+
 def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None = None) -> FastAPI:
     cfg = cfg or obter_configuracoes()
     configurar_logging(cfg.app_log_level)
@@ -131,11 +176,13 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.servico.recuperar()
         app.state.acoes_externas.recuperar()
+        app.state.organizador.iniciar()  # organizacao do segundo cerebro em segundo plano (so sugere; preferencia)
         log.info("servidor pronto", extra={"evento": "servidor.pronto"})
         try:
             yield
         finally:
             app.state.encerrando.set()
+            app.state.organizador.parar()
             app.state.servico.encerrar()
 
     app = FastAPI(title="Forja", version=__import__("forja").__version__, lifespan=lifespan,
@@ -199,6 +246,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
                                       Principal("estudos", cfg.memoria_namespaces))
     provedor_servico.ao_finalizar.append(app.state.estudos.ao_finalizar)
     app.state.prefs.registrar_aplicador("registrar_aprendizados", lambda v: setattr(app.state.estudos, "registrar_aprendizados", bool(v)))
+    _melhorias_orquestrador(app, cfg, provedor_servico)
     app.state.prefs.aplicar_todos()  # aplica as preferencias salvas aos componentes ja criados
     app.state.encerrando = threading.Event()
     app.state.hosts = {"127.0.0.1", "localhost", "::1", f"127.0.0.1:{cfg.app_port}", f"localhost:{cfg.app_port}"}
@@ -216,6 +264,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.include_router(rs)
     app.include_router(rv)
     app.include_router(rj)
+    app.include_router(rx)
     _ = provedor_servico  # servico ja referenciado em app.state
 
     if ESTATICO.exists():

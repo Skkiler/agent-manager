@@ -147,6 +147,31 @@ Detalhes em `docs/adr/0011-catalogo-de-ferramentas-quadro-e-propostas.md`.
 - Integracoes > Busca web: Brave Search API (chave no .env) ou SearXNG proprio; o agente le so paginas que vieram da busca.
 - Avaliar a busca no seu codigo: `python scripts\avaliar_busca_codigo.py --raiz <pasta> [--embeddings]` (copia temporaria, so numeros na saida). Detalhes no ADR-016.
 
+### Em Docker (demonstração local, agente simulado)
+A porta é publicada **só** no loopback do host (`127.0.0.1`) e o token da API é obrigatório. O Kiro CLI não existe no contêiner.
+
+```powershell
+$env:FORJA_PORTA = 8790                       # qualquer porta livre
+$env:FORJA_ENV_FILE = "C:\fora-do-git\forja.env"   # opcional: APP_API_TOKEN=<seu token com 24+ caracteres>
+docker compose up -d --build
+docker compose exec forja python scripts/semear_demo.py --porta 8787 --pasta-trabalho /tmp/forja-demo-proj   # dados sinteticos
+docker compose exec forja cat /dados/data/credenciais/api_token.txt   # so se nao definiu APP_API_TOKEN
+# abra http://127.0.0.1:8790 e cole o token
+```
+
+### Desfazer, pastas isoladas, custo, regras e oficina (Fase 9, ADR-021)
+- **Desfazer alterações**: o cartão de uma tarefa que mexeu em arquivos ganha o botão; só volta o que ninguém alterou depois.
+- **Tarefas em paralelo** na mesma pasta Git trabalham em cópias isoladas (`.worktrees/`, branch `forja/...`); sem Git, esperam.
+- **Custo** (barra de atividades): créditos estimados por dia, parte, modelo e tarefa, com alerta de desvio.
+- **Regras de controle** (Configurações > Segurança): negar, sempre perguntar ou aprovar por tipo de ação, comando e caminho.
+- **Segundo cérebro**: "Revisão (N)" junta notas candidatas e sugestões de duplicata, nota velha e ligação; nada muda sem você.
+- **Oficina** (painel inferior): personagem por papel, animação pela ação, balão "aguardando você" clicável, orçamento e replay.
+- **Telemetria OpenTelemetry** opcional (Configurações > Manutenção): arquivo JSONL ou coletor OTLP em loopback (`APP_OTEL_ENDPOINT`).
+
+### Varredura de segredos (gitleaks)
+`pip install pre-commit && pre-commit install` ativa o gitleaks a cada commit; o CI varre o histórico inteiro com o binário
+verificado por sha256. Exceções revisadas ficam em `.gitleaks.toml`.
+
 ### Limites desta fase
 O agente e um **mock** deterministico: as evidencias que ele produz sao **simuladas** e nao comprovam
 funcionalidade real. Integracao Kiro (ACP), memoria/grafos, multiagentes e o painel pixel art chegam nas Fases 2+.

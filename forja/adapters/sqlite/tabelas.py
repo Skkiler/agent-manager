@@ -154,6 +154,7 @@ class Idempotencia(Base):
 
 
 Index("ix_evento_seq_projeto", Evento.projeto_id, Evento.seq)
+Index("ix_evento_execucao_seq", Evento.execucao_id, Evento.seq)  # replay da execucao, telemetria e custos
 
 
 # ============================ Memoria / segundo cerebro (Fase 3) ============================
@@ -189,6 +190,9 @@ class Memoria(Base):
     expira_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
     criado_em: Mapped[str] = mapped_column(String(40))
     atualizado_em: Mapped[str] = mapped_column(String(40))
+    # Utilidade medida: quantas vezes a memoria entrou no contexto E foi citada pela resposta (reforco leve no ranking)
+    usos: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    ultimo_uso: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class MemoriaVersao(Base):
@@ -438,3 +442,69 @@ class VetorSemantico(Base):
     modelo: Mapped[str] = mapped_column(String(120), index=True)
     dim: Mapped[int] = mapped_column(Integer)
     vetor: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+# ============================ Melhorias de mercado (9.x): desfazer, isolamento, roteamento, revisao ============================
+class PontoRestauracao(Base):
+    """Foto da pasta de trabalho ANTES de uma execucao que escreve (blobs enderecados por conteudo fora do Git).
+    `antes`/`depois`: {caminho relativo: sha256}. Desfazer so restaura arquivos que ninguem mexeu depois da execucao."""
+
+    __tablename__ = "ponto_restauracao"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    execucao_id: Mapped[str] = mapped_column(String(64), index=True)
+    tarefa_id: Mapped[str] = mapped_column(String(64), index=True)
+    pasta: Mapped[str] = mapped_column(Text)
+    estado: Mapped[str] = mapped_column(String(16), index=True)  # capturado | finalizado | desfeito | sem_mudancas
+    antes: Mapped[Any] = mapped_column(JSON)
+    depois: Mapped[Any] = mapped_column(JSON, nullable=True)
+    resumo: Mapped[Any] = mapped_column(JSON, nullable=True)  # {alterados, adicionados, removidos, ignorados}
+    parcial: Mapped[bool] = mapped_column(Boolean, default=False)
+    criado_em: Mapped[str] = mapped_column(String(40))
+    finalizado_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    desfeito_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class AreaIsolada(Base):
+    """Pasta isolada (git worktree) criada quando duas execucoes disputam a mesma pasta de trabalho."""
+
+    __tablename__ = "area_isolada"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # = execucao_id
+    tarefa_id: Mapped[str] = mapped_column(String(64), index=True)
+    pasta_origem: Mapped[str] = mapped_column(Text)
+    caminho: Mapped[str] = mapped_column(Text)
+    branch: Mapped[str] = mapped_column(String(200))
+    estado: Mapped[str] = mapped_column(String(16), index=True)  # ativa | removida
+    criado_em: Mapped[str] = mapped_column(String(40))
+    removida_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class EstatisticaRota(Base):
+    """Taxa de sucesso (media movel exponencial) por nivel/parte/modelo: base do roteamento que aprende com o uso."""
+
+    __tablename__ = "estatistica_rota"
+    chave: Mapped[str] = mapped_column(String(200), primary_key=True)
+    nivel: Mapped[str] = mapped_column(String(16), index=True)
+    parte: Mapped[str] = mapped_column(String(32))
+    modelo: Mapped[str] = mapped_column(String(120))
+    execucoes: Mapped[int] = mapped_column(Integer, default=0)
+    sucessos: Mapped[int] = mapped_column(Integer, default=0)
+    taxa: Mapped[float] = mapped_column(Float, default=1.0)
+    atualizado_em: Mapped[str] = mapped_column(String(40))
+
+
+class SugestaoMemoria(Base):
+    """Sugestao da organizacao automatica do segundo cerebro (duplicata, desatualizada, ligacao). Nunca altera nada sozinha:
+    vai para a fila de revisao e so vale quando o usuario aceita."""
+
+    __tablename__ = "sugestao_memoria"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(24), index=True)  # duplicata | desatualizada | ligacao
+    chave: Mapped[str] = mapped_column(String(200), unique=True)  # deduplicacao (tipo + memorias ordenadas)
+    memorias: Mapped[Any] = mapped_column(JSON)
+    namespace: Mapped[str] = mapped_column(String(200), index=True)
+    motivo: Mapped[str] = mapped_column(Text, default="")
+    dados: Mapped[Any] = mapped_column(JSON, nullable=True)
+    estado: Mapped[str] = mapped_column(String(16), index=True)  # pendente | aceita | rejeitada | obsoleta
+    criado_em: Mapped[str] = mapped_column(String(40))
+    decidido_em: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    decidido_por: Mapped[str | None] = mapped_column(String(100), nullable=True)

@@ -11,7 +11,8 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
-SECOES = ("entendimento", "plano", "resposta", "evidencias", "premissas", "decisoes", "riscos", "proximos_passos", "notas")
+SECOES = ("entendimento", "plano", "subtarefas", "resposta", "evidencias", "premissas", "decisoes", "riscos", "proximos_passos", "notas")
+MAX_SUBTAREFAS = 4
 _ALIASES = {
     "entendimento": "entendimento", "resumo": "entendimento", "contexto": "entendimento",
     "resposta": "resposta", "resultado": "resposta", "analise": "resposta", "conclusao": "resposta",
@@ -21,6 +22,7 @@ _ALIASES = {
     "riscos": "riscos", "riscos e cuidados": "riscos",
     "evidencias": "evidencias", "evidencia": "evidencias", "verificacao": "evidencias", "o que foi feito": "evidencias",
     "plano": "plano", "plano de execucao": "plano", "plano de acao": "plano",
+    "subtarefas": "subtarefas", "subtarefas independentes": "subtarefas", "divisao em subtarefas": "subtarefas",
     "notas": "notas", "notas para o segundo cerebro": "notas",
     "proximos passos": "proximos_passos", "proximo passo": "proximos_passos", "proximos": "proximos_passos",
 }
@@ -111,6 +113,26 @@ def parse(texto: str) -> Briefing:
     if "decisoes" in secoes and not decisoes:
         del secoes["decisoes"]  # "Nenhuma decisao necessaria" nao vira pergunta
     return Briefing(secoes, decisoes, estruturado=True)
+
+
+def extrair_subtarefas(texto: str) -> list[dict[str, str]]:
+    """'## Subtarefas' -> [{titulo, descricao}] (2 a MAX_SUBTAREFAS itens; menos de 2 = nao dividir). Tolerante ao formato."""
+    itens: list[dict[str, str]] = []
+    for linha in (texto or "").splitlines():
+        m = _ITEM.match(linha)
+        if not m:
+            continue
+        corpo = m.group("corpo").strip().strip("*").strip()
+        if _NENHUMA.match(corpo):
+            continue
+        titulo, _, desc = corpo.partition(":")
+        titulo = re.sub(r"[*_`]+", "", titulo).strip()[:120]
+        if len(titulo) < 3:
+            continue
+        itens.append({"titulo": titulo, "descricao": (desc.strip() or titulo)[:1500]})
+        if len(itens) >= MAX_SUBTAREFAS:
+            break
+    return itens if len(itens) >= 2 else []
 
 
 def resumo_para_retomada(b: Briefing, limite: int = 420) -> str:

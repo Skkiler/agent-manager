@@ -18,6 +18,7 @@ from typing import Any
 from forja.agentes.base import ControleExecucao
 from forja.agentes.estilo import PADRAO, PerfilTrabalho
 from forja.seguranca.acoes import descrever_acao
+from forja.seguranca.regras import avaliar as avaliar_regras
 
 log = logging.getLogger("forja.mediador")
 
@@ -82,10 +83,18 @@ class MediadorPermissoes:
             return rejeitar
         if permitir is None:  # sem como permitir uma vez: nao arrisca allow_always
             return rejeitar
-        if self.perfil.aprova_sozinho(item):  # auditavel: toda aprovacao automatica vira evento
+        decisao = avaliar_regras(self.perfil.regras, item) if self.perfil.regras else None
+        if decisao is not None:  # regras do usuario: auditaveis (evento com o nome da regra)
+            self.ctl.evento("kiro.regra_aplicada", {"regra": decisao[1].nome[:80], "acao": decisao[0], "descricao": item["descricao"]})
+            if decisao[0] == "negar":
+                return rejeitar
+            if decisao[0] == "aprovar":
+                return permitir
+        perguntar_sempre = decisao is not None and decisao[0] == "perguntar"
+        if not perguntar_sempre and self.perfil.aprova_sozinho(item):  # auditavel: toda aprovacao automatica vira evento
             self.ctl.evento("kiro.permissao_automatica", {"nivel": self.perfil.nivel, "categoria": item["categoria"], "descricao": item["descricao"]})
             return permitir
-        if self._chave(item) in self._lembradas:
+        if not perguntar_sempre and self._chave(item) in self._lembradas:
             self.ctl.evento("kiro.permissao_reutilizada", {"descricao": item["descricao"]})
             return permitir
         return permitir if self._perguntar(item) else rejeitar

@@ -16,6 +16,8 @@ from forja.dominio.erros import ConflitoVersao, ValidacaoDominio
 from forja.dominio.tempo import Relogio, RelogioSistema, iso
 from forja.preferencias.registro import CATEGORIAS, EDITAVEIS, POR_ID, PREFERENCIAS, Preferencia
 from forja.seguranca.pastas import PoliticaPastas, validar_lista
+from forja.seguranca.regras import carregar as carregar_regras
+from forja.seguranca.regras import validar_regras
 
 log = logging.getLogger("forja.preferencias")
 CHAVE = "preferencias"
@@ -46,6 +48,13 @@ def validar_valor(p: Preferencia, valor: Any) -> Any:
         if not isinstance(valor, list) or not all(isinstance(x, str) for x in valor):
             raise ValidacaoDominio(f"{p.rotulo}: informe uma lista de caminhos")
         return validar_lista(valor, p.rotulo, deve_existir=p.id == "pastas_permitidas")
+    if p.tipo == "regras":
+        return validar_regras(valor)
+    if p.tipo == "pacotes":
+        validos = {v for v, _ in p.opcoes}
+        if not isinstance(valor, list) or not all(isinstance(x, str) and x in validos for x in valor):
+            raise ValidacaoDominio(f"{p.rotulo}: escolha entre {', '.join(sorted(validos)) or 'nenhum pacote disponivel'}")
+        return sorted(set(valor))
     raise ValidacaoDominio(f"{p.rotulo}: nao pode ser alterada aqui")
 
 
@@ -79,7 +88,8 @@ class PreferenciasServico:
     def perfil_trabalho(self) -> PerfilTrabalho:
         return PerfilTrabalho(nivel=self.valor("nivel_autonomia"), metodos=tuple(self.valor("metodos_acao")),
                               observacoes=self.valor("observacoes_guia"), correcao=self.valor("correcao_automatica"),
-                              testes_timeout_s=int(self.valor("testes_tempo_maximo")))
+                              testes_timeout_s=int(self.valor("testes_tempo_maximo")),
+                              isolamento_testes=str(self.valor("isolamento_testes")), regras=carregar_regras(self.valor("regras_controle")))
 
     def politica_pastas(self) -> PoliticaPastas:
         return PoliticaPastas(

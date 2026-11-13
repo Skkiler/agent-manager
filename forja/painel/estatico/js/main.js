@@ -5,6 +5,7 @@ import { agrupar, alternarPainel, definirNivel, definirPainel, emitir, estado, o
 import * as inferior from "./inferior.js";
 import { $, el, iniciarTexto, limpar } from "./ui.js";
 import * as config from "./views/config.js";
+import * as custos from "./views/custos.js";
 import * as ferramentas from "./views/ferramentas.js";
 import * as integracoes from "./views/integracoes.js";
 import * as memoria from "./views/memoria.js";
@@ -17,6 +18,7 @@ const VISTAS = [
   { id: "memoria", rotulo: "Memória", glifo: "◉", modulo: memoria },
   { id: "ferramentas", rotulo: "Ferram.", glifo: "⚒", modulo: ferramentas },
   { id: "integracoes", rotulo: "Integr.", glifo: "⇄", modulo: integracoes },
+  { id: "custos", rotulo: "Custo", glifo: "¤", modulo: custos },
   { id: "config", rotulo: "Config", glifo: "⚙", modulo: config, janela: true }, // tela secundaria: janela flutuante, nao pagina
 ];
 let atual = null;

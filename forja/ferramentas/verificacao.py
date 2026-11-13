@@ -14,7 +14,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -55,6 +54,7 @@ class ResultadoTeste:
     tempo_esgotado: bool = False
     resumo: str = ""
     falhas: list[str] = field(default_factory=list)
+    isolamento: dict = field(default_factory=dict)  # {modo, grupo, teto_memoria}: o que o isolamento conseguiu aplicar
 
 
 def _python_do_projeto(cwd: Path) -> str:
@@ -110,22 +110,23 @@ def _resumir(cmd: ComandoTeste, saida: str) -> tuple[str, list[str]]:
     return "\n".join(cauda), []
 
 
-def rodar(cmd: ComandoTeste, cwd: Path, timeout: float = 300.0) -> ResultadoTeste:
+def rodar(cmd: ComandoTeste, cwd: Path, timeout: float = 300.0, isolamento: str = "basico") -> ResultadoTeste:
+    """`isolamento`: basico (grupo de processos, teto de memoria, TMP proprio) | estrito (+ HOME proprio e sem rede).
+    Ver forja/ferramentas/sandbox.py."""
+    from forja.ferramentas import sandbox
+
     t0 = time.monotonic()
     env = ambiente_limpo()
     cache_pyc = None
+    info: dict = {}
     if cmd.tipo == "pytest":
         # Bytecode NOVO a cada rodada: o .pyc e validado por mtime (em segundos) + tamanho; uma correcao do agente com o MESMO
         # tamanho no mesmo segundo carregaria o codigo antigo e os testes "continuariam falhando". Nunca usa o __pycache__ do projeto.
         cache_pyc = tempfile.mkdtemp(prefix="forja-pyc-")
         env["PYTHONPYCACHEPREFIX"] = cache_pyc
     try:
-        p = subprocess.run(list(cmd.args), cwd=str(cwd), env=env, capture_output=True, text=True,  # noqa: S603 - lista fixa, sem shell
-                           encoding="utf-8", errors="replace", timeout=timeout, stdin=subprocess.DEVNULL, check=False)
-        saida, codigo, esgotado = (p.stdout or "") + (p.stderr or ""), p.returncode, False
-    except subprocess.TimeoutExpired as e:
-        saida = ((e.stdout or "") if isinstance(e.stdout, str) else "") + "\n[tempo esgotado]"
-        codigo, esgotado = None, True
+        s = sandbox.executar(list(cmd.args), cwd, env, timeout, isolamento)
+        saida, codigo, esgotado, info = s.texto, s.codigo, s.esgotado, s.isolamento
     except OSError as e:
         saida, codigo, esgotado = f"[nao foi possivel executar: {type(e).__name__}]", None, False
     finally:
@@ -135,4 +136,4 @@ def rodar(cmd: ComandoTeste, cwd: Path, timeout: float = 300.0) -> ResultadoTest
     resumo, falhas = _resumir(cmd, saida)
     # pytest: 5 = nenhum teste coletado (nao e sucesso nem falha do codigo)
     ok = codigo == 0
-    return ResultadoTeste(cmd.texto, ok, codigo, round(time.monotonic() - t0, 2), saida, esgotado, resumo, falhas)
+    return ResultadoTeste(cmd.texto, ok, codigo, round(time.monotonic() - t0, 2), saida, esgotado, resumo, falhas, info)

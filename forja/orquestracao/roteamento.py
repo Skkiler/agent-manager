@@ -90,8 +90,20 @@ def classificar(tarefa: dict[str, Any]) -> Rota:
         motivos.append("pergunta curta e somente leitura")
     else:
         nivel = "normal"
+    return rota_do_nivel(nivel, escreve, tuple(motivos))
+
+
+def rota_do_nivel(nivel: str, escreve: bool, motivos: tuple[str, ...] = ()) -> Rota:
     if nivel == "simples":
-        return Rota("simples", "rapida", False, 0.5, False, tuple(motivos))
+        return Rota("simples", "rapida", False, 0.5, False, motivos)
     if nivel == "complexa":
-        return Rota("complexa", "execucao", True, 1.5, escreve, tuple(motivos))
-    return Rota("normal", "execucao", False, 1.0, escreve, tuple(motivos))
+        return Rota("complexa", "execucao", True, 1.5, escreve, motivos)
+    return Rota("normal", "execucao", False, 1.0, escreve, motivos)
+
+
+def promover(rota: Rota, escreve: bool, motivo: str) -> Rota:
+    """Um degrau acima (simples -> normal -> complexa). Rotas especiais (revisao, estudo) e 'complexa' nao mudam."""
+    if rota.parte in ("revisao", "estudo") or rota.nivel == "complexa":
+        return rota
+    proximo = NIVEIS[NIVEIS.index(rota.nivel) + 1]
+    return rota_do_nivel(proximo, escreve, (*rota.motivos, motivo))

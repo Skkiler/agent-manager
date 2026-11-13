@@ -120,22 +120,54 @@ def carregar(raiz: Path = RAIZ_BASE) -> list[NotaBase]:
     return notas
 
 
-def semear(repo: RepositorioSqlite, raiz: Path = RAIZ_BASE) -> dict[str, int]:
-    """Idempotente: insere o que falta, atualiza o que mudou (por hash), remove o que saiu da base. Recria as ligacoes."""
-    notas = carregar(raiz)
+RAIZ_PACOTES = Path(__file__).resolve().parents[1] / "conhecimento_pacotes"
+_NOME_PACOTE = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
+
+
+def pacotes_disponiveis(raiz: Path = RAIZ_PACOTES) -> list[dict[str, Any]]:
+    """Pacotes de conhecimento OPCIONAIS (forja/conhecimento_pacotes/<nome>/*.md + DESCRICAO.txt). Curados e versionados como a
+    base; instalados sob demanda no namespace somente leitura publico/forja-base/<nome>."""
+    if not raiz.is_dir():
+        return []
+    saida = []
+    for d in sorted(p for p in raiz.iterdir() if p.is_dir() and _NOME_PACOTE.match(p.name)):
+        desc = (d / "DESCRICAO.txt").read_text(encoding="utf-8").strip()[:300] if (d / "DESCRICAO.txt").is_file() else d.name
+        saida.append({"id": d.name, "descricao": desc, "notas": sum(len(ler_arquivo(a, d)) for a in sorted(d.glob("*.md")))})
+    return saida
+
+
+def sincronizar_pacotes(repo: RepositorioSqlite, escolhidos: list[str], raiz: Path = RAIZ_PACOTES) -> dict[str, dict[str, int]]:
+    """Instala os pacotes escolhidos e REMOVE os demais (desmarcar = desinstalar). Idempotente."""
+    disponiveis = {p["id"] for p in pacotes_disponiveis(raiz)}
+    res = {}
+    for nome in sorted(disponiveis):
+        res[nome] = semear(repo, raiz / nome, f"{BASE_NS}/{nome}", origem=f"forja/conhecimento_pacotes/{nome}",
+                           vazio=nome not in set(escolhidos))
+    return res
+
+
+def semear(repo: RepositorioSqlite, raiz: Path = RAIZ_BASE, ns: str = BASE_NS, origem: str = "forja/conhecimento_base",
+           vazio: bool = False) -> dict[str, int]:
+    """Idempotente: insere o que falta, atualiza o que mudou (por hash), remove o que saiu da base. Recria as ligacoes.
+    `ns`/`origem`: pacotes opcionais usam um subnamespace da base; `vazio` desinstala (remove tudo do namespace)."""
+    notas = [] if vazio else carregar(raiz)
+    if ns != BASE_NS:  # ids de pacote nunca colidem com a base nem entre pacotes
+        notas = [NotaBase(f"{ns}:{n.caminho}", n.titulo, n.corpo, n.pai, n.tags, n.tipo, n.relacionados) for n in notas]
     agora = iso(RelogioSistema().agora())
     titulos = {n.titulo.casefold(): n.id for n in notas}
     res = {"novas": 0, "atualizadas": 0, "inalteradas": 0, "removidas": 0, "ligacoes": 0}
     with repo.escrita() as t:
-        existentes = {m["id"]: m for m in t.listar(T.Memoria, namespace=BASE_NS, limite=10_000)}
+        if ns != BASE_NS and notas:  # o pacote pode pendurar topicos na base (ex.: pai 'Python')
+            titulos = {m["titulo"].casefold(): m["id"] for m in t.listar(T.Memoria, namespace=BASE_NS, limite=10_000)} | titulos
+        existentes = {m["id"]: m for m in t.listar(T.Memoria, namespace=ns, limite=10_000)}
         for n in notas:
             m = existentes.get(n.id)
             if m and (m.get("fonte") or {}).get("hash") == n.hash:
                 res["inalteradas"] += 1
                 continue
-            campos = dict(tipo=n.tipo, titulo=n.titulo, resumo=n.resumo, conteudo=n.corpo, namespace=BASE_NS, sensibilidade="publico",
-                          fonte={"tipo": "documento", "repositorio": "forja", "commit": "", "caminho": f"forja/conhecimento_base/{n.caminho}",
-                                 "hash": n.hash},
+            campos = dict(tipo=n.tipo, titulo=n.titulo, resumo=n.resumo, conteudo=n.corpo, namespace=ns, sensibilidade="publico",
+                          fonte={"tipo": "documento", "repositorio": "forja", "commit": "",
+                                 "caminho": f"{origem}/{n.caminho.split(':', 1)[-1]}", "hash": n.hash},
                           precondicoes=[], estado="validado", validado_por=CURADORIA, validade_inicio=agora, validade_fim=None,
                           confianca=0.9, tags=["base", *n.tags], refs=[], afirma=None, necessita_revalidacao=False,
                           substituida_por=None, hash_conteudo=n.hash, sinalizadores={"pii_redigida": [], "suspeita_injecao": []},
@@ -151,17 +183,17 @@ def semear(repo: RepositorioSqlite, raiz: Path = RAIZ_BASE) -> dict[str, int]:
             fts.memoria_remover(t, mid)
             t.s.execute(delete(T.Memoria).where(T.Memoria.id == mid))
             res["removidas"] += 1
-        t.s.execute(delete(T.LigacaoGrafo).where(T.LigacaoGrafo.namespace == BASE_NS))
+        t.s.execute(delete(T.LigacaoGrafo).where(T.LigacaoGrafo.namespace == ns))
         for n in notas:
             alvos = ([("SUBTOPICO_DE", n.pai)] if n.pai else []) + [("RELACIONADO_A", r) for r in n.relacionados]
             for tipo, titulo in alvos:
                 destino = titulos.get(titulo.casefold())
                 if destino and destino != n.id:
-                    t.inserir(T.LigacaoGrafo, id=novo_id("LIG"), origem=n.id, destino=destino, tipo=tipo, namespace=BASE_NS,
+                    t.inserir(T.LigacaoGrafo, id=novo_id("LIG"), origem=n.id, destino=destino, tipo=tipo, namespace=ns,
                               nota="", criado_por=CURADORIA, criado_em=agora)
                     res["ligacoes"] += 1
         if res["novas"] or res["atualizadas"] or res["removidas"]:
-            t.emitir_evento("memoria.base_semeada", agora, {k: v for k, v in res.items()})
+            t.emitir_evento("memoria.base_semeada", agora, {"namespace": ns, **{k: v for k, v in res.items()}})
     return res
 
 

@@ -1,7 +1,7 @@
 // Painel inferior: eventos em tempo real (SSE), painel de controle do master e oficina pixel art.
 import { api } from "./api.js";
 import { ouvir } from "./estado.js";
-import { desenharOficina } from "./oficina.js";
+import { atualizarOficina, montarOficina } from "./oficina.js";
 import { abas, dataCurta, el, limpar, tag } from "./ui.js";
 import { definirPreferencia } from "./views/config.js";
 
@@ -29,9 +29,8 @@ function oficina(corpo) {
   const alternar = el("button", { type: "button", "aria-pressed": String(oficinaLigada), textContent: oficinaLigada ? "Desligar oficina" : "Ligar oficina",
     onclick: () => { oficinaLigada = !oficinaLigada; renderizar(); definirPreferencia("oficina_pixel", oficinaLigada).catch(() => localStorage.setItem("forja_oficina", oficinaLigada ? "on" : "off")); } });
   const cena = el("div");
-  corpo.append(el("div", { className: "linha" }, alternar, el("span", { className: "mudo", textContent: "Mostra o estado real das tarefas; nao decide nada." })), cena);
-  if (oficinaLigada && ultimoQuadro) desenharOficina(cena, ultimoQuadro);
-  else if (oficinaLigada) cena.append(el("p", { className: "mudo", textContent: "Abra o quadro de tarefas para carregar a oficina." }));
+  corpo.append(el("div", { className: "linha" }, alternar, el("span", { className: "mudo", textContent: "Mostra o estado real das execuções; não decide nada." })), cena);
+  if (oficinaLigada) montarOficina(cena, ultimoQuadro);
 }
 
 export function renderizar() {
@@ -44,7 +43,7 @@ export function renderizar() {
 
 export function iniciar() {
   ouvir("evento", (e) => { eventos.unshift(e); eventos.length = Math.min(eventos.length, 200); if (aba === "eventos") renderizar(); });
-  ouvir("kanban", (q) => { ultimoQuadro = q; if (aba === "oficina") renderizar(); });
+  ouvir("kanban", (q) => { ultimoQuadro = q; if (aba === "oficina" && oficinaLigada) atualizarOficina(q); });
   ouvir("oficina", (ligada) => { oficinaLigada = ligada; if (aba === "oficina") renderizar(); });
   renderizar();
 }

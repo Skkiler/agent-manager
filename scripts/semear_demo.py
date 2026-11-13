@@ -9,9 +9,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import tempfile
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 
 def chamar(base: str, token: str, metodo: str, caminho: str, corpo: dict | None = None) -> dict | list:
@@ -28,7 +30,8 @@ def chamar(base: str, token: str, metodo: str, caminho: str, corpo: dict | None 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--porta", type=int, default=8787, help="porta do servidor em loopback")
-    ap.add_argument("--token", default="")
+    ap.add_argument("--token", default=os.environ.get("APP_API_TOKEN", ""), help="padrao: APP_API_TOKEN do ambiente (ex.: no conteiner)")
+    ap.add_argument("--pasta-trabalho", default="", help="pasta sintetica do projeto de demonstracao (padrao: temporaria)")
     a = ap.parse_args()
     base = f"http://127.0.0.1:{a.porta}"  # sempre loopback: o script nunca semeia servidores remotos
     c = lambda m, p, b=None: chamar(base, a.token, m, p, b)  # noqa: E731
@@ -53,6 +56,12 @@ def main() -> int:
     tarefa("Revisar politica de logs", 3, None, preparar=False)
     tarefa("Mapear integracoes externas", 4, "falha", executar=True)
     tarefa("Preparar demonstracao", 3, "sucesso")
+    escrita = demo_desfazer(c, a.pasta_trabalho)
+
+    # duplicata quase identica: a organizacao automatica do segundo cerebro vai sugerir unir (fila de revisao)
+    for sufixo in ("", " Revisado."):
+        c("POST", "/memorias", {"tipo": "procedimental", "titulo": "Checklist de deploy", "namespace": "pessoal", "tags": ["deploy", "operacao"],
+                                "conteudo": "Rodar testes, migrar o banco, publicar a imagem e conferir a saude do servico." + sufixo})
 
     def nota(titulo: str, conteudo: str, ns: str = "publico", tags: list[str] | None = None) -> dict:
         return c("POST", "/memorias", {"tipo": "procedimental", "titulo": titulo, "conteudo": conteudo, "namespace": ns, "tags": tags or []})
@@ -87,8 +96,30 @@ def main() -> int:
         for nome in ("Revisar PR da migracao", "Atualizar documentacao do MCP"):
             c("POST", "/acoes-externas", {"integracao": "trello", "acao": "criar_cartao", "parametros": {"lista": "6a7b8c9d0e1f20314253a4b5", "nome": nome}})
         extra = ", 2 acoes externas pendentes (Trello ficticio)"
-    print(f"semeado: 6 tarefas, 8 notas, 5 mensagens no quadro e configuracao de modelos{extra}")
+    print(f"semeado: {6 + escrita} tarefas, 10 notas, 5 mensagens no quadro e configuracao de modelos{extra}")
     return 0
+
+
+def demo_desfazer(c, pasta: str) -> int:  # noqa: ANN001
+    """Projeto com pasta de trabalho SINTETICA + tarefa do agente mock que cria 1 arquivo: o cartao ganha 'Desfazer alteracoes'.
+    A pasta precisa existir no MESMO computador (ou conteiner) do servidor; se nao for aceita, o resto da demo segue."""
+    alvo = Path(pasta) if pasta else Path(tempfile.mkdtemp(prefix="forja-demo-proj-"))
+    alvo.mkdir(parents=True, exist_ok=True)
+    (alvo / "README.md").write_text("# Projeto de demonstracao (sintetico)\n", encoding="utf-8")
+    proj = c("POST", "/projetos", {"nome": f"demo-pasta-{int(time.time())}", "descricao": "pasta sintetica para desfazer"})
+    try:
+        c("PUT", f"/projetos/{proj['id']}/pastas", {"expected_version": proj.get("versao", 1), "pastas": [{"caminho": str(alvo), "papel": "trabalho"}]})
+    except SystemExit as e:
+        print(f"aviso: pasta de trabalho nao aceita pelo servidor ({str(e)[:120]}); demo de desfazer pulada")
+        return 0
+    o = c("POST", "/objetivos", {"projeto_id": proj["id"], "titulo": "Documentar o projeto"})
+    t = c("POST", "/tarefas", {"objetivo_id": o["id"], "titulo": "Gerar arquivo de notas (mock)", "modo": "documentacao",
+                               "criterios_aceite": ["arquivo criado"], "entrada": {"mock_cenario": "escrita", "mock_passos": 1}})
+    k = c("POST", f"/tarefas/{t['id']}/transicao", {"para": "classificada", "expected_version": t["versao_estado"]})
+    c("POST", f"/tarefas/{t['id']}/transicao", {"para": "preparada", "expected_version": k["versao_estado"]})
+    ex = c("POST", f"/tarefas/{t['id']}/execucoes")
+    c("POST", f"/execucoes/{ex['id']}/iniciar")
+    return 1
 
 
 if __name__ == "__main__":

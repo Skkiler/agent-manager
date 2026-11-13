@@ -1,0 +1,15 @@
+# Configuracao do gitleaks (pre-commit e CI). Usa todas as regras padrao; so libera o que foi revisado a mao.
+[extend]
+useDefault = true
+
+[[allowlists]]
+# Os testes de redacao usam valores SINTETICOS com cara de segredo de proposito (ex.: token=SEGREDO123456, sk-...xxxx).
+# Revisado em 2026-11-06: nenhum e credencial real. A liberacao vale SO para a regra generica e SO em tests/:
+# tokens com formato de provedor (GitHub, AWS, Slack...) continuam sendo barrados ate dentro dos testes.
+description = "fixtures sinteticas dos testes de redacao"
+targetRules = ["generic-api-key"]
+paths = ['''^tests/''']
+
+[[allowlists]]
+description = "bytecode local do Python (nunca versionado)"
+paths = ['''__pycache__/''', '''\.pyc$''']

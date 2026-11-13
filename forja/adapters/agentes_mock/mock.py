@@ -1,6 +1,7 @@
 """AGENTE MOCK (SIMULADO). Nao chama Kiro nem modelo algum; serve para validar o nucleo.
 
-Cenarios em tarefa.entrada.mock_cenario: sucesso (padrao) | falha | bloqueio.
+Cenarios em tarefa.entrada.mock_cenario: sucesso (padrao) | falha | bloqueio | conversa | escrita (cria 1 arquivo sintetico
+na pasta de trabalho do projeto, para demonstrar 'desfazer').
 Parametros: mock_passos (1..50, padrao 3), mock_passo_ms (0..1000, padrao 0).
 Toda evidencia produzida e marcada simulada=True: NAO comprova funcionalidade real.
 """
@@ -55,6 +56,8 @@ class AgenteMock:
 
         if cenario == "conversa":
             return self._conversa(tarefa, t0)
+        if cenario == "escrita":
+            return self._escrita(tarefa, t0)
         if cenario == "falha":
             return self._res("falhou", "Falha simulada solicitada pelo cenario.", t0)
         if cenario == "bloqueio":
@@ -128,6 +131,19 @@ class AgenteMock:
                 artefato="relatorio.json",
             )
         )
+        return r
+
+    def _escrita(self, tarefa: dict[str, Any], t0: float) -> ResultadoAgente:
+        """Demonstra 'desfazer': cria UM arquivo sintetico identificado na 1a pasta de trabalho do projeto (nada mais)."""
+        pastas = [p for p in ((tarefa.get("projeto_ctx") or {}).get("pastas") or []) if p.get("papel") == "trabalho"]
+        if not pastas:
+            return self._res("falhou", "Cenario 'escrita' exige uma pasta de trabalho no projeto (simulado).", t0)
+        from pathlib import Path
+
+        alvo = Path(pastas[0]["caminho"]) / f"forja-mock-{tarefa['id']}.txt"
+        alvo.write_text("Arquivo SIMULADO criado pelo agente mock da Forja (pode ser desfeito).\n", encoding="utf-8")
+        r = self._res("concluida", f"Arquivo simulado criado: {alvo.name}.", t0)
+        r.evidencias.append(EvidenciaSaida(tipo="mock_simulacao", resumo=f"Criou {alvo.name} (SIMULADO).", simulada=True))
         return r
 
     def _res(self, estado: str, resumo: str, t0: float) -> ResultadoAgente:

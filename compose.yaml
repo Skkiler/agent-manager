@@ -1,0 +1,29 @@
+# Forja em Docker (demonstracao local, agente simulado). Uso:
+#   FORJA_PORTA=8787 docker compose up -d --build        (PowerShell: $env:FORJA_PORTA=8787; docker compose up -d --build)
+#   docker compose exec forja python scripts/semear_demo.py --porta 8787     (dados 100% sinteticos)
+# O token da API: defina APP_API_TOKEN num arquivo de ambiente FORA do Git (FORJA_ENV_FILE) ou leia o gerado com
+#   docker compose exec forja cat /dados/data/credenciais/api_token.txt
+services:
+  forja:
+    build: .
+    image: forja:local
+    ports:
+      - "127.0.0.1:${FORJA_PORTA:-8787}:8787"  # SO o loopback do host: nada fica exposto na rede
+    environment:
+      APP_ALLOWED_HOSTS: "127.0.0.1:${FORJA_PORTA:-8787},localhost:${FORJA_PORTA:-8787}"
+      APP_RATE_LIMIT_PER_MINUTE: "3000"
+    env_file:
+      - path: ${FORJA_ENV_FILE:-./.env.docker}
+        required: false
+    volumes:
+      - forja-dados:/dados
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+volumes:
+  forja-dados:

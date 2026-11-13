@@ -4,6 +4,7 @@ import { agrupar, emitir, ouvir, selecionarTarefa } from "../estado.js";
 import { desenhar } from "../grafo.js";
 import { renderizar } from "../markdown.js";
 import { dialogo, el, limpar, tag, toast } from "../ui.js";
+import { abrirRevisao, contarRevisao } from "./revisao.js";
 import { abrirRotulagem } from "./rotulagem.js";
 
 const NAMESPACES = ["publico", "pessoal"];
@@ -202,7 +203,17 @@ export function montarLateral(lat) {
       onclick: () => abrirEstudo() }),
     el("button", { type: "button", textContent: "Avaliar a busca", title: "Rotule perguntas reais e meca a precisao da busca no seu corpus",
       onclick: () => abrirRotulagem(sel.namespaces).catch((e) => toast(e.message, "erro")) }),
+    botaoRevisao(),
     el("h2", { textContent: "Lista de notas" }), lista);
+}
+
+/** "Revisão (N)": notas candidatas + sugestões da organização automática esperando você. */
+function botaoRevisao() {
+  const b = el("button", { type: "button", id: "botao-revisao", textContent: "Revisão", title: "Fila de revisão: candidatas, duplicatas, notas velhas e ligações",
+    onclick: () => abrirRevisao(() => { atualizarContador(); carregarGrafo(); }) });
+  const atualizarContador = () => contarRevisao().then((n) => { if (b.isConnected && n !== null) b.textContent = `Revisão (${n})`; });
+  atualizarContador();
+  return b;
 }
 
 export function montar(raiz) {

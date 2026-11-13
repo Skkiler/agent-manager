@@ -1,0 +1,1 @@
+FastAPI: dependencias, validacao com Pydantic, ciclo de vida, testes e seguranca de APIs (5 notas curtas).

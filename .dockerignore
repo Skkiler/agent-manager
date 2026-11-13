@@ -1,0 +1,21 @@
+# Nada pessoal, secreto ou pesado entra na imagem.
+.git
+.github
+.kiro
+.worktrees
+.venv
+venv
+data
+logs
+tests
+docs
+**/__pycache__
+**/*.pyc
+.env
+.env.*
+*.env
+!.env.example
+*.sqlite3
+*.db
+node_modules
+.agents

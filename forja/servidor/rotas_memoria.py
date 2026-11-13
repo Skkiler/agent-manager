@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
+from pydantic import BaseModel, ConfigDict, Field
 
 from forja.memoria.contratos import (
     ArestaIn,
@@ -52,6 +53,29 @@ def navegar_topico(request: Request, p: Pr, ref: Annotated[str, Query(min_length
     from forja.memoria.base import navegar
 
     return navegar(request.app.state.memoria.repo, p, ref, conteudo)
+
+
+@rm.get("/memorias/revisao")
+def fila_revisao(request: Request, p: Pr, limite: Annotated[int, Query(ge=1, le=200)] = 100) -> dict[str, Any]:
+    """Fila de revisao: notas candidatas + sugestoes da organizacao automatica (duplicata, desatualizada, ligacao)."""
+    return request.app.state.organizador.fila(p, limite)
+
+
+@rm.post("/memorias/organizar")
+def organizar(request: Request) -> dict[str, Any]:
+    """Roda a organizacao agora (local, sem IA). So cria sugestoes; nada muda sem voce aceitar."""
+    return request.app.state.organizador.organizar()
+
+
+class DecisaoSugestaoIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    aceitar: bool
+    vencedora_id: Annotated[str, Field(max_length=64)] | None = None  # duplicatas: qual nota fica
+
+
+@rm.post("/memorias/sugestoes/{id_}/decidir")
+def decidir_sugestao(id_: ID, d: DecisaoSugestaoIn, request: Request, p: Pr) -> dict[str, Any]:
+    return request.app.state.organizador.decidir(p, id_, d.aceitar, ATOR, d.vencedora_id)
 
 
 @rm.get("/busca/semantica")
@@ -154,8 +178,6 @@ def vizinhos(id_: ID, s: Mem, p: Pr, saltos: Annotated[int, Query(ge=1, le=2)] =
 
 
 # ------------------------------------------------------------------ 4.8: rotulagem da busca sobre o corpus real
-from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
-
 NomeNs = Annotated[str, Field(min_length=1, max_length=80)]
 
 

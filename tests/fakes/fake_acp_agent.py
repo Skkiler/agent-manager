@@ -253,6 +253,9 @@ while True:
             mod, esf = escolha.get("model", "auto"), escolha.get("effortLevel", "-")
             if "ETAPA 1 DE 2" in txt:
                 decisao = ("\n## Decisões para você\n1. Trocar o banco? — Recomendo: nao (risco).\n" if cenario == "planeja_decisao" else "")
+                if cenario == "planeja_subtarefas":  # so divide quando a Forja pede (prompt com '## Subtarefas')
+                    decisao += ("\n## Subtarefas\n1. Modulo de sessao: trocar sessao por token\n2. Testes de auth: cobrir o fluxo novo\n"
+                                if "## Subtarefas" in txt else "")
                 chunk(sid, f"## Plano\n1. ler o modulo\n2. alterar\n(modelo={mod} esforco={esf})\n{decisao}")
             elif "ETAPA 2 DE 2" in txt:
                 chunk(sid, f"## Resposta\nexecutado conforme o plano (modelo={mod} esforco={esf})\n")

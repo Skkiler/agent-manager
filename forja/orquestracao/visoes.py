@@ -21,6 +21,7 @@ COLUNAS: tuple[tuple[str, str, tuple[E, ...]], ...] = (
 )
 LIMITE_POR_COLUNA = 50
 PRECISA_DE_VOCE = frozenset({E.BLOQUEADA.value, E.AGUARDANDO_APROVACAO.value})
+_EM_CURSO = frozenset({E.ATRIBUIDA.value, E.EXECUTANDO.value, E.VALIDANDO.value, E.AGUARDANDO_APROVACAO.value})
 
 
 def acoes_do_cartao(estado: str) -> list[dict[str, str]]:
@@ -46,6 +47,7 @@ class VisaoKanban:
     def __init__(self, repo: RepositorioSqlite, relogio: Relogio | None = None) -> None:
         self.repo = repo
         self.relogio = relogio or RelogioSistema()
+        self.restauracao: Any | None = None  # PontosRestauracao: tarefas com alteracoes que podem ser desfeitas
 
     def montar(self, projeto_id: str | None = None, objetivo_id: str | None = None) -> dict[str, Any]:
         filtros = {k: v for k, v in (("projeto_id", projeto_id), ("objetivo_id", objetivo_id)) if v}
@@ -55,13 +57,21 @@ class VisaoKanban:
         por_estado: dict[str, list[dict]] = {}
         for tf in tarefas:
             por_estado.setdefault(tf["estado"], []).append(tf)
+        try:  # cartoes com alteracoes reversiveis ganham 'Desfazer alteracoes' (so tarefas paradas: nada escreve agora)
+            parados = [tf["id"] for tf in tarefas if tf["estado"] not in _EM_CURSO]
+            desfazer = self.restauracao.tem_desfazer(parados) if self.restauracao is not None else set()
+        except Exception:  # noqa: BLE001 - o botao e conveniencia; o quadro nunca falha por ele
+            desfazer = set()
         colunas = []
         for cid, rotulo, estados in COLUNAS:
             itens = [tf for e in estados for tf in por_estado.get(e.value, [])]
             itens.sort(key=lambda x: (prioridade.get(x["objetivo_id"], 3), _inverso(x["atualizado_em"])))
+            cartoes = [self._cartao(tf, prioridade) for tf in itens[:LIMITE_POR_COLUNA]]
+            for c in cartoes:
+                if c["id"] in desfazer:
+                    c["acoes"].append({"id": "desfazer", "rotulo": "Desfazer alterações"})
             colunas.append({
-                "id": cid, "rotulo": rotulo, "estados": [e.value for e in estados], "total": len(itens),
-                "cartoes": [self._cartao(tf, prioridade) for tf in itens[:LIMITE_POR_COLUNA]],
+                "id": cid, "rotulo": rotulo, "estados": [e.value for e in estados], "total": len(itens), "cartoes": cartoes,
             })
         return {"gerado_em": iso(self.relogio.agora()), "total": len(tarefas), "colunas": colunas,
                 "precisa_de_voce": sum(len(por_estado.get(s, [])) for s in PRECISA_DE_VOCE)}

@@ -31,8 +31,140 @@ VISTAS = {
     "memoria": ".grafo-caixa svg .no",
     "ferramentas": ".lista-notas button",
     "integracoes": ".grade .card",
+    "custos": ".custos .metricas",
     "config": "#janela-config .opcao",
 }
+
+
+def melhorias(pagina, base: str, saida: Path, expect, passo) -> None:
+    """9.x: desfazer por tarefa, copias isoladas, painel de custo, fila de revisao do segundo cerebro, regras e oficina."""
+    pagina.goto(base + "#/tarefas")
+    pagina.reload()
+    pagina.wait_for_selector(".cartao")
+    fechar_menu(pagina)
+    cartao = pagina.locator(".cartao", has_text="Gerar arquivo de notas")
+    passo("demo de desfazer semeada (cartao com 'Desfazer alteracoes')", cartao.get_by_role("button", name="Desfazer alterações").count() == 1)
+    if cartao.get_by_role("button", name="Desfazer alterações").count():
+        cartao.get_by_role("button", name="Desfazer alterações").click()
+        expect(pagina.locator("#dlg-geral")).to_contain_text("Criados (serão apagados) (1)", timeout=6000)
+        pagina.screenshot(path=str(saida / "desfazer.png"))
+        pagina.locator("#dlg-geral").get_by_role("button", name="Desfazer esta execução").click()
+        expect(pagina.locator("#dlg-geral")).to_contain_text("desfeito", timeout=6000)
+        passo("desfazer remove o arquivo criado pela tarefa e marca o ponto como desfeito", True)
+        pagina.locator("#dlg-geral").get_by_role("button", name="Fechar", exact=True).click()
+        expect(cartao.get_by_role("button", name="Desfazer alterações")).to_have_count(0, timeout=6000)
+        passo("cartao perde 'Desfazer' depois de desfeito", True)
+    abrir_menu(pagina)
+    pagina.get_by_role("button", name="Cópias isoladas…").click()
+    expect(pagina.locator("#dlg-geral")).to_contain_text("Nenhuma cópia isolada ativa", timeout=6000)
+    passo("copias isoladas (git worktree) listadas pela tela", True)
+    pagina.locator("#dlg-geral").get_by_role("button", name="Fechar", exact=True).click()
+    fechar_menu(pagina)
+
+    pagina.goto(base + "#/custos")
+    pagina.reload()
+    pagina.wait_for_selector(".custos .metricas .metrica")
+    passo("painel de custo mostra totais estimados e a nota de estimativa", "Estimativa" in pagina.locator(".custos").inner_text())
+    pagina.get_by_label("Período").select_option("7")
+    expect(pagina.locator(".custos .barras, .custos-corpo")).not_to_have_count(0, timeout=6000)
+    passo("trocar o periodo recarrega o painel", pagina.locator(".custos h2", has_text="Por modelo").count() == 1)
+    passo("roteamento aprendido aparece no painel de custo", pagina.locator(".custos", has_text="Roteamento que aprende").count() == 1)
+    pagina.screenshot(path=str(saida / "custos.png"))
+
+    pagina.goto(base + "#/memoria")
+    pagina.reload()
+    pagina.wait_for_selector(".grafo-caixa svg .no")
+    expect(pagina.locator("#botao-revisao")).to_contain_text("Revisão (", timeout=6000)
+    passo("botao 'Revisao (N)' mostra o tamanho da fila", True)
+    pagina.locator("#botao-revisao").click()
+    janela_rev = pagina.locator("dialog.janela[open]", has_text="Revisão do segundo cérebro")
+    janela_rev.get_by_role("button", name="Organizar agora").click()
+    pagina.wait_for_selector(".toast.ok", timeout=8000)
+    pagina.wait_for_timeout(500)
+    dups = janela_rev.locator(".sugestao", has_text="Duplicata").count()
+    passo("organizar agora sugere unir a duplicata semeada (sem alterar nada sozinho)", dups >= 1)
+    pagina.screenshot(path=str(saida / "revisao.png"))
+    if dups:
+        janela_rev.locator(".sugestao", has_text="Duplicata").first.get_by_role("button", name="Unir").click()
+        expect(janela_rev.locator(".sugestao", has_text="Duplicata")).to_have_count(dups - 1, timeout=6000)  # sugestoes da nota unida somem junto
+        passo("aceitar a duplicata une as notas (a outra vira 'substituida')", True)
+    cands = janela_rev.locator(".candidata").count()
+    passo("notas candidatas aparecem na fila de revisao", cands >= 1)
+    if cands:
+        janela_rev.locator(".candidata").first.get_by_role("button", name="Promover (observada)").click()
+        expect(janela_rev.locator(".candidata")).to_have_count(cands - 1, timeout=6000)
+        passo("promover nota candidata a tira da fila", True)
+    janela_rev.get_by_role("button", name="Fechar janela").click()
+
+    pagina.goto(base + "#/config")
+    pagina.reload()
+    pagina.wait_for_selector(".opcao")
+    pagina.get_by_role("button", name="Segurança", exact=True).click()
+    regras = pagina.locator('[data-pref="regras_controle"]')
+    regras.get_by_role("button", name="+ Regra").click()
+    regras.get_by_label("Nome da regra 1").fill("proteger migracoes")
+    regras.get_by_label("Tipo de ação da regra 1").select_option("modificar_arquivos")
+    regras.get_by_label("Caminho da regra 1").fill("*migrations*")
+    regras.get_by_label("Decisão da regra 1").select_option("perguntar")
+    pagina.get_by_role("button", name="Salvar alterações").click()
+    pagina.wait_for_selector(".toast.ok", timeout=6000)
+    passo("regra de controle criada e salva pela tela", regras.get_by_label("Nome da regra 1").input_value() == "proteger migracoes")
+    pagina.screenshot(path=str(saida / "config-regras.png"))
+    regras.get_by_role("button", name="Remover regra 1").click()
+    pagina.get_by_role("button", name="Salvar alterações").click()
+    expect(regras).to_contain_text("Nenhuma regra", timeout=6000)
+    passo("remover regra", True)
+    pagina.get_by_role("button", name="Agentes", exact=True).click()
+    pagina.get_by_role("tab", name="Avançadas", exact=False).click()
+    passo("preferencias novas (desfazer, worktree, subagentes, retomada, isolamento) aparecem em Agentes > Avancadas",
+          all(pagina.locator(f'[data-pref="{p}"]').count() == 1 for p in
+              ("pontos_restauracao", "isolar_paralelas", "subagentes", "roteamento_aprende", "retomar_apos_queda", "isolamento_testes")))
+    pagina.get_by_role("button", name="Eficiência", exact=True).click()
+    pagina.get_by_role("tab", name="Avançadas", exact=False).click()
+    pacote = pagina.locator('[data-pref="pacotes_conhecimento"] input[type=checkbox][value="fastapi"]')
+    passo("pacotes de conhecimento opcionais listados (FastAPI)", pacote.count() == 1
+          and pagina.locator('[data-pref="organizacao_memoria"] select').count() == 1)
+    pacote.check()
+    pagina.get_by_role("button", name="Salvar alterações").click()
+    pagina.wait_for_selector(".toast.ok", timeout=8000)
+    passo("instalar pacote pela tela", pacote.is_checked())
+    pacote.uncheck()
+    pagina.get_by_role("button", name="Salvar alterações").click()
+    pagina.get_by_role("button", name="Manutenção", exact=True).click()
+    pagina.get_by_role("tab", name="Avançadas", exact=False).click()
+    passo("telemetria OpenTelemetry configuravel (desligada por padrao)",
+          pagina.locator('[data-pref="telemetria"] select').input_value() == "desligada")
+    pagina.keyboard.press("Escape")
+
+    pagina.goto(base + "#/tarefas")
+    pagina.reload()
+    pagina.wait_for_selector(".cartao")
+    fechar_menu(pagina)
+    pagina.keyboard.press("Control+j")
+    expect(pagina.locator("#inferior")).to_be_visible(timeout=3000)
+    pagina.get_by_role("tab", name="Oficina").click()
+    pagina.wait_for_selector(".oficina .of-agente", timeout=8000)
+    passo("oficina mostra um personagem por execucao ativa, com papel e barra de orcamento",
+          pagina.locator(".oficina .of-agente meter.orcamento").count() >= 1 and pagina.locator('.oficina .of-agente[class*="papel-"]').count() >= 1)
+    passo("descricao em texto para leitores de tela (aria-live)", "agente" in pagina.locator(".oficina-raiz [aria-live]").first.inner_text().lower())
+    pagina.screenshot(path=str(saida / "oficina.png"))
+    pagina.locator(".oficina .of-corpo").first.focus()
+    pagina.keyboard.press("End")
+    passo("setas/Home/End navegam entre os personagens", pagina.evaluate("document.activeElement.classList.contains('of-corpo')"))
+    pagina.locator(".oficina .of-agente").first.get_by_role("button", name="Replay", exact=False).click()
+    pagina.wait_for_selector(".replay .replay-legenda", timeout=6000)
+    pagina.get_by_label("Velocidade").select_option("8")
+    pagina.locator(".replay").get_by_role("button", name="Próximo quadro").click()
+    passo("replay da execucao com reproduzir/pausar, passos e velocidade", pagina.locator(".replay-legenda").inner_text().strip() != "")
+    pagina.screenshot(path=str(saida / "oficina-replay.png"))
+    pagina.get_by_role("button", name="Fechar replay").click()
+    balao = pagina.locator(".oficina .balao.clicavel").first
+    passo("balao 'aguardando voce' aparece na tarefa que espera decisao", balao.count() == 1)
+    if balao.count():
+        balao.click()
+        expect(pagina.locator("#direita")).to_be_visible(timeout=4000)
+        passo("clicar no balao abre as decisoes da tarefa", pagina.get_by_role("tab", name="Decisões", exact=False).get_attribute("aria-selected") == "true")
+    pagina.keyboard.press("Control+j")
 
 
 def _contexto(nav, a, **kw):
@@ -395,6 +527,8 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.screenshot(path=str(saida / "rotulagem.png"))
     pagina.locator("#dlg-geral").get_by_role("button", name="Fechar", exact=True).click()
 
+    melhorias(pagina, base, saida, expect, passo)
+
     pagina.goto(base + "#/ferramentas")
     pagina.reload()
     pagina.locator(".lista-notas button", has_text="tokens.orcar").click()
@@ -417,6 +551,7 @@ def main() -> int:
     ap.add_argument("--altura", type=int, default=900)
     ap.add_argument("--navegador", choices=("msedge", "chromium"), default="msedge", help="chromium = o do Playwright (CI)")
     ap.add_argument("--a11y", action="store_true", help="auditoria axe-core em cada vista (falha em violacao critica/seria)")
+    ap.add_argument("--so-melhorias", action="store_true", help="so os fluxos das melhorias 9.x (desfazer, custo, revisao, regras, oficina)")
     a = ap.parse_args()
     from playwright.sync_api import sync_playwright  # import tardio: dependencia opcional
 
@@ -460,7 +595,18 @@ def main() -> int:
         if a.a11y:
             problemas += auditar_a11y(nav, base, a, saida)
         problemas += estreito(nav, base, a, saida)
-        if a.interagir:
+        if a.so_melhorias:  # iteracao rapida nas telas das melhorias 9.x
+            from playwright.sync_api import expect
+
+            falhas = [0]
+
+            def passo(nome: str, condicao: bool) -> None:
+                print(f"  [{'OK' if condicao else 'FALHA'}] {nome}")
+                falhas[0] += 0 if condicao else 1
+
+            melhorias(pagina, base, saida, expect, passo)
+            problemas += falhas[0]
+        elif a.interagir:
             problemas += interagir(pagina, base, saida, erros)
         nav.close()
     print("problemas:", problemas)

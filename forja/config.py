@@ -39,6 +39,8 @@ class Configuracoes(BaseSettings):
     app_kiro_agent: str = ""  # obsoleto: o engine v3 recusa --agent; ignorado com aviso (perfil "forja" vira modo da sessao, ADR-018)
     app_kiro_model: str = ""  # id de modelo opcional (vazio = padrao da conta/politica)
     app_kiro_prompt_timeout_seconds: int = 300
+    # Coletor OpenTelemetry (OTLP/HTTP JSON) usado so quando a preferencia 'telemetria' = 'otlp_local'. Apenas loopback.
+    app_otel_endpoint: str = "http://127.0.0.1:4318/v1/traces"
     # Tempo maximo que um pedido de aprovacao aguarda o operador; expirado => negado (nunca aprova por omissao).
     app_approval_timeout_seconds: int = 900
     # Memoria: namespaces que o operador desta instancia pode ler/escrever.

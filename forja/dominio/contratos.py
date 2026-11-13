@@ -55,6 +55,8 @@ class Politicas(_Estrito):
     # Contexto recuperado da memoria no prompt: 'auto' (so se houver acerto relevante) ou 'nenhum' (custo zero).
     contexto: Literal["auto", "nenhum"] = "auto"
     contexto_max_tokens: int | None = Field(default=None, ge=50, le=20_000)
+    # Nivel forcado no roteamento (vazio = automatico). Subtarefas usam 'normal' para nunca se dividirem de novo.
+    complexidade: Literal["", "simples", "normal", "complexa"] = ""
 
 
 class ProjetoIn(_Estrito):

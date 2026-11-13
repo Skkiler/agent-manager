@@ -13,6 +13,15 @@ from typing import Any
 from forja.agentes import estilo as _estilo
 
 
+def _pacotes() -> list[dict[str, Any]]:
+    try:
+        from forja.memoria.base import pacotes_disponiveis
+
+        return pacotes_disponiveis()
+    except Exception:  # noqa: BLE001 - pacote com formato invalido nao derruba as preferencias (os testes da base acusam)
+        return []
+
+
 @dataclass(frozen=True)
 class Exemplo:
     rotulo: str
@@ -33,7 +42,7 @@ class Preferencia:
     categoria: str
     nivel: str  # geral | avancado
     rotulo: str
-    tipo: str  # bool | int | selecao | pastas | modelos | revisao | perfil | info
+    tipo: str  # bool | int | selecao | pastas | tags | texto | regras | modelos | revisao | perfil | info
     explicacao: str
     padrao: Any = None
     exemplos: tuple[Exemplo, ...] = ()
@@ -110,6 +119,56 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         300, (Exemplo("Curto", 60, "Projetos pequenos."), Exemplo("Médio", 300, "Padrão."), Exemplo("Longo", 1200, "Suítes grandes.")),
         se_ligar="Mais longo: suítes grandes terminam; a tarefa demora mais.", se_desligar="Mais curto: resposta rápida; suítes grandes não terminam.",
         minimo=10, maximo=3600, unidade="segundos"),
+    Preferencia(
+        "pontos_restauracao", "agentes", "avancado", "Permitir desfazer as alterações de cada tarefa", "bool",
+        "Antes de uma tarefa que altera arquivos, a Forja guarda uma cópia da pasta de trabalho (fora do projeto e fora do Git). "
+        "Depois, o cartão da tarefa ganha 'Desfazer alterações': volta só os arquivos que a tarefa mexeu e que ninguém alterou "
+        "depois. Arquivos com cara de segredo (.env, chaves), pastas como .git e node_modules e arquivos acima de 5 MB ficam de fora.",
+        True, se_ligar="Você pode voltar atrás em qualquer tarefa; custa alguns segundos e espaço em disco por tarefa que escreve.",
+        se_desligar="Nada é copiado; desfazer depende só do seu Git."),
+    Preferencia(
+        "isolar_paralelas", "agentes", "avancado", "Pasta isolada para tarefas em paralelo (git worktree)", "bool",
+        "Se duas tarefas vão escrever na mesma pasta ao mesmo tempo, a segunda ganha uma cópia isolada do repositório "
+        "(git worktree em .worktrees/, num branch forja/...). Você revisa e junta o branch quando quiser; nada é mesclado sozinho. "
+        "Sem Git (ou desligado), a segunda tarefa espera: ela fica bloqueada com o motivo.",
+        True, se_ligar="Tarefas paralelas não se atropelam; cada uma deixa um branch para revisar.",
+        se_desligar="Uma tarefa por pasta de cada vez; as outras ficam bloqueadas até a pasta liberar."),
+    Preferencia(
+        "isolamento_testes", "agentes", "avancado", "Isolamento dos testes rodados pela Forja", "selecao",
+        "Os testes rodam presos a um grupo de processos (o tempo esgotado mata todos), com teto de memória e pasta temporária própria. "
+        "'Estrito' também troca a pasta pessoal (HOME) por uma caixa de areia e corta a rede por proxy. Não é contêiner: protege contra "
+        "efeitos colaterais comuns, não contra código malicioso.", "basico",
+        (Exemplo("Básico", "basico", "Compatível com quase todo projeto."),
+         Exemplo("Estrito", "estrito", "Testes não escrevem na sua pasta pessoal nem acessam a rede; alguns projetos podem falhar.")),
+        se_ligar="Estrito: menos efeitos colaterais; testes que dependem de rede ou do HOME falham.",
+        se_desligar="Básico: compatível; o teste ainda pode escrever na sua pasta pessoal.", risco="medio",
+        opcoes=(("basico", "Básico"), ("estrito", "Estrito"))),
+    Preferencia(
+        "subagentes", "agentes", "avancado", "Dividir tarefas complexas em subtarefas", "selecao",
+        "No planejamento de uma tarefa complexa o agente pode propor até 4 subtarefas independentes. 'Propor' cria as subtarefas "
+        "no Backlog para você revisar; 'Executar' já as prepara e executa em paralelo (cada uma em pasta isolada quando possível) "
+        "e cria uma tarefa final que junta e confere os resultados.", "propor",
+        (Exemplo("Desligado", "desligado", "O agente faz tudo numa tarefa só."),
+         Exemplo("Propor", "propor", "Você decide quais subtarefas valem a pena."),
+         Exemplo("Executar", "executar", "Mais rápido em tarefas grandes; gasta mais créditos.")),
+        se_ligar="Tarefas grandes andam em paralelo; cada subtarefa consome suas próprias chamadas de modelo.",
+        se_desligar="Uma tarefa por vez, mais barato e mais lento.", risco="medio",
+        opcoes=(("desligado", "Desligado"), ("propor", "Propor"), ("executar", "Executar"))),
+    Preferencia(
+        "roteamento_aprende", "agentes", "avancado", "Roteamento que aprende com o uso", "bool",
+        "A Forja mede a taxa de sucesso de cada nível de tarefa (simples, normal, complexa) com o modelo usado. Se um nível falha "
+        "demais (menos de 60% de sucesso em pelo menos 5 execuções), as próximas tarefas desse nível sobem um degrau (mais "
+        "planejamento e esforço). Nunca rebaixa sozinho.", True,
+        se_ligar="Menos falhas repetidas; tarefas promovidas custam mais.",
+        se_desligar="A classificação usa só as regras fixas."),
+    Preferencia(
+        "retomar_apos_queda", "agentes", "avancado", "Retomar tarefas após uma queda do servidor", "selecao",
+        "Se o servidor cair no meio de uma execução, ao voltar a tarefa fica bloqueada e retomável pelo checkpoint. "
+        "'Automático' retoma sozinho, no máximo uma vez por execução (uma tarefa que derruba o servidor não entra em laço).",
+        "manual", (Exemplo("Manual", "manual", "Você decide quando retomar."),
+                   Exemplo("Automático", "automatico", "Volta a trabalhar sozinho ao reiniciar.")),
+        se_ligar="Automático: nada fica parado; gasta créditos sem você olhar.", se_desligar="Manual: você retoma pelo cartão.",
+        opcoes=(("manual", "Manual"), ("automatico", "Automático"))),
     # ------------------------------------------------------------------ aparencia
     Preferencia(
         "nivel_detalhe", "cosmetica", "geral", "Nível de detalhe da interface", "selecao",
@@ -171,6 +230,24 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         "pendências) como nota candidata do projeto, ligada ao tópico 'Projeto: <nome>'. Fica em pessoal/projetos/<projeto>.",
         True, se_ligar="O conhecimento cresce a cada tarefa e fica auditável; ocupa um pouco de espaço no banco.",
         se_desligar="Nada é guardado automaticamente; você registra o que quiser à mão."),
+    Preferencia(
+        "organizacao_memoria", "eficiencia", "avancado", "Organizar o segundo cérebro em segundo plano", "selecao",
+        "De tempos em tempos (e quando você pede), a Forja procura notas duplicadas, notas desatualizadas (origem mudou, validade "
+        "vencida, contestadas há muito tempo) e notas soltas que deveriam estar ligadas. Tudo vira SUGESTÃO na fila de revisão: "
+        "nada é apagado nem alterado sem você aceitar.", "sugerir",
+        (Exemplo("Desligada", "desligada", "Só quando você clicar em 'Organizar agora'."),
+         Exemplo("Sugerir", "sugerir", "A cada 30 minutos, em segundo plano (consulta leve ao banco local).")),
+        se_ligar="O cérebro fica limpo e confiável; custa uma varredura local periódica (sem IA).",
+        se_desligar="Sem varredura automática; duplicatas e notas velhas se acumulam.",
+        opcoes=(("desligada", "Desligada"), ("sugerir", "Sugerir"))),
+    Preferencia(
+        "pacotes_conhecimento", "eficiencia", "avancado", "Pacotes de conhecimento opcionais", "pacotes",
+        "Notas curadas e versionadas sobre um assunto específico (ex.: FastAPI), instaladas como parte somente leitura da base da "
+        "Forja. Marque os que combinam com seus projetos; desmarcar remove o pacote. Nada sai do computador.", [],
+        se_ligar="O agente acha conhecimento pronto do assunto; ocupa pouco espaço no banco.",
+        se_desligar="Só a base geral da Forja.",
+        opcoes=tuple((p["id"], p["descricao"]) for p in _pacotes()),
+        detalhes=tuple(_pacotes())),
     Preferencia(
         "contexto_orcamento_tokens", "eficiencia", "avancado", "Orçamento de contexto por tarefa", "int",
         "Teto de tokens (estimados, ~4 caracteres cada) de memória anexada a cada tarefa. Itens pouco relevantes são descartados antes de atingir o teto.",
@@ -243,6 +320,17 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
                "Pastas dos dados da Forja e qualquer .git nunca são lidas por ferramenta."),
         persistida=False),
     Preferencia(
+        "regras_controle", "seguranca", "geral", "Regras de controle (suas)", "regras",
+        "Regras que valem antes de cada ação do agente. Cada uma casa por tipo de ação, trecho do comando e/ou caminho (ex.: "
+        "'*.sql', 'migrations/*') e decide: negar, sempre perguntar ou aprovar. Quando várias casam, vale a mais restritiva. "
+        "Nenhuma regra libera segredos, pastas de consulta ou ações que sempre perguntam (excluir, publicar, rede...).",
+        [], (Exemplo("Proteger migrações", [{"nome": "migracoes", "categoria": "modificar_arquivos", "caminho_glob": "*migrations*",
+                                             "acao": "perguntar"}], "Sempre pergunta antes de mexer em migrações."),
+             Exemplo("Liberar pytest", [{"nome": "pytest", "categoria": "executar_comando", "comando_contem": "pytest", "acao": "aprovar"}],
+                     "Roda pytest sem perguntar (dentro da pasta de trabalho).")),
+        se_ligar="Você ajusta o equilíbrio entre autonomia e controle; cada decisão por regra fica nos eventos.",
+        se_desligar="Sem regras, vale só o nível de autonomia.", risco="medio"),
+    Preferencia(
         "limite_requisicoes_por_minuto", "seguranca", "avancado", "Limite de requisições por minuto", "int",
         "Quantas chamadas por minuto o servidor aceita de um mesmo cliente. Protege contra laços de automação e abuso.",
         240, (Exemplo("Baixo", 120, "Uso solo e calmo. Mais proteção; pode dar erro 429 se você abrir muitas telas."),
@@ -270,6 +358,16 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         "dados_do_usuario", "manutencao", "geral", "Onde ficam os seus dados", "perfil",
         "Credenciais, banco de dados (memória e segundo cérebro, tarefas, preferências), notas e ferramentas extras ficam numa pasta só sua, "
         "fora do repositório. O que sobe ao Git é apenas código, lógica, configuração padrão e conhecimento público.", None, persistida=False),
+    Preferencia(
+        "telemetria", "manutencao", "avancado", "Telemetria OpenTelemetry (local)", "selecao",
+        "Ao terminar cada execução, a Forja gera rastros no padrão OpenTelemetry (convenções gen_ai: agente, turnos do modelo, "
+        "ferramentas, tokens) para você abrir em Jaeger, Grafana ou similar. 'Arquivo' grava JSON na pasta de logs; 'Coletor local' "
+        "envia por OTLP/HTTP SÓ para um endereço do próprio computador (APP_OTEL_ENDPOINT). Nunca leva prompt, resposta ou segredos.",
+        "desligada", (Exemplo("Desligada", "desligada", "Nada é gerado."),
+                      Exemplo("Arquivo", "arquivo", "logs/telemetria/*.jsonl, um rastro por execução."),
+                      Exemplo("Coletor local", "otlp_local", "Envia ao coletor em 127.0.0.1 (e também grava o arquivo).")),
+        se_ligar="Você enxerga onde o tempo e os tokens vão; ocupa um pouco de disco.", se_desligar="Sem rastros; os eventos continuam no painel.",
+        opcoes=(("desligada", "Desligada"), ("arquivo", "Arquivo"), ("otlp_local", "Coletor local"))),
     Preferencia(
         "revisao_esquema", "manutencao", "geral", "Revisão do esquema", "revisao",
         "Pede a um agente que reavalie a plataforma: há melhorias que valem o custo (novos modelos, pesquisas, bibliotecas) ou o esquema está num "

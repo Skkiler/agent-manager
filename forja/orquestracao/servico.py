@@ -46,6 +46,7 @@ from forja.dominio.tempo import Relogio, RelogioSistema, iso, somar
 from forja.observabilidade.sanitizar import sanitizar
 from forja.orquestracao.aprovacoes import AprovacoesMixin, _Espera
 from forja.orquestracao.conversa_contexto import ConversaContextoMixin
+from forja.orquestracao.restauracao import MODOS_QUE_ESCREVEM
 
 log = logging.getLogger("forja.servico")
 
@@ -95,6 +96,11 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
         self.quadro: Any | None = None  # QuadroServico (opcional): o orquestrador avisa o master/operador, sem depender dele
         # Ganchos pos-execucao (melhor esforco): estudo -> notas do segundo cerebro; registro de decisoes/aprendizados.
         self.ao_finalizar: list[Any] = []
+        self.restauracao: Any | None = None  # PontosRestauracao: foto da pasta antes de escrever (desfazer por tarefa)
+        self.pontos_ativos = True  # preferencia 'pontos_restauracao'
+        self.isolamento: Any | None = None  # Isolamento: worktree quando duas execucoes disputam a mesma pasta
+        self.retomar_apos_queda = "manual"  # preferencia: manual | automatico (no maximo 1 retomada automatica por execucao)
+        self._pontos: dict[str, list[str]] = {}
         self._esperas: dict[str, _Espera] = {}
         self.repo = repo
         self.provedor = provedor
@@ -517,10 +523,14 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
                     tarefa["projeto_ctx"] = self.projetos.para_execucao(tarefa)
                 except Exception:  # noqa: BLE001 - sem pastas/anexos a execucao segue no workspace isolado
                     log.exception("falha ao montar projeto e anexos", extra={"execucao_id": execucao_id})
-            pacote = self._montar_contexto(execucao_id, tarefa)
-            self._emitir_exec(execucao_id, "agente.iniciado", {"agente": self.provedor.id, "mock": self.provedor.mock})
-            res = self.provedor.executar(tarefa, ex["checkpoint"] or {}, ctl)
-            self._registrar_uteis(execucao_id, pacote, res)
+            bloqueio = self._preparar_pastas(execucao_id, tarefa)
+            if bloqueio is not None:
+                res = bloqueio
+            else:
+                pacote = self._montar_contexto(execucao_id, tarefa)
+                self._emitir_exec(execucao_id, "agente.iniciado", {"agente": self.provedor.id, "mock": self.provedor.mock})
+                res = self.provedor.executar(tarefa, ex["checkpoint"] or {}, ctl)
+                self._registrar_uteis(execucao_id, pacote, res)
         except Exception:  # noqa: BLE001 - isolamento do provedor
             log.exception("falha no provedor de agente", extra={"execucao_id": execucao_id})
             res = ResultadoAgente(
@@ -529,6 +539,7 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
                 agente_id=self.provedor.id,
                 mock=self.provedor.mock,
             )
+        liberadas = self._encerrar_pastas(execucao_id)
         try:
             self._finalizar(execucao_id, ctl, res)
         except Exception:  # noqa: BLE001
@@ -537,6 +548,76 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
             with self._mu:
                 self._ativos.pop(execucao_id, None)
                 self._expirando.discard(execucao_id)
+        if liberadas:  # so quem soltou uma pasta acorda quem esperava por ela (quem foi bloqueado nao se re-acorda)
+            self._acordar_esperando_pasta(execucao_id)
+
+    MAX_ESPERAS_PASTA = 20
+
+    def _acordar_esperando_pasta(self, liberada_por: str) -> None:
+        """Pasta liberada: retoma (pelo checkpoint) as execucoes que pararam com 'pasta_ocupada'. Elas reservam de novo; se
+        a pasta ainda estiver ocupada, voltam a esperar. Limite por execucao evita laco."""
+        if self.isolamento is None:
+            return
+        try:
+            with self.repo.leitura() as t:
+                candidatas = [e["id"] for e in t.listar(T.Execucao, estado=EE.PAUSADA.value, limite=200)
+                              if any(str(p).startswith("pasta_ocupada") for p in ((e.get("resultado") or {}).get("pendencias") or []))
+                              and t.contar_eventos("execucao.retomada_pasta_livre", e["id"]) < self.MAX_ESPERAS_PASTA]
+            for eid in candidatas:
+                try:
+                    self._emitir_avulso("execucao.retomada_pasta_livre", None, eid, {"liberada_por": liberada_por})
+                    self.iniciar_execucao(eid, ator="sistema:pasta_liberada")
+                except Exception as e:  # noqa: BLE001 - continua bloqueada e retomavel a mao
+                    log.info("retomada por pasta livre nao ocorreu: %s", type(e).__name__, extra={"execucao_id": eid})
+        except Exception:  # noqa: BLE001
+            log.exception("falha ao acordar execucoes esperando pasta")
+
+    # ------------------------------------------------------------------ pastas: isolamento (9.2) e desfazer (9.1)
+    def _preparar_pastas(self, execucao_id: str, tarefa: dict) -> ResultadoAgente | None:
+        """Reserva as pastas de trabalho (worktree se ocupada) e fotografa-as antes de escrever. Devolve um resultado
+        'bloqueada' se a pasta estiver ocupada e nao houver como isolar (falha fechada); None = pode executar."""
+        ctx = tarefa.get("projeto_ctx") or {}
+        pastas = ctx.get("pastas") or []
+        if not any(p.get("papel") == "trabalho" for p in pastas):
+            return None
+        if self.isolamento is not None:
+            try:
+                forcar = (tarefa.get("politicas") or {}).get("sandbox") == "worktree"
+                efetivas, areas, motivo = self.isolamento.reservar(execucao_id, tarefa["id"], pastas, forcar)
+            except Exception:  # noqa: BLE001 - sem reserva confiavel nao se arrisca escrever junto com outra execucao
+                log.exception("falha ao reservar pastas", extra={"execucao_id": execucao_id})
+                efetivas, areas, motivo = pastas, [], "isolamento_indisponivel: nao foi possivel reservar a pasta de trabalho"
+            if motivo:
+                self._emitir_exec(execucao_id, "isolamento.bloqueado", {"motivo": motivo[:200]})
+                return ResultadoAgente(estado="bloqueada", resumo="A pasta de trabalho esta em uso por outra execucao.",
+                                       agente_id=self.provedor.id, mock=self.provedor.mock,
+                                       pendencias=[motivo[:300], "Execute de novo quando a outra tarefa terminar."])
+            tarefa["projeto_ctx"] = {**ctx, "pastas": efetivas}
+            if areas:
+                tarefa["isolamento"] = [{"branch": a["branch"]} for a in areas]
+        if self.restauracao is not None and self.pontos_ativos and tarefa.get("modo") in MODOS_QUE_ESCREVEM:
+            pontos = []
+            for p in tarefa["projeto_ctx"]["pastas"]:
+                if p.get("papel") == "trabalho":
+                    pid = self.restauracao.capturar(execucao_id, tarefa["id"], Path(p["caminho"]))
+                    if pid:
+                        pontos.append(pid)
+            with self._mu:
+                self._pontos[execucao_id] = pontos
+        return None
+
+    def _encerrar_pastas(self, execucao_id: str) -> int:
+        """Fecha os pontos de restauracao e libera as pastas. Devolve quantas pastas foram liberadas."""
+        with self._mu:
+            pontos = self._pontos.pop(execucao_id, [])
+        for pid in pontos:
+            self.restauracao.finalizar(pid)  # type: ignore[union-attr] - so ha pontos se houver restauracao
+        if self.isolamento is not None:
+            try:
+                return int(self.isolamento.liberar(execucao_id) or 0)
+            except Exception:  # noqa: BLE001
+                log.exception("falha ao liberar pastas", extra={"execucao_id": execucao_id})
+        return 0
 
 
     def _gravar_artefato(self, conteudo: str) -> tuple[str, str, int]:
@@ -750,6 +831,7 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
     def recuperar(self) -> dict:
         """Pos-crash/restart: execucoes 'executando' sem worker viram 'pausada' (retomaveis)."""
         recuperadas = 0
+        retomaveis: list[str] = []
         with self.repo.escrita() as t:
             t.purgar_locks_expirados(self._ts())
             for ex in t.listar(T.Execucao, estado=EE.EXECUTANDO.value):
@@ -760,6 +842,7 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
                 t.atualizar(T.Execucao, ex["id"], estado=EE.PAUSADA.value)
                 if tarefa["estado"] == ET.EXECUTANDO.value:
                     tarefa = self._mudar(t, tarefa, ET.BLOQUEADA, "reinicio_servidor: retomavel pelo checkpoint")
+                    retomaveis.append(ex["id"])
                 self._ev(t, "execucao.recuperada", tarefa, ex["id"], {"checkpoint": ex["checkpoint"]})
                 recuperadas += 1
             # Pedidos de aprovacao feitos DURANTE a execucao ficam orfaos se o worker morreu: nega e deixa retomavel.
@@ -791,7 +874,29 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
                 recuperadas += 1
             t.emitir_evento("servidor.iniciado", self._ts(), {"execucoes_recuperadas": recuperadas})
         expiradas = self.expirar_vencidas()
-        return {"recuperadas": recuperadas, "expiradas": expiradas}
+        retomadas = self._retomar_automaticamente(retomaveis) if self.retomar_apos_queda == "automatico" else []
+        return {"recuperadas": recuperadas, "expiradas": expiradas, "retomadas": retomadas}
+
+    MAX_RETOMADAS_AUTOMATICAS = 1
+
+    def _retomar_automaticamente(self, ids: list[str]) -> list[str]:
+        """Preferencia 'automatico': retoma pelo checkpoint as execucoes interrompidas pela queda do servidor.
+        No maximo UMA vez por execucao (uma tarefa que derruba o servidor nao entra em laco de quedas)."""
+        retomadas = []
+        for eid in ids:
+            try:
+                with self.repo.leitura() as t:
+                    ja = t.contar_eventos("execucao.retomada_automatica", eid)
+                if ja >= self.MAX_RETOMADAS_AUTOMATICAS:
+                    self._emitir_avulso("execucao.retomada_automatica_recusada", None, eid,
+                                        {"motivo": "limite de retomadas automaticas atingido; retome manualmente"})
+                    continue
+                self._emitir_avulso("execucao.retomada_automatica", None, eid, {"tentativa": ja + 1})
+                self.iniciar_execucao(eid, ator="sistema:retomada_automatica")
+                retomadas.append(eid)
+            except Exception as e:  # noqa: BLE001 - retomar e conveniencia: a execucao continua bloqueada e retomavel a mao
+                log.warning("retomada automatica falhou: %s", type(e).__name__, extra={"execucao_id": eid})
+        return retomadas
 
     def encerrar(self, timeout: float = 15.0) -> None:
         """Shutdown gracioso: pede pausa cooperativa (checkpoint) e aguarda workers."""

@@ -1,6 +1,6 @@
 # Estado da implementacao
 
-**Atualizado:** 2026-11-06 (perfil de segurança do Kiro, `.env` sem leitura, alegações, interface). **Fases 0 a 3 testadas; Fase 4 implementada, incluindo MCP (4.7c), session/load (2.9), escrita com aprovacao (4.20b) e rotulagem (4.8). Abertos: 4.9/3.12 (dependem da sua rotulagem), 4.21, 4.22, 0.6, 2.8.** Padrao de agente continua sendo o **mock SIMULADO**;
+**Atualizado:** 2026-11-06 (Fase 9: melhorias da validação de mercado, gitleaks e Docker; ver a seção "Fase 9" abaixo). **Fases 0 a 4 testadas; Fase 9 implementada (9.12 parcial). Abertos: 2.8 (Workflows na conta Kiro), resumo automático de clusters (9.12), licença (Fase 8, decisão sua).** Padrao de agente continua sendo o **mock SIMULADO**;
 o Kiro real so e usado com `APP_KIRO_ACP_ENABLED=true` (validado em sessao autenticada na etapa anterior).
 
 ## Regra de publicacao (repositorio publico)
@@ -45,14 +45,14 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 
 | Fase | Estado | Evidencia | Proximo passo |
 |---|---|---|---|
-| 0 — Diagnostico/Git-safe | testado | baseline; `.gitignore`/`.kiroignore` + `test_git_safe` | scanner dedicado (gitleaks) pendente de aprovacao |
+| 0 — Diagnostico/Git-safe | testado | baseline; `.gitignore`/`.kiroignore` + `test_git_safe`; gitleaks no pre-commit e no CI | — |
 | 1 — Nucleo deterministico | testado | testes + smoke | — |
 | 2 — ACP/Kiro | testado (2.8 e 2.9 abertos) | ACP + aprovacao por acao, validado com Kiro real | 2.8 agentes/skills/Workflow; 2.9 pool/`session/load` |
 | 3 — Memoria/grafo | **testado** (3.10–3.12 abertos) | 106 testes de memoria (43 dominio + 44 servico + 19 API) + 59 git-safe + mutacao + dados reais | 3.10 propostas de procedimento |
 | 4 — Contexto/ferramentas | **testado** (4.7-4.9 abertos) | 396 testes, benchmark, Kiro real, mutacao | 4.7 ferramentas N0 medidas; 4.8 precisao NL em corpus real |
-| 5 — Multiagentes | planejado | — | DAG, scheduler, worktrees; modos de escrita |
-| 6 — Aprendizado | planejado | — | EWMA, roteamento, N1 opcional |
-| 7 — UI/LAN | planejado | — | painel pixel art; tunel/HTTPS |
+| 5 — Multiagentes | parcial (9.2, 9.8) | worktrees por pasta ocupada, subtarefas paralelas + consolidacao | scheduler com prioridade global |
+| 6 — Aprendizado | parcial (9.9) | EWMA de sucesso por nivel/parte/modelo, promocao de rota | custo no criterio de rota |
+| 7 — UI/LAN | testado (9.15-9.19) | oficina interativa; tunel SSH documentado no README; Docker em loopback | HTTPS com proxy (opcional) |
 | 8 — Open source | planejado | — | licenca, CI, SBOM, release |
 
 ## Componentes novos (Fase 3)
@@ -259,6 +259,29 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
   - 0.5: instalar gitleaks/detect-secrets exige sua aprovação.
   - 2.8: Workflows/skills do Kiro não confirmados na conta.
 
+## Fase 9 — validação de mercado (9.1-9.19), gitleaks (0.5) e Docker: resultados reais (2026-11-06)
+Decisões no ADR-021; migração 0012 (aditiva). Novos módulos: `orquestracao/{restauracao,isolamento,subtarefas,aprendizado_rotas,custos,
+organizacao,oficina}.py`, `observabilidade/telemetria.py`, `ferramentas/sandbox.py`, `seguranca/{regras,spotlight}.py`; vista "Custo",
+fila "Revisão (N)", editor de regras, pacotes de conhecimento (`forja/conhecimento_pacotes/fastapi`) e oficina reescrita.
+- `python -m pytest` -> **1075 passed** (230 s; eram 1036). Novos: `test_orquestrador_melhorias.py` (12), `test_orquestrador_inteligencia.py` (14),
+  `test_cerebro_oficina.py` (11). `ruff` limpo; `node --check` em todos os JS: 0 erros.
+- `scripts/benchmark_busca.py` -> GLOBAL **0,94/0,87/0,89** (igual ao anterior: o reforço por uso não altera o corpus sintético, usos = 0).
+- Navegador real (Edge, servidor nativo, `--interagir --a11y`): **91 passos OK, 0 problemas**; axe-core sem violação nas 7 vistas
+  (inclui a nova "Custo"); layout estreito sem estouro. Fluxos novos: desfazer (arquivo criado pelo mock some), cópias isoladas,
+  custo e período, Revisão (organizar, unir duplicata, promover candidata), regra criada/removida, pacote FastAPI instalado/removido,
+  telemetria, oficina (papel, orçamento, aria-live, setas/Home/End, replay com passos e velocidade, balão abre Decisões).
+- **Docker** (`compose.yaml`, imagem não-root, somente leitura, `cap_drop: ALL`): healthy; publicado só em `127.0.0.1:8790`, token
+  obrigatório; semeado dentro do contêiner; inspeção com token: **31 passos OK, 0 problemas**, axe-core sem violação.
+- **gitleaks 8.30.1**: histórico (26 commits) tinha 14 achados, todos fixtures SINTÉTICAS dos testes de redação (conferidas com o valor
+  mascarado); `.gitleaks.toml` libera só a regra genérica e só em `tests/`. Depois: 0 achados no histórico e na árvore. Pre-commit instalado.
+- Kiro real (3.1.0), sem créditos: a sessão anuncia como comandos só `context-gatherer`, `forja`, `general-task-execution` (sem `/compact`);
+  por isso a compactação (9.7) é feita pela Forja (resumo determinístico + sessão nova acima de 120 mil tokens).
+- **Bug real achado pela inspeção e corrigido:** `#area` com `overflow: hidden` rolava para o lado num foco programático (os painéis
+  recolhidos ficam transladados para fora); o conteúdo ficava deslocado sem barra de rolagem. Agora `overflow: clip`.
+- Isolamento de testes (9.5) provado: o processo "neto" de um teste que estoura o tempo morre junto (Job Object no Windows).
+- Limites honestos: worktree exige Git e parte do último commit; o sandbox não é contêiner; créditos são estimativa; 9.12 não resume
+  clusters em tópicos (só sugere duplicata, nota velha e ligação); subtarefas sem Git na mesma pasta rodam uma de cada vez.
+
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -274,10 +297,10 @@ O uso do Kiro empresarial para este projeto foi **informado pelo usuario como ap
 - `confianca` e informada pelo usuario e **nao calibrada**; nao entra no ranking.
 - A memoria e injetada no prompt apenas para namespaces em `APP_CONTEXT_NAMESPACES` (padrao `publico`).
 - Painel (JS): verificado em navegador real por script (Playwright), nao ha CI; auditoria com leitor de tela pendente.
-- Scanner dedicado de segredos (gitleaks) e CI continuam ausentes. Um processo `kiro-cli` por execucao (sem pool).
+- gitleaks e CI ativos (ver Fase 9). Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 1036 passed.
+1. `pip install -r requirements-dev.txt`; `python -m pytest` -> 1075 passed. Demo em Docker: README, secao 'Em Docker'. Proximo: licenca (Fase 8, decisao sua), resumo de clusters (9.12, opcional), 2.8.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

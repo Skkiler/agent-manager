@@ -2,7 +2,7 @@
 import { api, consulta } from "../api.js";
 import { estado, emitir, ouvir, selecionarTarefa } from "../estado.js";
 import { dialogoProjeto, resumoPastas } from "./projetos.js";
-import { dialogo, el, limpar, tag, toast } from "../ui.js";
+import { dataCurta, dialogo, el, limpar, tag, toast } from "../ui.js";
 
 let projetoFiltro = "";
 let ultimo = null;
@@ -28,8 +28,62 @@ async function acao(id, c) {
     else if (id === "cancelar") await cancelar(c);
     else if (id === "conversa") { selecionarTarefa(c.id); emitir("abrir-direita", "conversa"); }
     else if (id === "aprovacoes") emitir("abrir-direita", "decisoes");
+    else if (id === "desfazer") return dialogoDesfazer(c);
     await atualizar();
   } catch (e) { toast(e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------- desfazer alteracoes de uma tarefa (pontos de restauracao)
+const listaArquivos = (rotulo, itens) => itens.length ? el("details", {}, el("summary", { textContent: `${rotulo} (${itens.length})` }),
+  el("ul", { className: "mudo" }, ...itens.slice(0, 100).map((a) => el("li", {}, el("code", { textContent: a }))))) : null;
+
+async function dialogoDesfazer(c) {
+  const corpo = el("div", { className: "desfazer" }, el("p", { className: "mudo", role: "status", textContent: "Carregando…" }));
+  const d = dialogo(`Desfazer alterações: ${c.titulo}`, corpo);
+  const desenhar = async () => {
+    const pontos = await api("GET", `/tarefas/${c.id}/restauracao`);
+    limpar(corpo);
+    corpo.append(el("p", { textContent: "Volta só os arquivos que a tarefa mexeu. Se você alterou um deles depois, ele fica como está (conflito) e a tela avisa." }));
+    for (const p of pontos) {
+      const desfazer = async (forcar) => {
+        if (forcar && !confirm("Forçar sobrescreve as mudanças que você fez depois nesses arquivos. Continuar?")) return;
+        try {
+          const r = await api("POST", `/restauracao/${p.id}/desfazer`, { forcar });
+          if (r.conflitos.length) toast(`${r.conflitos.length} arquivo(s) em conflito ficaram como estão.`, "erro");
+          else toast(`Desfeito: ${r.restaurados.length} restaurado(s), ${r.removidos.length} removido(s).`, "ok");
+          await desenhar(); atualizar();
+          if (r.conflitos.length) corpo.prepend(el("div", { className: "aviso", role: "alert" }, el("p", { textContent: "Arquivos alterados depois da tarefa:" }),
+            el("ul", {}, ...r.conflitos.map((a) => el("li", {}, el("code", { textContent: a })))),
+            el("button", { type: "button", textContent: "Forçar mesmo assim", onclick: () => desfazer(true) })));
+        } catch (e) { toast(e.message, "erro"); }
+      };
+      corpo.append(el("section", { className: "card" },
+        el("div", { className: "linha" }, tag(p.estado, p.pode_desfazer ? "aviso" : "ok"), el("span", { className: "mudo", textContent: `${p.pasta} · ${dataCurta(p.criado_em)}` }),
+          p.parcial ? tag("foto parcial", "aviso") : null, p.ignorados ? tag(`${p.ignorados} ignorado(s)`, "") : null),
+        listaArquivos("Alterados", p.alterados), listaArquivos("Criados (serão apagados)", p.adicionados), listaArquivos("Apagados (voltam)", p.removidos),
+        p.pode_desfazer ? el("button", { type: "button", className: "primario", textContent: "Desfazer esta execução", onclick: () => desfazer(false) }) : null));
+    }
+    if (!pontos.length) corpo.append(el("p", { className: "mudo", textContent: "Nenhuma alteração registrada para esta tarefa." }));
+    corpo.append(el("div", { className: "linha" }, el("button", { type: "button", textContent: "Fechar", onclick: () => d.fechar() })));
+  };
+  try { await desenhar(); } catch (e) { limpar(corpo); corpo.append(el("p", { className: "aviso", textContent: e.message })); }
+}
+
+async function dialogoIsolamentos() {
+  const corpo = el("div", {}, el("p", { className: "mudo", textContent: "Carregando…" }));
+  const d = dialogo("Cópias isoladas (git worktree)", corpo);
+  const desenhar = async () => {
+    const areas = await api("GET", "/isolamentos");
+    limpar(corpo);
+    corpo.append(el("p", { textContent: "Quando duas tarefas escrevem na mesma pasta, a segunda trabalha numa cópia em .worktrees/, num branch próprio. Junte o branch quando quiser; remover a cópia mantém o branch." }));
+    corpo.append(...(areas.length ? areas.map((a) => el("div", { className: "linha card" }, el("code", { textContent: a.branch }), tag(a.pasta), el("span", { className: "mudo", textContent: dataCurta(a.criado_em) }),
+      el("button", { type: "button", textContent: "Remover cópia", onclick: async () => {
+        try { await api("DELETE", `/isolamentos/${a.id}`); toast(`Cópia removida; o branch ${a.branch} continua no repositório.`, "ok"); await desenhar(); }
+        catch (e) { toast(e.message, "erro"); }
+      } }))) : [el("p", { className: "mudo", textContent: "Nenhuma cópia isolada ativa." })]),
+    el("div", { className: "linha" }, el("button", { type: "button", textContent: "Fechar", onclick: () => d.fechar() })));
+  };
+  try { await desenhar(); } catch (e) { limpar(corpo); corpo.append(el("p", { className: "aviso", textContent: e.message })); }
 }
 
 // Soltar um cartao numa coluna so e aceito quando equivale a uma acao valida do servidor.
@@ -147,6 +201,7 @@ export async function montarLateral(lat) {
         dialogoProjeto(await api("GET", `/projetos/${sel.value}`), () => montarLateral(lat));
       } })),
     resumo,
+    el("button", { type: "button", textContent: "Cópias isoladas…", title: "Pastas isoladas (git worktree) criadas para tarefas em paralelo", onclick: dialogoIsolamentos }),
     el("p", { className: "aviso", textContent: "Arraste um cartao para Pronta (preparar) ou para Falhou/cancelada (cancelar). Sem arrastar, use os botoes do cartao." }));
   try { projetos = await api("GET", "/projetos"); for (const p of projetos) sel.append(el("option", { value: p.id, textContent: p.nome, selected: p.id === projetoFiltro })); mostrarResumo(projetos); } catch { /* lista de projetos e opcional */ }
 }

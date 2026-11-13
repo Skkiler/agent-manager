@@ -7,7 +7,7 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 0.2 `.gitignore`/`.kiroignore`/`.env.example` revisados; `.gitattributes` para EOL. (REQ-001)
 - [x] 0.3 `git init` + baseline; scan de padroes de segredo em arquivos rastreados (limpo). (REQ-001)
 - [x] 0.4 ADRs iniciais em `docs/adr/`. 
-- [~] 0.5 Scanner dedicado (gitleaks/detect-secrets) em pre-commit/CI: config escrita; instalacao pendente de aprovacao.
+- [x] 0.5 gitleaks 8.30.1 no pre-commit (instalado) e no CI (binario fixo + sha256, historico inteiro); fixtures sinteticas liberadas so em tests/ (.gitleaks.toml). ADR-021.
 - [x] 0.6 Benchmark de tarefas sinteticas (10 tarefas: simples/normal/complexa) com criterio objetivo: `scripts/benchmark_tarefas.py` (falso sem custo; `--real` no Kiro).
 
 ## Fase 1 — Nucleo deterministico
@@ -94,29 +94,29 @@ Legenda: [x] concluida e testada | [~] parcial | [ ] pendente
 - [x] 4.39 Segundo cerebro: base inicial curada (63 notas, 10 areas, somente leitura, `publico/forja-base`), topicos->subtopicos ligados (SUBTOPICO_DE/RELACIONADO_A), navegacao (`forja_navegar_memoria`), dica de subtopicos no contexto. ADR-020.
 - [x] 4.40 Alimentacao e estudo: `POST /estudos` (pasta permitida ou topico) -> notas candidatas ligadas; registro automatico de decisoes/aprendizados por projeto; `forja_propor_nota`. ADR-020.
 
-## Fase 9 — Planejado (validacao de mercado nov/2026; ainda NAO implementado)
+## Fase 9 — Validacao de mercado nov/2026 (implementada; ADR-021, migracao 0012)
 Orquestracao e controle:
-- [ ] 9.1 Checkpoint de arquivos por tarefa e desfazer (snapshot via git/worktree antes de alterar; niveis de reversibilidade: arquivo, banco, externo).
-- [ ] 9.2 Worktree isolada por tarefa paralela + fusao revisada (ligado a Fase 5: DAG e scheduler).
-- [ ] 9.3 Execucao duravel: retomar execucoes interrompidas por queda do servidor a partir do ultimo checkpoint, sem duplicar efeitos.
-- [ ] 9.4 Telemetria OpenTelemetry GenAI (spans `gen_ai.*` de turnos, ferramentas e buscas) exportavel opcional para OTLP local.
-- [ ] 9.5 Sandbox para os testes da Forja (Job Object/contener com rede desligada) em projetos nao confiaveis.
-- [ ] 9.6 Marcacao de dados nao confiaveis no prompt (spotlighting/datamarking) alem dos delimitadores atuais.
-- [ ] 9.7 Compactacao de contexto em tarefas longas (resumo de turnos anteriores e limpeza de resultados de ferramenta antigos).
-- [ ] 9.8 Orquestrador-trabalhadores com subagentes paralelos (sessoes ACP separadas) para tarefas que se dividem, com orcamento por subagente.
-- [ ] 9.9 Aprendizado de roteamento (EWMA de sucesso/custo por parte e modelo, a partir do benchmark e do uso real; Fase 6).
-- [ ] 9.10 Painel de custo: creditos estimados por parte, tarefa e semana; alerta de desvio.
-- [ ] 9.11 Hooks de politica do usuario (antes de ferramenta / apos tarefa), declarativos e auditados.
+- [x] 9.1 Checkpoint de arquivos por tarefa e desfazer (snapshot via git/worktree antes de alterar; niveis de reversibilidade: arquivo, banco, externo).
+- [x] 9.2 Worktree isolada por tarefa paralela + fusao revisada (ligado a Fase 5: DAG e scheduler).
+- [x] 9.3 Execucao duravel: retomar execucoes interrompidas por queda do servidor a partir do ultimo checkpoint, sem duplicar efeitos.
+- [x] 9.4 Telemetria OpenTelemetry GenAI (spans `gen_ai.*` de turnos, ferramentas e buscas) exportavel opcional para OTLP local.
+- [x] 9.5 Sandbox para os testes da Forja (Job Object/contener com rede desligada) em projetos nao confiaveis.
+- [x] 9.6 Marcacao de dados nao confiaveis no prompt (spotlighting/datamarking) alem dos delimitadores atuais.
+- [x] 9.7 Compactacao de contexto em tarefas longas (resumo de turnos anteriores e limpeza de resultados de ferramenta antigos).
+- [x] 9.8 Orquestrador-trabalhadores com subagentes paralelos (sessoes ACP separadas) para tarefas que se dividem, com orcamento por subagente.
+- [x] 9.9 Aprendizado de roteamento (EWMA de sucesso/custo por parte e modelo, a partir do benchmark e do uso real; Fase 6).
+- [x] 9.10 Painel de custo: creditos estimados por parte, tarefa e semana; alerta de desvio.
+- [x] 9.11 Hooks de politica do usuario (antes de ferramenta / apos tarefa), declarativos e auditados.
 Segundo cerebro:
-- [ ] 9.12 Consolidacao em segundo plano ("sono"): unir duplicatas, propor promocoes, marcar notas desatualizadas e resumir clusters em topicos, sem apagar (nao destrutiva).
-- [ ] 9.13 Validacao assistida das notas candidatas (fila de revisao com fonte, diff e um clique para promover/contestar).
-- [ ] 9.14 Pacotes de conhecimento opcionais (ex.: frameworks especificos) instalaveis como base somente leitura, versionados.
+- [~] 9.12 Consolidacao em segundo plano ("sono"): unir duplicatas, propor promocoes, marcar notas desatualizadas e resumir clusters em topicos, sem apagar (nao destrutiva). Feito: duplicatas, desatualizadas, ligacoes sugeridas e fila de revisao; falta resumir clusters em topicos (exigiria LLM; fica opcional).
+- [x] 9.13 Validacao assistida das notas candidatas (fila de revisao com fonte, diff e um clique para promover/contestar).
+- [x] 9.14 Pacotes de conhecimento opcionais (ex.: frameworks especificos) instalaveis como base somente leitura, versionados.
 Tela pixel art (oficina):
-- [ ] 9.15 Um personagem por papel ativo (planejador, executor, revisor, estudo), com animacao pelo tipo de ferramenta (lendo, digitando, comando, web).
-- [ ] 9.16 Balao "aguardando voce" clicavel que abre a aprovacao/decisao; som opcional e desligado por padrao.
-- [ ] 9.17 Indicador flutuante da ferramenta atual e barra de orcamento (chamadas/tempo) sobre cada personagem; cor por nivel de complexidade.
-- [ ] 9.18 Linha do tempo/replay da execucao a partir dos eventos; clique no personagem abre a conversa.
-- [ ] 9.19 Descricao textual do estado da cena (aria-live) e respeito a movimento reduzido; layout do escritorio por paleta.
+- [x] 9.15 Um personagem por papel ativo (planejador, executor, revisor, estudo), com animacao pelo tipo de ferramenta (lendo, digitando, comando, web).
+- [x] 9.16 Balao "aguardando voce" clicavel que abre a aprovacao/decisao; som opcional e desligado por padrao.
+- [x] 9.17 Indicador flutuante da ferramenta atual e barra de orcamento (chamadas/tempo) sobre cada personagem; cor por nivel de complexidade.
+- [x] 9.18 Linha do tempo/replay da execucao a partir dos eventos; clique no personagem abre a conversa.
+- [x] 9.19 Descricao textual do estado da cena (aria-live) e respeito a movimento reduzido; layout do escritorio por paleta.
 - [x] 4.26 Hospedagem: app web local instalavel (PWA) e `python -m forja --abrir`; tema estilo IDE, responsivo e com movimento reduzido.
 ## Gate Fase 1
 Atingido: tarefa simulada percorre rascunho -> ... -> concluida com estado consistente, evidencia (simulada),
