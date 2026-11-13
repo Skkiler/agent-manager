@@ -98,6 +98,7 @@ def login(nav, base: str, saida: Path, a11y: bool) -> int:
         p2 = ctx2.new_page()
         p2.goto(base)
         p2.locator("#tela-login").wait_for(state="visible")
+        p2.wait_for_timeout(700)  # o cartao entra com animacao de opacidade: no meio dela o contraste medido cai
         r = Axe().run(p2, options={"runOnly": {"type": "tag", "values": ["wcag2a", "wcag2aa", "wcag21aa"]}})
         graves = [v for v in r.response.get("violations", []) if v.get("impact") in ("critical", "serious")]
         print(f"  [a11y] login        violacoes={len(r.response.get('violations', []))} graves={len(graves)}")
