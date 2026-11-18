@@ -132,6 +132,8 @@ class ConsumoMedicao(_Estrito):
     fonte: Literal["provedor", "estimado", "indisponivel", "simulado"] = "indisponivel"
     # Creditos MEDIDOS pelo proprio agente (Kiro: `session_info_update` kind=session_usage, acumulado por sessao). None = nao medido.
     creditos: float | None = Field(default=None, ge=0)
+    # Tamanho REAL da janela de contexto ao fim (Kiro: 'breakdown' por categoria). None = nao medido.
+    contexto_tokens: int | None = Field(default=None, ge=0)
 
 
 class ArtefatoSaida(_Estrito):

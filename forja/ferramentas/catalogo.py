@@ -70,6 +70,7 @@ class EntAmostra(_Base):
     caminho: Caminho
     inicio: int = Field(1, ge=1)
     linhas: int = Field(60, ge=1, le=200)
+    buscar: Annotated[str, StringConstraints(max_length=200)] = ""
 
 
 class EntAgenda(_Base):
@@ -485,6 +486,29 @@ class Catalogo:
                 u.tokens_origem += r.tokens_origem
                 u.tokens_resumo += r.tokens_resumo
 
+    tempo_maximo_s: float = 30.0  # teto por chamada (antes so havia limite de tamanho de entrada)
+
+    def _com_tempo(self, f: Ferramenta, entrada: Any, ctx: Contexto, pol: PoliticaPastas) -> ResultadoFerramenta:
+        """Roda a ferramenta numa thread com teto de tempo. A politica de pastas e aplicada DENTRO da thread (ela e por thread).
+        Estourou: o agente recebe erro claro na hora; a thread termina sozinha (as ferramentas so leem e tem limites proprios)."""
+        caixa: dict[str, Any] = {}
+
+        def alvo() -> None:
+            try:
+                with aplicar(pol):
+                    caixa["r"] = f.rodar(entrada, ctx)
+            except BaseException as e:  # noqa: BLE001 - repassado ao chamador
+                caixa["e"] = e
+
+        th = threading.Thread(target=alvo, name=f"ferramenta-{f.id}", daemon=True)
+        th.start()
+        th.join(self.tempo_maximo_s)
+        if th.is_alive():
+            raise FerramentaFalhou(f"{f.id} passou do tempo maximo ({self.tempo_maximo_s:.0f}s); restrinja a pasta ou o alvo")
+        if "e" in caixa:
+            raise caixa["e"]
+        return caixa["r"]
+
     def executar(self, id_: str, entrada: dict[str, Any]) -> dict[str, Any]:
         f = self.ferramentas.get(id_)
         if f is None:
@@ -502,8 +526,8 @@ class Catalogo:
         while True:
             ini = time.perf_counter()
             try:
-                with aplicar(pol):
-                    r = usada.rodar(dados if usada is f else usada.entrada(**_compat(dados, usada.entrada)), ctx)
+                entrada_usada = dados if usada is f else usada.entrada(**_compat(dados, usada.entrada))
+                r = self._com_tempo(usada, entrada_usada, ctx, pol)
             except SemResultado:
                 self._registrar(usada.id, (time.perf_counter() - ini) * 1000, None)
                 alvo = self.ferramentas.get(usada.fallback or "")

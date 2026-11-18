@@ -416,6 +416,7 @@ class ProvedorKiroAcp:
             cliente.definir_opcao(sid, "mode", modo, self.timeout_handshake)
             cliente.modo_forja = modo  # type: ignore[attr-defined] - estado POR sessao (o provedor e compartilhado entre threads)
             ctl.evento("kiro.perfil", {"modo": modo, "presets": presets, "aplicado": True})
+            self._privacidade(cliente, sid, ctl)
             return None
         ctl.evento("kiro.perfil", {"modo": None, "presets": presets, "aplicado": False})
         if trabalho:
@@ -457,6 +458,21 @@ class ProvedorKiroAcp:
             self.pool.devolver(cliente, saudavel)
         else:
             cliente.encerrar()
+
+    def _privacidade(self, cliente: ClienteAcp, sid: str, ctl: ControleExecucao | None = None) -> None:
+        """kiro-cli 3.1.0 anuncia 'contentCollection' (coleta de prompts/codigo para melhorar o servico) ligada por padrao em contas
+        pessoais. A Forja desliga quando a sessao oferece a opcao. Melhor esforco: sem a opcao (conta empresarial ja sem coleta), segue."""
+        valores = [str(v.get("value")) for o in cliente.opcoes_sessao if o.get("id") == "contentCollection"
+                   for v in (o.get("options") or []) if isinstance(v, dict)]
+        if "disabled" not in valores:
+            return
+        try:
+            cliente.definir_opcao(sid, "contentCollection", "disabled", self.timeout_handshake)
+            if ctl is not None:
+                ctl.evento("kiro.privacidade", {"coleta_de_conteudo": "desligada"})
+        except AcpErro as e:
+            if ctl is not None:
+                ctl.evento("kiro.privacidade", {"coleta_de_conteudo": "nao_alterada", "motivo": sanitizar_texto(e.mensagem)[:120]})
 
     def _regras_agente(self, tarefa: dict[str, Any]) -> str:
         """Regras extras por agente no pedido. Kiro: nenhuma (o perfil 'forja' ja leva a regra completa de segredos)."""
@@ -525,6 +541,8 @@ class ProvedorKiroAcp:
         medicao: dict[str, Any] = {"sessoes": {}, "base": {}}
         res = self._executar(tarefa, checkpoint, ctl, medicao)
         creditos = medir_creditos(medicao)
+        if isinstance(medicao.get("contexto"), int):  # contexto REAL da janela (medido pelo Kiro), alem dos tokens estimados do pedido
+            res.consumo.contexto_tokens = medicao["contexto"]
         if creditos is not None:
             res.consumo.creditos = creditos
             ctl.evento("agente.creditos", {"agente": self.id, "creditos": creditos, "sessoes": len(medicao["sessoes"])})
@@ -623,6 +641,9 @@ class ProvedorKiroAcp:
                     elif len(sequencia) >= self.repeticoes_laco and len(set(sequencia[-self.repeticoes_laco:])) == 1:
                         motivo_parada.append(f"laco_detectado: a mesma chamada ({str(upd.get('title'))[:60]}) repetida "
                                              f"{self.repeticoes_laco} vezes seguidas")
+                    elif len(sequencia) >= 2 * self.repeticoes_laco and len(set(sequencia[-2 * self.repeticoes_laco:])) <= 2:
+                        # A, B, A, B...: duas chamadas se alternando (ex.: ler e reler o mesmo par de arquivos) tambem e laco
+                        motivo_parada.append(f"laco_detectado: duas chamadas se alternando {2 * self.repeticoes_laco} vezes")
                     if motivo_parada:
                         ctl.evento("kiro.orcamento", {"motivo": motivo_parada[0], "chamadas": len(sequencia)})
                 if tid in observadas or len(observadas) < MAX_OBSERVADAS:
@@ -754,6 +775,8 @@ class ProvedorKiroAcp:
             fut = cliente.requisitar("session/prompt", {"sessionId": sid, "prompt": blocos})
             parada = self._aguardar(cliente, fut, sid, ctl, parar)
             inicial = sum(contexto_kiro.values())
+            if inicial:
+                medicao["contexto"] = inicial
             if self.limite_contexto_sessao and inicial > 0.4 * self.limite_contexto_sessao:  # higiene: steering/arquivos grandes demais
                 ctl.evento("kiro.contexto_inicial_alto", {"total": inicial, "categorias": dict(contexto_kiro),
                                                           "dica": "steering, skills ou arquivos do projeto ocupam muito contexto"})
@@ -809,7 +832,7 @@ class ProvedorKiroAcp:
                     observadas[f"forja-testes-{i}"] = o
             if contexto_kiro:
                 ctl.evento("kiro.contexto", {"tokens_por_categoria": dict(contexto_kiro), "total": sum(contexto_kiro.values())})
-                extras["contexto_kiro"] = sum(contexto_kiro.values())
+                extras["contexto_kiro"] = medicao["contexto"] = sum(contexto_kiro.values())
             texto = redigir_segredos("".join(partes)) if partes else ""  # sem truncar: so redige segredos
             if parada == "orcamento" or (motivo_parada and parada != "end_turn") or seguranca_parada:
                 dica = ("A chamada foi barrada por seguranca: use o Kiro para esta tarefa ou deixe so as pastas do projeto no pedido."
@@ -896,6 +919,7 @@ class ProvedorKiroAcp:
         try:
             sid = cliente.nova_sessao(str(pasta.resolve()), self.timeout_handshake, [], presets=self._presets("restrito"))
             self._modo_turno_rapido(cliente, sid, parte)
+            self._privacidade(cliente, sid)
             modelo, esforco = self.configuracao_da_execucao({}, parte)
             if modelo or esforco:
                 try:

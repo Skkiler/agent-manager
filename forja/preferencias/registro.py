@@ -411,6 +411,13 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         se_ligar="Você ajusta o equilíbrio entre autonomia e controle; cada decisão por regra fica nos eventos.",
         se_desligar="Sem regras, vale só o nível de autonomia.", risco="medio"),
     Preferencia(
+        "terminal_ativo", "seguranca", "geral", "Terminal integrado no painel", "bool",
+        "Permite rodar comandos (PowerShell no Windows, bash no Linux) pelo painel, um por vez, SÓ dentro de uma pasta de trabalho de "
+        "projeto. Ambiente limpo (sem tokens da Forja), tempo máximo de 2 minutos, árvore de processos presa e saída com segredos "
+        "redigidos. Comandos que leem ou imprimem segredos são recusados. O servidor só escuta no próprio computador.",
+        True, se_ligar="Você roda testes, git e scripts sem sair do painel.",
+        se_desligar="O painel não executa comandos (o editor, o Git e o Docker continuam).", risco="alto"),
+    Preferencia(
         "limite_requisicoes_por_minuto", "seguranca", "avancado", "Limite de requisições por minuto", "int",
         "Quantas chamadas por minuto o servidor aceita de um mesmo cliente. Protege contra laços de automação e abuso.",
         240, (Exemplo("Baixo", 120, "Uso solo e calmo. Mais proteção; pode dar erro 429 se você abrir muitas telas."),

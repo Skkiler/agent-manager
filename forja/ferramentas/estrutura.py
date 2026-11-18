@@ -159,21 +159,41 @@ def _analisar_python(texto: str, rel: str) -> Analise:
     return a
 
 
+def _fim_por_chaves(linhas: list[str], inicio: int) -> int:
+    """Linha onde fecha o bloco '{...}' que abre a partir de `inicio` (1-based). Ignora chaves em strings/comentarios simples.
+    Sem bloco reconhecivel (arrow de uma linha, declaracao), devolve a propria linha."""
+    nivel, abriu = 0, False
+    for n in range(inicio - 1, min(len(linhas), inicio - 1 + 5000)):
+        linha = re.sub(r"//.*$|'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|`(?:\\.|[^`\\])*`", "", linhas[n][:2000])
+        for ch in linha:
+            if ch == "{":
+                nivel, abriu = nivel + 1, True
+            elif ch == "}" and abriu:
+                nivel -= 1
+                if nivel == 0:
+                    return n + 1
+        if not abriu and n > inicio + 2:  # a declaracao nao abriu bloco logo: termina onde comecou
+            return inicio
+    return inicio
+
+
 def _analisar_js(texto: str, ling: str) -> Analise:
     a = Analise(ling)
-    a.definicoes = [Definicao(s.nome, s.tipo, s.linha, s.linha) for s in extrair_simbolos_generico(ling, texto)]
+    linhas_txt = texto.splitlines()
+    a.definicoes = [Definicao(s.nome, s.tipo, s.linha, _fim_por_chaves(linhas_txt, s.linha) if s.tipo in ("funcao", "classe") else s.linha)
+                    for s in extrair_simbolos_generico(ling, texto)]
     funcs = sorted((d.linha, d.nome) for d in a.definicoes if d.tipo == "funcao")
     for d in a.definicoes:
         if d.tipo == "funcao":
-            a.funcoes[d.nome] = Funcao(d.nome, "funcao", d.linha, d.linha)
+            a.funcoes[d.nome] = Funcao(d.nome, "funcao", d.linha, d.fim)
     for n, linha in enumerate(texto.splitlines(), start=1):
         if len(linha) > 2000:
             continue
         a.imports += [(m.group(1), n) for m in _JS_IMPORT.finditer(linha)]
         novos = [(m.group(1), n) for m in _JS_CHAMADA.finditer(linha) if m.group(1) not in _JS_RESERVADAS]
         a.chamadas += novos
-        # chamador aproximado: a funcao declarada mais recente acima da linha (regex nao sabe onde a funcao termina)
-        dono = next((nm for ln, nm in reversed(funcs) if ln <= n), "<modulo>")
+        # chamador: a funcao mais interna cujo bloco (por chaves) contem a linha
+        dono = next((nm for ln, nm in reversed(funcs) if ln <= n <= a.funcoes[nm].fim), "<modulo>")
         a.arestas += [(dono, nome, ln, "n") for nome, ln in novos if not (nome == dono and ln == a.funcoes.get(dono, Funcao("", "", 0, 0)).linha)]
     return a
 

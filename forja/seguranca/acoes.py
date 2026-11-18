@@ -61,7 +61,11 @@ _FORJA_MCP = {
 def _ferramenta_forja(tc: dict[str, Any]) -> str | None:
     servidor = (((tc.get("_meta") or {}).get("kiro") or {}).get("serverName") or "")
     titulo = str(tc.get("title") or "")
-    nome = titulo.removeprefix("@forja/") if titulo.startswith("@forja/") else (titulo if servidor == "forja" else "")
+    # Kiro: '@forja/<nome>' (ou serverName=forja); Codex (codex-acp): 'mcp.forja.<nome>' / 'mcp__forja__<nome>'
+    for prefixo in ("@forja/", "mcp.forja.", "mcp__forja__"):
+        if titulo.startswith(prefixo):
+            return titulo.removeprefix(prefixo) if titulo.removeprefix(prefixo) in _FORJA_MCP else None
+    nome = titulo if servidor == "forja" else ""
     return nome if nome in _FORJA_MCP else None
 
 

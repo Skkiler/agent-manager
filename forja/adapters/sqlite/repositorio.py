@@ -61,6 +61,12 @@ class Tx:
     def atualizar(self, cls: type, id_: str, **campos: Any) -> None:
         self.s.execute(update(cls).where(cls.id == id_).values(**campos))
 
+    def tarefas_por_entrada(self, chave: str, valor: str, limite: int = 2000) -> list[dict[str, Any]]:
+        """Tarefas cujo JSON `entrada` tem `chave == valor` (filtro no SQLite, sem varrer todas as tarefas em Python)."""
+        q = (select(T.Tarefa).where(func.json_extract(T.Tarefa.entrada, f"$.{chave}") == valor)
+             .order_by(T.Tarefa.criado_em).limit(limite))
+        return [_dict(o) for o in self.s.scalars(q)]
+
     # ---- tarefa com concorrencia otimista ----
     def atualizar_tarefa_condicional(
         self, tarefa_id: str, estado_atual: str, versao_esperada: int, **campos: Any

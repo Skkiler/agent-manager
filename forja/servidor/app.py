@@ -39,6 +39,7 @@ from forja.observabilidade.logs import configurar_logging, correlation_id_var
 from forja.observabilidade.telemetria import Telemetria
 from forja.orquestracao.acoes_externas import AcoesExternasServico
 from forja.orquestracao.aprendizado_rotas import AprendizadoRotas
+from forja.orquestracao.area_trabalho import AreaTrabalho
 from forja.orquestracao.caderno import Caderno
 from forja.orquestracao.configuracao_servico import ConfiguracaoServico
 from forja.orquestracao.contas_servico import ContasServico
@@ -66,6 +67,7 @@ from forja.preferencias.servico import PreferenciasServico
 from forja.seguranca.auth import LimitadorTaxa, carregar_token
 from forja.seguranca.pastas import definir_protegidas
 from forja.servidor.rotas import publico, r
+from forja.servidor.rotas_area import ra2
 from forja.servidor.rotas_auth import ra
 from forja.servidor.rotas_coordenacao import rc
 from forja.servidor.rotas_ferramentas import rf
@@ -85,9 +87,15 @@ ESTATICO = __import__("pathlib").Path(__file__).resolve().parent.parent / "paine
 
 def _mcp_forja(cfg: Configuracoes) -> list[dict]:
     """Descricao (stdio) do MCP da Forja entregue ao Kiro. Leva so enderecos e nomes de perfil: o token e lido pelo proprio MCP."""
+    import os
     import sys
 
-    env = {"FORJA_MCP_URL": f"http://127.0.0.1:{cfg.app_port}"}
+    # O agente agora roda com ambiente LIMPO (sem APP_*), e o Codex inicia MCPs so com o ambiente informado aqui: vai o minimo
+    # para o MCP achar o pacote da Forja e o perfil do usuario (de onde le o proprio token). Nenhum segredo e passado.
+    env = {"FORJA_MCP_URL": f"http://127.0.0.1:{cfg.app_port}", "PYTHONPATH": str(Path(__file__).resolve().parents[2])}
+    for nome in ("LOCALAPPDATA", "APPDATA", "USERPROFILE", "HOME", "SYSTEMROOT", "PATH", "TEMP", "TMP", "HOMEDRIVE", "HOMEPATH"):
+        if os.environ.get(nome):
+            env[nome] = os.environ[nome]
     for nome, valor in (("APP_USER_HOME", cfg.app_user_home), ("APP_PROFILE", cfg.app_profile), ("APP_DATA_DIR", cfg.app_data_dir)):
         if valor:
             env[nome] = str(valor)
@@ -130,7 +138,7 @@ def criar_servico(cfg: Configuracoes, provedor: ProvedorAgente | None = None) ->
     if provedor is None and cfg.app_kiro_acp_enabled:
         # Kiro (principal) + Codex (opcional, desligado ate voce ligar): mesma interface, contextos separados (agentes/roteador.py)
         codex = ProvedorCodexAcp(resolver_codex(cfg.app_codex_acp_command), cfg.kiro_workspace_dir / "codex", cfg.app_codex_model,
-                                 timeout_prompt=float(cfg.app_kiro_prompt_timeout_seconds))
+                                 timeout_prompt=float(cfg.app_kiro_prompt_timeout_seconds), mcp_servers=_mcp_forja(cfg))
         provedor = ProvedoresRoteados(criar_provedor_kiro(cfg), codex)
     return Servico(repo, provedor or AgenteMock(), cfg.artefatos_dir, max_workers=perfil_workers,
                    espera_aprovacao_s=float(cfg.app_approval_timeout_seconds),
@@ -154,6 +162,8 @@ def _criar_preferencias(cfg: Configuracoes, servico: Servico, app: FastAPI) -> P
                                   if servico.construtor_contexto is not None else None)
         prefs.registrar_aplicador("kiro_reusar_sessao", lambda v: setattr(prov, "reusar_sessao", bool(v)))
         for ag in agentes_reais(servico.provedor):  # orcamentos e controles valem para TODOS os agentes (Kiro e Codex)
+            if ag is not prov:  # o MCP da Forja tambem vai para o Codex (mesma preferencia)
+                prefs.registrar_aplicador("kiro_mcp_ativo", lambda v, ag=ag: setattr(ag, "usar_mcp", bool(v)))
             prefs.registrar_aplicador("limite_ferramentas_por_execucao", lambda v, ag=ag: setattr(ag, "max_ferramentas", int(v)))
             prefs.registrar_aplicador("controle_escopo", lambda v, ag=ag: setattr(ag, "controle_escopo", str(v)))
             prefs.registrar_aplicador("contexto_limite_sessao", lambda v, ag=ag: (setattr(ag, "limite_contexto_sessao", int(v)),
@@ -289,6 +299,8 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
         app.state.prefs.registrar_aplicador(pref, _raizes_ingestao)
     _raizes_ingestao()
     app.state.projetos = provedor_servico.projetos = ProjetosServico(provedor_servico.repo, cfg.artefatos_dir, politica=app.state.prefs.politica_pastas)
+    app.state.area = AreaTrabalho(app.state.projetos)  # editor, Git, terminal e Docker do painel (so nas pastas do projeto)
+    app.state.prefs.registrar_aplicador("terminal_ativo", lambda v: setattr(app.state.area, "terminal_ativo", bool(v)))
     provedor_servico.perfil_de = app.state.prefs.perfil_trabalho  # autonomia/metodos/observacoes lidos a cada execucao
     for ag in agentes_reais(provedor_servico.provedor):
         ag.perfil_de = app.state.prefs.perfil_trabalho
@@ -337,6 +349,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     app.include_router(rj)
     app.include_router(rx)
     app.include_router(rc)
+    app.include_router(ra2)
     _ = provedor_servico  # servico ja referenciado em app.state
 
     if ESTATICO.exists():

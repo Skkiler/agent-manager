@@ -20,12 +20,16 @@ from typing import Any
 
 NIVEIS = ("simples", "normal", "complexa")
 _COMPLEXOS = re.compile(
-    r"\b(arquitetur\w*|refator\w*|migra\w*|redesenh\w*|reescrev\w*|concorren\w*|paralel\w*|seguranc\w*|autentica\w*|"
-    r"autoriza\w*|desempenho|performance|escal\w*|integra\w*|distribu\w*|multipl\w*|varios|varias|todo o|todos os|"
+    r"\b(arquitetur\w*|refator\w*|migr[ae]\w*|redesenh\w*|reescrev\w*|concorren\w*|paralel\w*|seguranc\w*|autentica\w*|"
+    r"autoriza\w*|desempenho|performance|escal\w*|integra\w*|distribu\w*|multipl\w*|"
     r"pipeline|infraestrutura|banco de dados|schema|esquema|criptograf\w*|planej\w*|pesquis\w*|investig\w*|"
     r"depura\w*|race|deadlock|vazamento|memory leak)\b")
 _SIMPLES = re.compile(r"\b(explique|explicar|o que e|o que faz|resuma|resumir|liste|listar|renomei\w*|corrija o typo|typo|"
                       r"comentario|docstring|readme|qual|onde fica|como funciona)\b")
+
+
+_AMPLO = re.compile(r"\b(varios|varias|todo o|todos os|todas as)\b")
+_MUDANCA_MINIMA = re.compile(r"\b(typo|erro de digitacao|renomei\w*|comentario|docstring|corrija o texto|ajuste o texto)\b")
 
 
 def _norm(s: str) -> str:
@@ -82,6 +86,9 @@ def classificar(tarefa: dict[str, Any]) -> Rota:
     if escreve:
         pontos += 1
     simples_por_texto = bool(_SIMPLES.search(texto)) and len(texto) < 280 and len(criterios) <= 2 and not termos
+    if _AMPLO.search(texto) and not termos:  # "todos os", "varios": pesa pouco (antes subia ate pergunta curta de leitura)
+        pontos += 1 if escreve else 0
+        motivos.append("pedido amplo")
     if forcado in NIVEIS:
         nivel = forcado
         motivos = [f"definido na tarefa ({forcado})"]
@@ -90,6 +97,9 @@ def classificar(tarefa: dict[str, Any]) -> Rota:
     elif not escreve and (simples_por_texto or (pontos == 0 and len(texto) < 200)):
         nivel = "simples"
         motivos.append("pergunta curta e somente leitura")
+    elif escreve and _MUDANCA_MINIMA.search(texto) and len(texto) < 200 and len(criterios) <= 2 and not termos and pastas <= 1:
+        nivel = "simples"  # typo, renomear, comentario: um turno barato (a Forja ainda roda os testes)
+        motivos.append("mudanca minima e localizada")
     else:
         nivel = "normal"
     return rota_do_nivel(nivel, escreve, tuple(motivos))

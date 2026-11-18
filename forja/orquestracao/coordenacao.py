@@ -19,6 +19,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
+from datetime import timedelta
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -100,6 +102,7 @@ class CoordenacaoServico:
         self.relogio = relogio or RelogioSistema()
         self.executar = True  # preferencia 'master_executar': True = tarefas criadas ja executam; False = ficam prontas
         self.consolidar = True  # turno de consolidacao quando o lote termina
+        self._mu_consolidar = threading.RLock()
 
     # ------------------------------------------------------------------ coordenadores e conversa
     def _ts(self) -> str:
@@ -136,7 +139,8 @@ class CoordenacaoServico:
         m = self.master()
         with self.servico.repo.leitura() as t:
             todos = t.listar(T.Coordenacao, limite=500)
-            tarefas = [x for x in t.listar(T.Tarefa, limite=5000) if (x.get("entrada") or {}).get("coordenacao_id")]
+            ativos = [c for c in todos if c["estado"] == "ativo" or c["tipo"] == "master"]
+            tarefas = [x for c in ativos for x in t.tarefas_por_entrada("coordenacao_id", c["id"])]
         por_coord: dict[str, list[dict]] = {}
         for x in tarefas:
             por_coord.setdefault(x["entrada"]["coordenacao_id"], []).append(
@@ -171,7 +175,7 @@ class CoordenacaoServico:
         linhas = []
         with self.servico.repo.leitura() as t:
             projetos = {p["id"]: p for p in t.listar(T.Projeto, limite=500) if p["nome"] not in (PROJETO_INTERNO, "forja-estudos")}
-            tarefas = [x for x in t.listar(T.Tarefa, limite=5000) if (x.get("entrada") or {}).get("coordenacao_id") == c["id"]]
+            tarefas = t.tarefas_por_entrada("coordenacao_id", c["id"])
             filhos = [x for x in t.listar(T.Coordenacao, pai_id=c["id"], limite=50)]
         if c["tipo"] == "master":
             nomes = [p["nome"] for p in projetos.values()][:30]
@@ -260,8 +264,7 @@ class CoordenacaoServico:
         perfil = self.perfil_de() if self.perfil_de else None
         permitidos = perfil.modos if perfil else frozenset({"analise", "documentacao"})
         with s.repo.leitura() as t:
-            abertas = sum(1 for x in t.listar(T.Tarefa, limite=5000)
-                          if (x.get("entrada") or {}).get("coordenacao_id") == c["id"] and x["estado"] not in TERMINAIS)
+            abertas = sum(1 for x in t.tarefas_por_entrada("coordenacao_id", c["id"]) if x["estado"] not in TERMINAIS)
             subs_ativos = [x for x in t.listar(T.Coordenacao, pai_id=c["id"], estado="ativo", limite=50)]
         projetos_no_lote = {str(a.get("projeto", "")).strip().casefold() for a in brutas if a.get("projeto")}
         multiplos = len(projetos_no_lote) >= 2 or bool(subs_ativos)
@@ -369,15 +372,28 @@ class CoordenacaoServico:
         self._msg(coord_id, "sistema", f"{icone}: {tarefa['titulo']} — {res.resumo[:240]}{extra}", {"estado": estado}, tarefa_id=tarefa["id"])
         self._talvez_consolidar(self.obter(coord_id))
 
+    PRAZO_BLOQUEADA_H = 24  # tarefa esperando voce ha mais que isto nao segura o lote para sempre
+
+    def _parada(self, x: dict[str, Any]) -> bool:
+        if x["estado"] in TERMINAIS:
+            return True
+        prazo = iso(self.relogio.agora() - timedelta(hours=self.PRAZO_BLOQUEADA_H))
+        return x["estado"] == ET.BLOQUEADA.value and str(x.get("atualizado_em") or "") < prazo
+
     def _talvez_consolidar(self, c: dict[str, Any]) -> None:
-        """Lote terminado (todas as tarefas e sub-masters do coordenador parados) -> UM turno de consolidacao."""
+        """Lote terminado (todas as tarefas e sub-masters do coordenador parados) -> UM turno de consolidacao.
+        Com trava: duas tarefas que terminam ao mesmo tempo (2 workers) nao disparam dois turnos (corrida achada na avaliacao)."""
+        with self._mu_consolidar:
+            self._talvez_consolidar_travado(c)
+
+    def _talvez_consolidar_travado(self, c: dict[str, Any]) -> None:
         if not self.consolidar or c["estado"] != "ativo":
             return
         with self.servico.repo.leitura() as t:
-            tarefas = [x for x in t.listar(T.Tarefa, limite=5000) if (x.get("entrada") or {}).get("coordenacao_id") == c["id"]]
+            tarefas = t.tarefas_por_entrada("coordenacao_id", c["id"])
             subs = t.listar(T.Coordenacao, pai_id=c["id"], estado="ativo", limite=50)
             msgs = t.listar(T.MensagemCoordenacao, ordem=T.MensagemCoordenacao.criado_em, coordenacao_id=c["id"], limite=500)
-        if (not tarefas and not subs) or any(x["estado"] not in TERMINAIS for x in tarefas):
+        if (not tarefas and not subs) or not all(self._parada(x) for x in tarefas):
             return
         if any(not self._sub_consolidou(sb["id"]) for sb in subs):
             return
@@ -397,7 +413,7 @@ class CoordenacaoServico:
     def _sub_consolidou(self, sub_id: str) -> bool:
         """O sub-master terminou: tarefas paradas e ja RESPONDEU ao seu turno de consolidacao."""
         with self.servico.repo.leitura() as t:
-            tarefas = [x for x in t.listar(T.Tarefa, limite=5000) if (x.get("entrada") or {}).get("coordenacao_id") == sub_id]
+            tarefas = t.tarefas_por_entrada("coordenacao_id", sub_id)
             msgs = t.listar(T.MensagemCoordenacao, ordem=T.MensagemCoordenacao.criado_em, coordenacao_id=sub_id, limite=500)
         if any(x["estado"] not in TERMINAIS for x in tarefas):
             return False

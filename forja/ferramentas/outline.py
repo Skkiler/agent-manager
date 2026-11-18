@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from forja.dominio.erros import ValidacaoDominio
@@ -22,6 +23,8 @@ def outline_arquivo(raiz: Path, caminho: str) -> ResultadoFerramenta:
         raise ValidacaoDominio("arquivo binario ou minificado")
 
     itens = [s for s in arq.simbolos if s.tipo != "import"]
+    if not itens and real.suffix.lower() in (".css", ".scss", ".less"):  # CSS: seletores, @media e @keyframes viram o 'outline'
+        return _outline_css(arq.caminho, arq.texto, arq.sha256)
     importados = len(arq.simbolos) - len(itens)
     truncado = len(itens) > MAX_SIMBOLOS
     linhas = [f"{arq.caminho} ({arq.linguagem}, {arq.texto.count(chr(10)) + 1} linhas, sha256 {arq.sha256[:12]})"]
@@ -42,3 +45,20 @@ def outline_arquivo(raiz: Path, caminho: str) -> ResultadoFerramenta:
         "simbolos": [{"nome": s.nome, "tipo": s.tipo, "linha": s.linha} for s in itens[:MAX_SIMBOLOS]],
     }
     return montar("codigo.outline", arq.texto, "\n".join(linhas), dados, truncado, avisos)
+
+
+_CSS_BLOCO = re.compile(r"^\s*([^{}/;@][^{};]{0,200}?|@(?:media|keyframes|supports|layer|font-face|container)[^{]{0,200}?)\s*\{")
+
+
+def _outline_css(caminho: str, texto: str, sha: str) -> ResultadoFerramenta:
+    itens = []
+    for n, linha in enumerate(texto.splitlines(), start=1):
+        m = _CSS_BLOCO.match(linha)
+        if m:
+            sel = " ".join(m.group(1).split())
+            itens.append({"nome": sel[:120], "tipo": "regra" if not sel.startswith("@") else sel.split()[0][1:], "linha": n})
+    truncado = len(itens) > MAX_SIMBOLOS
+    linhas = [f"{caminho} (css, {texto.count(chr(10)) + 1} linhas, sha256 {sha[:12]})"]
+    linhas += [f"L{i['linha']} {i['tipo']} {i['nome']}" for i in itens[:MAX_SIMBOLOS]]
+    dados = {"caminho": caminho, "sha256": sha, "linguagem": "css", "extrator": "regex", "simbolos": itens[:MAX_SIMBOLOS]}
+    return montar("codigo.outline", texto, "\n".join(linhas), dados, truncado, [f"{len(itens) - MAX_SIMBOLOS} regras omitidas"] if truncado else [])

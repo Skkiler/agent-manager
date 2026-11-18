@@ -13,6 +13,7 @@ troca so o que e especifico do agente:
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import Any
@@ -55,6 +56,19 @@ def resolver_codex(configurado: str = "") -> list[str] | None:
     return [exe] if exe else None
 
 
+ENV_EXCLUIR = ["*TOKEN*", "*SECRET*", "*PASSWORD*", "*PASSWD*", "*SENHA*", "*API_KEY*", "*APIKEY*", "*ACCESS_KEY*", "*PRIVATE*",
+               "*CREDENTIAL*", "*COOKIE*", "*SESSION*", "*AUTH*", "FORJA_*", "APP_*"]
+
+
+def configuracao_sessao() -> dict[str, Any]:
+    """Configuracao da sessao do Codex no nivel do perfil do Kiro: regras como instrucao de desenvolvedor e ambiente minimo."""
+    return {
+        "developer_instructions": ("Voce trabalha para a Forja, um orquestrador local. " + perfil_kiro.ESCOPO + "\n" + REGRA_PASTAS
+                                   + "Se uma regra acima impedir o pedido, NAO tente contornar: explique em '## Decisões para você'."),
+        "shell_environment_policy": {"inherit": "core", "exclude": ENV_EXCLUIR},
+    }
+
+
 def _leitura_proibida(upd: dict[str, Any], raizes: list[Path]) -> str | None:
     """Vigia em tempo real: chamada do Codex que cita segredo ou caminho FORA das pastas do projeto. O sandbox 'read-only' do Codex
     le o disco quase inteiro sem pedir nada (achado real + doc da OpenAI), e os perfis de permissao do Codex nao funcionaram pelo
@@ -75,7 +89,7 @@ class ProvedorCodexAcp(ProvedorKiroAcp):
     def __init__(self, comando: list[str] | None, workspace: Path, modelo: str = "", **kw: Any) -> None:
         super().__init__(comando, workspace, id_="codex.acp", **kw)
         self.modelo_padrao = modelo
-        self.usar_mcp = False  # MCP da Forja so no Kiro por enquanto (sinal de prontidao e especifico do Kiro)
+        self.usar_mcp = False  # MCP da Forja: mesma preferencia do Kiro (kiro_mcp_ativo); testado com o codex-acp 2.7.0
         self.esforco_de = None  # o mapa de esforco do Kiro nao vale aqui (valores e modelos diferentes); ver ESFORCO_PADRAO
 
     def executar(self, tarefa: dict[str, Any], checkpoint: dict[str, Any], ctl: ControleExecucao) -> ResultadoAgente:
@@ -87,7 +101,17 @@ class ProvedorCodexAcp(ProvedorKiroAcp):
 
     # ------------------------------------------------------------------ ganchos de seguranca
     def _ambiente_processo(self) -> dict[str, str] | None:
-        return ambiente_limpo()
+        """Ambiente limpo + CODEX_CONFIG (mesclado pelo codex-acp na config da sessao). Testado no codex-acp 2.7.0:
+        - developer_instructions: as regras da Forja entram como instrucao de DESENVOLVEDOR (prioridade acima do pedido). Medido:
+          pedido para ler arquivo fora da pasta -> o proprio Codex recusou, sem nenhuma chamada de ferramenta (a vigia nem precisou
+          agir). E o 'se policiar' pedido pelo usuario;
+        - shell_environment_policy: comandos do Codex herdam so o ambiente basico e nunca variaveis com cara de segredo.
+        Rejeitados no teste: approval_policy (aposentado pela OpenAI; quebra a sessao), [permissions] (sessao recusada) e hooks
+        PreToolUse (a confianca foi gravada, mas o gancho nao rodou pelo adaptador)."""
+        return {**ambiente_limpo(), "CODEX_CONFIG": json.dumps(configuracao_sessao(), ensure_ascii=True)}
+
+    def _aguardar_mcp(self, nomes: list[str], estado: dict[str, Any], tokens: list[int], ctl: ControleExecucao) -> tuple[bool, str]:
+        return True, "codex_inicia_mcp_na_sessao"  # o codex-acp so responde session/new com os MCPs ja iniciados (medido: 0,3 s)
 
     def _presets(self, nivel: str) -> list[str]:
         return []  # presets sao do Kiro

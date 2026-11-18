@@ -311,12 +311,13 @@ while True:
             else:
                 chunk(sid, f"## Resposta\ndireto (modelo={mod} esforco={esf} grafo={'Grafo de funcoes' in txt})\n")
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
-        elif cenario in ("laco", "muitas"):  # agente perdido: repete a mesma leitura (ou faz chamadas sem fim) ate ser cancelado
+        elif cenario in ("laco", "muitas", "alterna"):  # agente perdido: repete a mesma leitura (ou alterna A/B, ou faz chamadas sem fim)
             chunk(sid, "## Resposta\nprocurando...")
             for i in range(40):
-                titulo = "Read File" if cenario == "laco" else f"Read File {i}"
+                caminho = {"laco": "a.py", "alterna": "ab"[i % 2] + ".py"}.get(cenario, f"a{i}.py")
+                titulo = f"Read File {i}" if cenario == "muitas" else f"Read File {caminho}"
                 update(sid, {"sessionUpdate": "tool_call", "toolCallId": f"l{i}", "title": titulo, "kind": "read", "status": "completed",
-                             "rawInput": {"path": "a.py" if cenario == "laco" else f"a{i}.py"}})
+                             "rawInput": {"path": caminho}})
                 time.sleep(0.01)
             while True:
                 n = ler()
