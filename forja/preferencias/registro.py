@@ -338,6 +338,13 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         se_desligar="Vazio = padrão da conta. Um nome inválido bloqueia a execução (não roda em outro modelo sem avisar).",
         risco="medio", persistida=False),
     Preferencia(
+        "limite_creditos_dia", "consumo", "geral", "Teto de créditos por dia", "int",
+        "Quando o gasto de hoje (créditos medidos pelo agente; estimados quando ele não informa) chega a este valor, a Forja não "
+        "inicia novas execuções nem turnos do master até amanhã. As que já estão rodando terminam. 0 = sem teto.",
+        0, (Exemplo("Sem teto", 0, "Padrão."), Exemplo("Moderado", 50, "Uso diário comum."), Exemplo("Folgado", 300, "Dias de muito trabalho.")),
+        se_ligar="Você nunca passa do valor no dia: tarefas novas esperam com o motivo.",
+        se_desligar="Sem teto: o painel Custo continua avisando desvios.", risco="medio", minimo=0, maximo=100000, unidade="créditos"),
+    Preferencia(
         "codex_ativo", "consumo", "avancado", "Usar também o Codex (OpenAI)", "bool",
         "Liga o Codex como segundo agente, pelo mesmo protocolo (ACP). Exige o adaptador instalado (npm i -g @agentclientprotocol/codex-acp) "
         "e 'codex login' com o seu plano (sem o adaptador, nada muda). Por segurança, o Codex só trabalha em pastas SEM arquivos de segredo "
@@ -412,9 +419,9 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         se_desligar="Sem regras, vale só o nível de autonomia.", risco="medio"),
     Preferencia(
         "terminal_ativo", "seguranca", "geral", "Terminal integrado no painel", "bool",
-        "Permite rodar comandos (PowerShell no Windows, bash no Linux) pelo painel, um por vez, SÓ dentro de uma pasta de trabalho de "
-        "projeto. Ambiente limpo (sem tokens da Forja), tempo máximo de 2 minutos, árvore de processos presa e saída com segredos "
-        "redigidos. Comandos que leem ou imprimem segredos são recusados. O servidor só escuta no próprio computador.",
+        "Permite rodar comandos (PowerShell no Windows, bash no Linux) pelo painel, um por vez, dentro de uma pasta de trabalho de "
+        "projeto, com o assistente que explica, completa e aponta erros. Comandos perigosos (apagar, push, reset --hard) pedem "
+        "confirmação. A saída aparece só para você: nunca vai para os agentes nem para o log. O servidor só escuta no próprio computador.",
         True, se_ligar="Você roda testes, git e scripts sem sair do painel.",
         se_desligar="O painel não executa comandos (o editor, o Git e o Docker continuam).", risco="alto"),
     Preferencia(

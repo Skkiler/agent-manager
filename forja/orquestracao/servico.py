@@ -10,6 +10,7 @@ import json
 import logging
 import threading
 import uuid
+from collections.abc import Callable
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -115,6 +116,7 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
         self._futuros: dict[str, Future] = {}
         self._expirando: set[str] = set()
         self._mu = threading.Lock()
+        self.guarda_inicio: Callable[[], str | None] | None = None  # barreira antes de iniciar (ex.: teto diario de creditos)
 
     # ------------------------------------------------------------------ utilidades
     def _ts(self) -> str:
@@ -418,6 +420,9 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
 
     def iniciar_execucao(self, execucao_id: str, ator: str = "operador") -> dict:
         try:
+            barreira = self.guarda_inicio() if self.guarda_inicio is not None else None  # teto diario de creditos e afins
+            if barreira:
+                raise OrcamentoExcedido(barreira)
             resultado = self._iniciar_tx(execucao_id, ator)
         except (OrcamentoExcedido, Conflito) as e:
             if e.codigo in {"orcamento_excedido", "recurso_bloqueado"}:

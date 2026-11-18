@@ -115,6 +115,30 @@ class CustosServico:
                 "por_parte": arred(por_parte), "por_modelo": arred(por_modelo),
                 "mais_caras": [{"tarefa_id": k, "titulo": titulos.get(k, k), "creditos_estimados": round(v, 4)} for k, v in mais]}
 
+    def gasto_hoje(self) -> float:
+        """Creditos de hoje (UTC, como o painel): medido quando o agente informa; senao 1,00x por chamada de modelo. Simuladas nao contam."""
+        hoje = iso(self.relogio.agora())[:10]
+        total = 0.0
+        with self.repo.leitura() as t:
+            for e in t.s.query(T.Execucao).filter(T.Execucao.criado_em >= hoje).limit(5000):
+                res = e.resultado or {}
+                if res.get("mock"):
+                    continue
+                consumo = res.get("consumo") or {}
+                medido = consumo.get("creditos")
+                total += float(medido) if isinstance(medido, (int, float)) else float(res.get("chamadas_acumuladas") or consumo.get("chamadas_modelo") or 0)
+        return round(total, 4)
+
+    def teto_atingido(self, teto: float) -> str | None:
+        """Mensagem quando o teto diario foi atingido (None = pode executar)."""
+        if not teto or teto <= 0:
+            return None
+        gasto = self.gasto_hoje()
+        if gasto < teto:
+            return None
+        return (f"Teto diário de créditos atingido ({gasto:.2f} de {teto:.0f}). A Forja não inicia novas execuções hoje; "
+                "aumente o teto em Configurações > Consumo ou aguarde até amanhã.")
+
     def _desvios(self, por_dia: dict[str, dict[str, float]], dias: int) -> list[str]:
         """Alerta de desvio: os ultimos 7 dias gastaram mais que o DOBRO da media semanal do resto do periodo (min. 14 dias)."""
         if dias < 14:

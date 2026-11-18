@@ -61,3 +61,14 @@ class ValidacaoDominio(ErroDominio):
 
 class IdempotenciaConflito(ValidacaoDominio):
     codigo = "idempotency_key_reutilizada"
+
+
+class ConfirmacaoNecessaria(ErroDominio):
+    """Acao do USUARIO com risco (push, apagar, segredo no commit...): o painel pergunta e reenvia com `confirmado=true`.
+    Nao e bloqueio: os bloqueios de seguranca valem so para os agentes externos (Kiro, Codex)."""
+
+    codigo, status = "confirmacao_necessaria", 428
+
+    def __init__(self, mensagem: str, motivos: list[str] | None = None, risco: str = "alto") -> None:
+        super().__init__(mensagem)
+        self.dados = {"motivos": list(motivos or [])[:10], "risco": risco}

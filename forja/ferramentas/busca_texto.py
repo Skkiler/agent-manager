@@ -62,7 +62,8 @@ def _arquivos(base: Path, incluir: str):
 
 
 def buscar_texto(raiz: Path, caminho: str = ".", padrao: str = "", regex: bool = False, ignorar_maiusculas: bool = True,
-                 incluir: str = "", contexto: int = 0, limite: int = 50) -> ResultadoFerramenta:
+                 incluir: str = "", contexto: int = 0, limite: int = 50, pular_segredos: bool = True) -> ResultadoFerramenta:
+    """`pular_segredos=False` so para a busca do USUARIO no painel (opcao explicita); agentes e catalogo sempre pulam."""
     expr = _compilar(padrao, regex, ignorar_maiusculas)
     if caminho in ("", "."):
         alvo = raiz.resolve()
@@ -83,7 +84,7 @@ def buscar_texto(raiz: Path, caminho: str = ".", padrao: str = "", regex: bool =
             rel = p.resolve().relative_to(base_rel).as_posix()
         except (ValueError, OSError):
             continue
-        if p.is_symlink() or caminho_sensivel(rel) or proibido(p):
+        if p.is_symlink() or (pular_segredos and caminho_sensivel(rel)) or proibido(p):
             segredos_pulados += int(caminho_sensivel(rel))
             continue
         vistos += 1

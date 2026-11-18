@@ -21,6 +21,7 @@ from forja.ferramentas.busca_texto import buscar_texto
 from forja.ferramentas.caminhos import resolver_dentro
 from forja.ferramentas.contrato import ResultadoFerramenta, montar
 from forja.ferramentas.conversor import converter
+from forja.ferramentas.dados_projeto import consultar_json, listar_dependencias, resumir_tabela, verificar_links
 from forja.ferramentas.diff import resumir_diff
 from forja.ferramentas.email_mbox import ler_mbox
 from forja.ferramentas.esquema import inspecionar_sqlite
@@ -64,6 +65,18 @@ class EntCaminho(_Base):
 
 class EntMapa(_Base):
     caminho: Caminho = "."
+
+
+class EntJson(_Base):
+    caminho: Caminho
+    consulta: Annotated[str, StringConstraints(max_length=300)] = ""
+    limite: int = Field(20, ge=1, le=200)
+
+
+class EntTabela(_Base):
+    caminho: Caminho
+    separador: Annotated[str, StringConstraints(max_length=1)] = ""
+    max_linhas: int = Field(50000, ge=1, le=500000)
 
 
 class EntAmostra(_Base):
@@ -375,6 +388,14 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
                _arquivo(ler_git), True),
     Ferramenta("repo.mapa", "Linguagens, pastas, entradas e configuracao de um repositorio.", EntMapa,
                _arquivo(mapa_repositorio), True),
+    Ferramenta("deps.listar", "Dependencias declaradas (requirements, pyproject, package.json, Cargo.toml, go.mod, composer.json) com versao e "
+               "grupo, e quais estao sem versao fixa. Nao instala nem consulta a rede.", EntMapa, _arquivo(listar_dependencias), True),
+    Ferramenta("json.consultar", "Estrutura de um JSON/JSONL (sem 'consulta') ou os valores de um caminho como a.b[0].c / itens[*].id, sem ler o "
+               "arquivo inteiro.", EntJson, _arquivo(consultar_json), True, fallback="texto.amostra"),
+    Ferramenta("tabela.resumir", "Perfil de um CSV/TSV: colunas, tipo inferido, vazios, min/max/media e valores mais comuns.", EntTabela,
+               _arquivo(resumir_tabela), True, fallback="texto.amostra"),
+    Ferramenta("links.verificar", "Links e imagens relativos quebrados em arquivos Markdown (arquivo:linha), inclusive ancoras #secao. Sem rede.",
+               EntMapa, _arquivo(verificar_links), True),
     Ferramenta("segredos.varrer", "Possiveis segredos (arquivo:linha, sem o valor).", EntMapa, _arquivo(varrer), True),
     Ferramenta("sql.inspecionar", "Esquema de um banco SQLite (somente leitura, sem linhas).", EntCaminho,
                _arquivo(inspecionar_sqlite), True),

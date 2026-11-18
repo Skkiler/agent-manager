@@ -26,6 +26,8 @@ from forja.adapters.sqlite.banco import criar_engines, migrar
 from forja.adapters.sqlite.repositorio import RepositorioSqlite
 from forja.agentes.base import ProvedorAgente
 from forja.agentes.roteador import ProvedoresRoteados
+from forja.assistente.comandos import Assistente
+from forja.assistente.servico import AssistenteServico
 from forja.config import Configuracoes, obter_configuracoes
 from forja.contexto.construtor import ConstrutorContexto
 from forja.dominio.erros import ErroDominio
@@ -195,6 +197,7 @@ def _melhorias_orquestrador(app: FastAPI, cfg: Configuracoes, servico: Servico) 
     app.state.aprendizado = AprendizadoRotas(repo)
     app.state.subtarefas = SubtarefasServico(servico)
     app.state.custos = CustosServico(repo, app.state.modelos)
+    servico.guarda_inicio = lambda: app.state.custos.teto_atingido(float(prefs.valor("limite_creditos_dia") or 0))
     kiro = kiro_de(prov)
     app.state.oficina = OficinaServico(repo, (lambda: kiro.max_ferramentas) if kiro is not None else None)
     app.state.organizador = OrganizadorMemoria(repo, app.state.memoria, app.state.grafo, Principal("organizacao", cfg.memoria_namespaces))
@@ -299,7 +302,9 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
         app.state.prefs.registrar_aplicador(pref, _raizes_ingestao)
     _raizes_ingestao()
     app.state.projetos = provedor_servico.projetos = ProjetosServico(provedor_servico.repo, cfg.artefatos_dir, politica=app.state.prefs.politica_pastas)
-    app.state.area = AreaTrabalho(app.state.projetos)  # editor, Git, terminal e Docker do painel (so nas pastas do projeto)
+    # bancada do painel (editor, Git, terminal, Docker, HTTP): e do USUARIO; segredos aparecem para ele e nunca vao aos agentes
+    app.state.area = AreaTrabalho(app.state.projetos, Assistente(cfg.dados_dir))
+    app.state.assistente = AssistenteServico(app.state.area.assistente, provedor_servico)
     app.state.prefs.registrar_aplicador("terminal_ativo", lambda v: setattr(app.state.area, "terminal_ativo", bool(v)))
     provedor_servico.perfil_de = app.state.prefs.perfil_trabalho  # autonomia/metodos/observacoes lidos a cada execucao
     for ag in agentes_reais(provedor_servico.provedor):
@@ -394,8 +399,9 @@ def _registrar_handlers(app: FastAPI) -> None:
     @app.exception_handler(ErroDominio)
     async def _dominio(request: Request, exc: ErroDominio):  # noqa: ANN202, ARG001
         espera = getattr(exc, "tentar_em_s", None)  # bloqueio de login: o painel mostra a contagem regressiva
+        dados = getattr(exc, "dados", None)  # confirmacao necessaria: motivos e risco para o painel perguntar
         return JSONResponse(status_code=exc.status, content={"erro": exc.codigo, "mensagem": exc.mensagem,
-                                                             **({"tentar_em_s": espera} if espera else {})},
+                                                             **({"tentar_em_s": espera} if espera else {}), **({"dados": dados} if dados else {})},
                             headers={"Retry-After": str(espera)} if espera else None)
 
     @app.exception_handler(RequestValidationError)
