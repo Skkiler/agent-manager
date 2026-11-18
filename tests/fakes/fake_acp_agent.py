@@ -63,7 +63,9 @@ def opcoes() -> list[dict]:
     if "papeis" in cenario:  # perfis por papel (forja-planejador, forja-executor...) gravados pela Forja em ~/.kiro/agents
         modos += ["forja-planejador", "forja-executor", "forja-revisor", "forja-estudo", "forja-coordenador"]
     if cenario.startswith("codex"):  # como o codex-acp: modos de aprovacao/sandbox
-        modos = ["yolo"] if cenario == "codex_estranho" else ["read-only", "auto", "full-access"]
+        # como o codex-acp 2.7.0 real: 'agent' = "Auto review" (o Codex aprova sozinho) e 'agent-full-access'
+        modos = (["yolo"] if cenario == "codex_estranho" else ["agent", "agent-full-access"] if cenario == "codex_so_auto"
+                 else ["read-only", "workspace-write", "agent", "agent-full-access"])
     ops.append({"type": "select", "id": "mode", "currentValue": escolha.get("mode", "vibe"),
                 "options": [{"value": v, "name": v} for v in modos]})
     return ops

@@ -26,8 +26,11 @@ from forja.ferramentas.verificacao import ambiente_limpo
 from forja.seguranca.acoes import caminho_sensivel
 
 LEITURA = ("read-only", "read_only", "readonly", "plan", "ask")
-ESCRITA = ("auto", "workspace-write", "agent", "default")  # NUNCA 'full-access'/'danger'
+# codex-acp 2.7.0 (sondado): read-only | workspace-write | agent ("Auto review": o proprio Codex aprova) | agent-full-access.
+# So entram modos em que as permissoes voltam para a Forja: NUNCA 'agent' (auto aprovacao) nem acesso total.
+ESCRITA = ("workspace-write", "auto")
 PARTES_LEITURA = {"planejamento", "revisao", "estudo", "coordenacao", "status"}
+MODOS_ESCRITA = {"alteracao_codigo", "documentacao", "verificacao"}  # modos de tarefa que podem escrever na pasta de trabalho
 MAX_ARQUIVOS_VARREDURA = 20_000
 DEPENDENCIAS = frozenset({"node_modules", ".venv", "venv", "__pycache__", ".git", ".mypy_cache", ".pytest_cache", ".ruff_cache"})
 
@@ -87,7 +90,8 @@ class ProvedorCodexAcp(ProvedorKiroAcp):
 
     def _modo_codex(self, cliente: ClienteAcp, sid: str, parte: str) -> str | None:
         oferecidos = cliente.modos()
-        for nome in (LEITURA if parte in PARTES_LEITURA else ESCRITA):
+        so_leitura = parte in PARTES_LEITURA or getattr(cliente, "so_leitura_forja", False)
+        for nome in (LEITURA if so_leitura else ESCRITA):
             if nome in oferecidos:
                 cliente.definir_opcao(sid, "mode", nome, self.timeout_handshake)
                 cliente.modo_forja = nome  # type: ignore[attr-defined]
@@ -105,6 +109,8 @@ class ProvedorCodexAcp(ProvedorKiroAcp):
                     f"codex_bloqueado_segredos: {len(achados)} arquivo(s) com cara de segredo nas pastas do projeto "
                     f"(ex.: {', '.join(achados[:3]) or 'varredura incompleta'}). O Codex nao tem as regras de bloqueio que a Forja "
                     "aplica no Kiro.", "Use o Kiro para esta tarefa ou tire os segredos das pastas do projeto."])
+        # tarefa que nao escreve (analise, estudo...) ou sem pasta de trabalho: somente leitura na sessao inteira
+        cliente.so_leitura_forja = tarefa.get("modo") not in MODOS_ESCRITA or not trabalho  # type: ignore[attr-defined]
         modo = self._modo_codex(cliente, sid, self._parte_inicial(tarefa))
         ctl.evento("kiro.perfil", {"modo": modo, "agente": "codex", "aplicado": bool(modo)})
         if modo is None and cliente.modos():  # oferece modos, mas nenhum conhecido: o padrao pode ser acesso total
@@ -115,7 +121,7 @@ class ProvedorCodexAcp(ProvedorKiroAcp):
 
     def _trocar_modo(self, cliente: ClienteAcp, sid: str, parte: str, ctl: ControleExecucao) -> None:
         atual = getattr(cliente, "modo_forja", None)
-        alvo = LEITURA if parte in PARTES_LEITURA else ESCRITA
+        alvo = LEITURA if parte in PARTES_LEITURA or getattr(cliente, "so_leitura_forja", False) else ESCRITA
         if atual in alvo:
             return
         novo = self._modo_codex(cliente, sid, parte)

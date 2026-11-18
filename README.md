@@ -6,7 +6,7 @@ protocolo ACP), media cada permissão que o agente pede, confere o resultado por
 guarda o conhecimento útil num **segundo cérebro** consultável. Tudo roda no seu computador: servidor em `127.0.0.1`, banco
 SQLite no seu perfil e um painel web no navegador.
 
-> Estado: em uso. Fases 0 a 4 e 9 implementadas e testadas (1118 testes automatizados, inspeção em navegador real e CI).
+> Estado: em uso. Fases 0 a 4 e 9 implementadas e testadas (1119 testes automatizados, inspeção em navegador real e CI).
 > Números medidos e pendências em [`docs/STATUS_IMPLEMENTACAO.md`](docs/STATUS_IMPLEMENTACAO.md); decisões em [`docs/adr/`](docs/adr/).
 > Licença [Apache-2.0](LICENSE).
 
@@ -325,12 +325,13 @@ A reserva só acontece quando o agente falhou **antes** de produzir trabalho; o 
 #### 6.3.2 Como ligar o Codex
 
 ```powershell
-npm i -g @agentclientprotocol/codex-acp     # adaptador ACP (precisa de Node.js)
-codex login                                  # plano ChatGPT
+npm i -g @agentclientprotocol/codex-acp     # adaptador ACP (precisa de Node.js; já traz o @openai/codex compatível)
 ```
 
-Depois, em Config > Consumo: ligue `codex_ativo` e escolha a distribuição. `APP_CODEX_ACP_COMMAND` e `APP_CODEX_MODEL` são opcionais.
-Confira as regras da sua organização antes de usar o Codex com código de empresa.
+O login é o do Codex: se o app **Codex** (OpenAI, Microsoft Store) ou o ChatGPT já está logado neste usuário, o adaptador
+reaproveita (`~/.codex`). Sem o app, o adaptador oferece o login pelo ChatGPT. O app do ChatGPT sozinho **não** fala ACP: a Forja
+precisa do `codex-acp`. Depois, em Config > Consumo: ligue `codex_ativo` e escolha a distribuição. `APP_CODEX_ACP_COMMAND` e
+`APP_CODEX_MODEL` são opcionais. Confira as regras da sua organização antes de usar o Codex com código de empresa.
 
 #### 6.3.3 Segurança do Codex
 
@@ -338,8 +339,10 @@ O Codex não tem as regras deny que a Forja aplica no Kiro. Por isso, em falha f
 
 - o processo recebe ambiente limpo (sem variáveis com cara de segredo e sem `APP_*`/`FORJA_*`; chave de API por variável não chega);
 - só trabalha em pastas **sem** arquivos com cara de segredo (`.env`, chaves, credenciais); se houver, a tarefa fica bloqueada;
-- modo da sessão: somente leitura para planejar, revisar, estudar, coordenar e status; escrita com aprovação para executar;
-  nunca acesso total. Modo desconhecido = bloqueio.
+- modo da sessão (`codex-acp` 2.7): `read-only` para planejar, revisar, estudar, coordenar, status e toda tarefa que não escreve
+  (análise, estudo) ou sem pasta de trabalho; `workspace-write` só para executar alteração, documentação ou verificação, com cada
+  permissão voltando para a Forja. Nunca `agent` ("Auto review", o Codex aprovaria sozinho) nem `agent-full-access`.
+  Sem modo seguro conhecido = bloqueio.
 
 ### 6.4 Roteamento que aprende
 
@@ -573,7 +576,7 @@ Camadas não se misturam: rotas não têm SQL, a orquestração não conhece HTT
 
 ```powershell
 pip install -r requirements-dev.txt          # + requirements-ui.txt para o navegador real
-python -m pytest -q                          # 1118 testes (agente ACP falso por subprocesso; nada real é chamado)
+python -m pytest -q                          # 1119 testes (agente ACP falso por subprocesso; nada real é chamado)
 python -m ruff check forja tests scripts
 pre-commit install                           # gitleaks + ruff a cada commit
 
@@ -593,7 +596,8 @@ O CI (GitHub Actions) roda gitleaks, ruff, a suíte, o painel em Chromium com ac
 
 ## 18 LIMITES CONHECIDOS
 
-- O Codex foi testado contra um agente ACP falso; a integração com o `codex-acp` real depende de você instalar e fazer login.
+- O Codex real (`codex-acp` 2.7.0) foi conferido em turnos curtos com dados sintéticos; uso contínuo, custo e a distribuição
+  `equilibrar` ainda não foram medidos. O MCP da Forja (memória, caderno) ainda não é passado ao Codex.
 - Workflows do Kiro IDE e `/compact` não são expostos pelo ACP; a Forja orquestra e gerencia o contexto por conta própria.
 - A hospedagem contínua é por sessão do Windows: a Forja fica no ar enquanto você estiver conectado.
 - Pastas isoladas exigem Git; sem Git, tarefas na mesma pasta rodam uma por vez.

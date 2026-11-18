@@ -25,7 +25,8 @@ aparecem como modos de sessão; o system prompt do kiro-cli manda agir sem hesit
    e a retomada volta para ele. Distribuição `so_kiro` (padrão), `auto`, `equilibrar`, `codex_primeiro`; reserva só quando o agente
    falhou sem produzir trabalho, com 15 min de resfriamento. **Falha fechada:** o Codex não tem regras deny de segredo, então recebe
    ambiente limpo, só roda em pastas sem arquivos com cara de segredo (varredura limitada a 20 mil arquivos; incompleta = bloqueia),
-   usa somente leitura fora da execução e nunca acesso total; modo desconhecido bloqueia. MCP da Forja só no Kiro por enquanto.
+   usa `read-only` fora da execução e em toda tarefa que não escreve, `workspace-write` só para alterar, e nunca `agent`
+   ("Auto review", em que o próprio Codex aprova) nem `agent-full-access` (modos sondados no `codex-acp` 2.7.0); sem modo seguro, bloqueia. MCP da Forja só no Kiro por enquanto.
 3. **Gestão de contexto** (`orquestracao/caderno.py`, tabela `caderno_item`). Caderno da tarefa por MCP (`forja_caderno_salvar`,
    `forja_caderno_consultar`, ligados à tarefa por `FORJA_TAREFA_ID`) e ficha de estado determinística. Antes do turno de execução do
    plano, do turno de adendos e da rodada de correção, se o contexto medido pelo Kiro passou de `contexto_limite_sessao` (120 mil),

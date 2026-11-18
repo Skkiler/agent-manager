@@ -378,16 +378,37 @@ def test_codex_roda_com_ambiente_limpo_e_modo_seguro(tmp_path, monkeypatch):
     ctl, eventos = _ctl()
     r = ProvedorCodexAcp(cmd("codex"), tmp_path / "ws", timeout_prompt=20, timeout_handshake=10).executar(_t("O que faz x?"), {}, ctl)
     texto = r.artefatos[0].conteudo
-    assert r.estado == "concluida" and r.agente_id == "codex.acp" and "modo=auto" in texto and "vazou=[]" in texto
+    assert r.estado == "concluida" and r.agente_id == "codex.acp" and "modo=read-only" in texto and "vazou=[]" in texto
     ctl, _ = _ctl()
     r = ProvedorCodexAcp(cmd("codex"), tmp_path / "ws", timeout_prompt=20, timeout_handshake=10).executar(
         {**_t("Revisar x"), "entrada": {"revisao": True}}, {}, ctl)
     assert "modo=read-only" in r.artefatos[0].conteudo  # revisao: somente leitura
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    ctx = {"projeto": "p", "pastas": [{"caminho": str(proj), "papel": "trabalho"}], "anexos": []}
+    ctl, _ = _ctl()
+    p = ProvedorCodexAcp(cmd("codex"), tmp_path / "ws5", timeout_prompt=20, timeout_handshake=10)
+    p.perfil_de = lambda: PerfilTrabalho(nivel="liberado", correcao="desligada")
+    r = p.executar(_t("Corrigir o calculo em soma.py", modo="alteracao_codigo", projeto_ctx=ctx), {}, ctl)
+    assert "modo=workspace-write" in r.artefatos[0].conteudo  # so a execucao que altera codigo escreve
+
+
+def test_codex_analise_e_somente_leitura_mesmo_com_pasta_de_trabalho(tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    ctx = {"projeto": "p", "pastas": [{"caminho": str(proj), "papel": "trabalho"}], "anexos": []}
+    ctl, _ = _ctl()
+    r = ProvedorCodexAcp(cmd("codex"), tmp_path / "ws", timeout_prompt=20, timeout_handshake=10).executar(
+        _t("O que faz soma.py?", modo="analise", projeto_ctx=ctx), {}, ctl)
+    assert "modo=read-only" in r.artefatos[0].conteudo
 
 
 def test_codex_falha_fechado(tmp_path):
     ctl, _ = _ctl()
     r = ProvedorCodexAcp(cmd("codex_estranho"), tmp_path / "ws", timeout_prompt=20, timeout_handshake=10).executar(_t(), {}, ctl)
+    assert r.estado == "bloqueada" and "codex_modo_desconhecido" in r.pendencias[0]
+    ctl, _ = _ctl()  # so 'agent' (auto aprovacao) e acesso total: nenhum serve, bloqueia em vez de rodar sem a Forja aprovar
+    r = ProvedorCodexAcp(cmd("codex_so_auto"), tmp_path / "ws4", timeout_prompt=20, timeout_handshake=10).executar(_t(), {}, ctl)
     assert r.estado == "bloqueada" and "codex_modo_desconhecido" in r.pendencias[0]
     proj = tmp_path / "proj"
     proj.mkdir()

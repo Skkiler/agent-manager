@@ -337,8 +337,16 @@ fila "Revisão (N)", editor de regras, pacotes de conhecimento (`forja/conhecime
 - **Docker:** a demonstracao em execucao foi apagada (conteiner, volume e imagem local). Os arquivos `compose.yaml`/`Dockerfile` seguem
   no repositorio como demonstracao com dados ficticios (README 2.6).
 - **Licenca:** Apache-2.0 (`LICENSE` oficial, `NOTICE`, `pyproject.toml`).
-- **Pendente:** Codex real (instalar `@agentclientprotocol/codex-acp` + `codex login`, com aprovacao do usuario e conferencia de
-  governanca); medir com o Kiro real a taxa de pausas por escopo (falso positivo) e a economia da renovacao de sessao.
+- **Codex real (2026-11-13, mesma data):** a maquina tinha o app Codex da Microsoft Store (`OpenAI.Codex`) e o ChatGPT desktop,
+  logados (`~/.codex`), mas nao o adaptador ACP. Instalado `@agentclientprotocol/codex-acp` 2.7.0 (npm global; traz `@openai/codex`).
+  Sonda sem prompt: handshake ok, login reaproveitado do app, modos `read-only | workspace-write | agent ("Auto review") |
+  agent-full-access`. **Correcoes por causa da sonda:** `agent` saiu da lista de escrita (o Codex aprovaria sozinho) e tarefas que nao
+  escrevem (analise/estudo) ou sem pasta de trabalho agora abrem em `read-only` (antes abriam em escrita). Testes reais com dados
+  sinteticos: `turno_rapido` -> "pronto" em 5,6 s; tarefa de analise em pasta temporaria -> concluida em 22,5 s, modo `read-only`,
+  achou o bug, arquivo intacto. Servidor hospedado reiniciado: `GET /provedores` mostra `codex.acp` configurado e inativo
+  (`codex_ativo` continua desligado por padrao).
+- **Pendente:** ligar o Codex de fato (decisao do usuario, conferindo a governanca para codigo de empresa) e medir uso continuo;
+  passar o MCP da Forja ao Codex; medir com o Kiro real a taxa de pausas por escopo (falso positivo) e a economia da renovacao de sessao.
 
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
@@ -358,7 +366,7 @@ fila "Revisão (N)", editor de regras, pacotes de conhecimento (`forja/conhecime
 - gitleaks e CI ativos (ver Fase 9). Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1118 passed. Proximo: Codex real (aprovacao
+1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1119 passed. Proximo: Codex real (aprovacao
    do usuario), medir pausas por escopo e renovacao de sessao com o Kiro real.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
