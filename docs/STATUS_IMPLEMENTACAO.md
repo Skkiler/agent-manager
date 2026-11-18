@@ -1,6 +1,7 @@
 # Estado da implementacao
 
-**Atualizado:** 2026-11-13 (master/sub-masters, Kiro + Codex, gestão de contexto, controle de escopo, status barato, perfis por papel,
+**Atualizado:** 2026-11-18 (segredos fora do alcance do shell, Codex vigiado, verificacao sempre, creditos reais, processos
+reaproveitados, roteador inteligente e ferramentas `codigo.buscar`/`git.ler`; ver ADR-024). Anterior: 2026-11-13 (master/sub-masters, Kiro + Codex, gestão de contexto, controle de escopo, status barato, perfis por papel,
 hospedagem contínua e licença Apache-2.0; ver a seção "Master, Kiro + Codex…" abaixo). **Fases 0 a 4 e 9 testadas. Aberto: Codex real
 (instalação e login do usuário).** Sem `APP_KIRO_ACP_ENABLED=true` o agente é o **mock SIMULADO**; a instância hospedada nesta máquina
 usa o Kiro real.
@@ -348,6 +349,40 @@ fila "Revisão (N)", editor de regras, pacotes de conhecimento (`forja/conhecime
 - **Pendente:** ligar o Codex de fato (decisao do usuario, conferindo a governanca para codigo de empresa) e medir uso continuo;
   passar o MCP da Forja ao Codex; medir com o Kiro real a taxa de pausas por escopo (falso positivo) e a economia da renovacao de sessao.
 
+## Correcoes de seguranca, verificacao sempre, creditos reais, processos reaproveitados, Codex e ferramentas (ADR-024): resultados reais (2026-11-18)
+- **Novos:** `seguranca/sensiveis.py` (lista unica de segredos), `orquestracao/copia_segura.py` (copia sem segredos),
+  `adapters/kiro_acp/pool.py` (processos reaproveitados), `ferramentas/busca_texto.py` (`codigo.buscar`), `ferramentas/git_leitura.py`
+  (`git.ler`), resumidores jest/vitest/go/cargo, lint declarado na verificacao, `decidir_inteligente` no roteador; preferencias
+  `copia_sem_segredos` (autonomia), `reaproveitar_processos` (ligado); padroes `codex_ativo = ligado`, `distribuicao = inteligente`.
+- **Testes executados:** `python -m pytest` -> **1186 passed** (183,9 s; eram 1119; novo `tests/test_seguranca_eficiencia_2026_11.py`
+  com 67); `ruff check` ok; `node --check` 21/21; navegador real (`inspecionar_painel.py --interagir --a11y`, servidor de teste 8799,
+  dados ficticios): **0 problemas**.
+- **Kiro real (dados ficticios em %TEMP%):** nivel total + busca de 'SONDA_' numa pasta com `.env` -> o agente buscou excluindo o `.env`
+  (regra de segredos), nada vazou; `python diag.py` imprimindo `FORJA_*` -> o token nao chega mais ao processo (ambiente limpo);
+  copia sem segredos ponta a ponta: agente trabalhou em `.forja-copias/`, `INVENTARIO.txt` devolvido a pasta original, `.env` intacto,
+  copia apagada, sem vazamento; correcao 'simples' agora roda os testes da Forja.
+- **Codex real:** leitura fora da pasta -> turno cancelado pela vigia em 16,1 s, nada vazou; correcao trivial 72,4 s -> **35,2 s**
+  (esforco por parte + aviso para nao rodar testes no sandbox); pergunta simples ~20 s -> 5,7-7,7 s (com processo reaproveitado).
+  Perfis de permissao do Codex (`CODEX_CONFIG` e `.codex/config.toml`) testados: o codex-acp 2.7.0 recusa a sessao ('Internal error').
+- **Creditos reais:** `session_usage` do Kiro e acumulado por sessao (0,0010 -> 0,0020 -> 0,0030); execucoes trazem
+  `consumo.creditos` (ex.: pergunta simples 0,0056-0,0068; correcao 0,021-0,026). Painel Custo mostra medidos + cobertura.
+- **Processos reaproveitados (Kiro real, mesma tarefa, 3 repeticoes + correcao):** sem pool 13,3/12,6/11,0 s e correcao 28,2 s; com
+  pool 9,1/6,3/6,5 s e correcao 28,3 s; creditos iguais. Reuso com outra pasta de trabalho conferido (sessao usa a pasta certa).
+- **Roteador inteligente (real):** pergunta simples -> Codex (motivo registrado); mesma pergunta em pasta com `.env` -> Kiro.
+- **Pendente:** MCP da Forja para o Codex; ler creditos/uso do Codex; perfis de permissao do Codex quando o adaptador aceitar;
+  `_kiro/session/compact` como alternativa a troca de sessao; fases visuais V1-V4 do relatorio.
+
+## Avaliacao geral, testes reais Kiro/Codex e analise visual (2026-11-18): sem mudanca de codigo
+Relatorio completo: `docs/RELATORIO_AVALIACAO_2026-11-18.md`. Somente avaliacao; nenhuma correcao implementada.
+- **Testes executados:** `python -m pytest` -> **1119 passed** (188,8 s); `ruff check` ok; `node --check` 21/21 ok; 28 chamadas
+  as 15 ferramentas locais (25 ok + 3 recusas corretas); classificador de acoes com 26 comandos; Kiro real (7 cenarios) e Codex real
+  (5 cenarios) com dados ficticios em `%TEMP%`; painel em navegador real (servidor de teste 8799), 16 capturas, 0 erros de console.
+- **Achados provados (altos):** S1 shell le `.env` por busca recursiva aprovada sozinha no nivel total; S2 o processo do Kiro herda
+  `FORJA_INT_*`; S3 Codex `read-only` le arquivo fora da pasta sem pedir; F1 tarefa "simples" de codigo conclui sem testes da Forja.
+- **Medidos:** processo Kiro novo 2,5-4,6 s fixos x sessao em processo quente 0,18 s; Kiro envia creditos reais por turno
+  (`session_usage`), ignorados pela Forja; Codex sem modelo/esforco por parte (72,4 s x 26,8 s do Kiro numa correcao trivial).
+- **Pendente:** decisoes do usuario (secao 9 do relatorio) e implementacao das prioridades P0/P1; fases visuais V1-V4.
+
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -366,7 +401,7 @@ fila "Revisão (N)", editor de regras, pacotes de conhecimento (`forja/conhecime
 - gitleaks e CI ativos (ver Fase 9). Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1119 passed. Proximo: Codex real (aprovacao
+1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1186 passed. Proximo: Codex real (aprovacao
    do usuario), medir pausas por escopo e renovacao de sessao com o Kiro real.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,

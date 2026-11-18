@@ -46,8 +46,10 @@ def aplicar_configuracao(cliente: _Cliente, session_id: str, modelo: str, esforc
         cliente.definir_opcao(session_id, "model", escolhido, timeout)
         aplicados["modelo"] = escolhido
     if esforco:  # as opcoes de esforco dependem do modelo escolhido: so existem depois de aplica-lo
-        if esforco in valores(cliente.opcoes_sessao, "effortLevel"):
-            cliente.definir_opcao(session_id, "effortLevel", esforco, timeout)
+        # Kiro: 'effortLevel'; Codex (codex-acp): 'reasoning_effort'. Usa o que a sessao oferecer.
+        id_esforco = next((i for i in ("effortLevel", "reasoning_effort") if valores(cliente.opcoes_sessao, i)), "effortLevel")
+        if esforco in valores(cliente.opcoes_sessao, id_esforco):
+            cliente.definir_opcao(session_id, id_esforco, esforco, timeout)
             aplicados["esforco"] = esforco
         else:
             avisos.append("esforco indisponivel para este modelo; mantido o padrao do agente")

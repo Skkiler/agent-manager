@@ -102,6 +102,7 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
         self.isolamento: Any | None = None  # Isolamento: worktree quando duas execucoes disputam a mesma pasta
         self.retomar_apos_queda = "manual"  # preferencia: manual | automatico (no maximo 1 retomada automatica por execucao)
         self.controle_escopo = "pausar"  # preferencia: pausar | avisar | desligado (orquestracao/escopo.py)
+        self.copias: Any | None = None  # CopiasSemSegredos: o agente trabalha numa copia sem .env/chaves (copia_segura.py)
         self._pontos: dict[str, list[str]] = {}
         self._esperas: dict[str, _Espera] = {}
         self.repo = repo
@@ -542,6 +543,8 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
                 agente_id=self.provedor.id,
                 mock=self.provedor.mock,
             )
+        if self.copias is not None and self.copias.ativas(execucao_id):
+            res = self._devolver_copias(execucao_id, res)
         liberadas, resumos = self._encerrar_pastas(execucao_id)
         if tarefa is not None and resumos:
             res = self._conferir_escopo(execucao_id, tarefa, res, resumos)
@@ -609,7 +612,66 @@ class Servico(ConversaContextoMixin, AprovacoesMixin):
                         pontos.append(pid)
             with self._mu:
                 self._pontos[execucao_id] = pontos
+        if self.copias is not None:  # DEPOIS do ponto de restauracao: o 'desfazer' vale para a pasta ORIGINAL
+            self._preparar_copias(execucao_id, tarefa)
         return None
+
+    def _nivel(self) -> str:
+        try:
+            return self.perfil_de().nivel if self.perfil_de else "restrito"
+        except Exception:  # noqa: BLE001
+            return "restrito"
+
+    def _preparar_copias(self, execucao_id: str, tarefa: dict) -> None:
+        """Pasta de trabalho com segredo + nivel que aprova sozinho: o agente trabalha numa COPIA SEM SEGREDOS (copia_segura.py)."""
+        ctx = tarefa.get("projeto_ctx") or {}
+        nivel, novas = self._nivel(), []
+        for p in ctx.get("pastas") or []:
+            if p.get("papel") != "trabalho":
+                novas.append(p)
+                continue
+            try:
+                if not self.copias.precisa(nivel, tarefa.get("modo"), Path(p["caminho"])):  # type: ignore[union-attr]
+                    novas.append(p)
+                    continue
+                copia = self.copias.criar(execucao_id, Path(p["caminho"]))  # type: ignore[union-attr]
+            except Exception:  # noqa: BLE001 - sem copia, seguem as outras protecoes (perfil DENY, mediador, aviso de varredura)
+                log.exception("falha ao preparar a copia sem segredos", extra={"execucao_id": execucao_id})
+                copia = None
+            if copia is None:
+                self._emitir_exec(execucao_id, "copia.indisponivel", {"pasta": Path(p["caminho"]).name})
+                novas.append(p)
+                continue
+            self._emitir_exec(execucao_id, "copia.criada", {"pasta": Path(p["caminho"]).name, "arquivos": len(copia.manifesto)})
+            novas.append({**p, "caminho": str(copia.destino), "copia_sem_segredos": True, "origem": p["caminho"]})
+        tarefa["projeto_ctx"] = {**ctx, "pastas": novas}
+
+    def _devolver_copias(self, execucao_id: str, res: ResultadoAgente) -> ResultadoAgente:
+        """Leva para a pasta original SO o que o agente mudou na copia (sem segredos, sem sobrescrever o que voce mudou)."""
+        try:
+            resumos = self.copias.sincronizar(execucao_id)  # type: ignore[union-attr]
+        except Exception:  # noqa: BLE001
+            log.exception("falha ao devolver a copia", extra={"execucao_id": execucao_id})
+            res.pendencias.append("copia_nao_devolvida: erro ao trazer as mudancas da copia sem segredos (a copia foi mantida)")
+            return res
+        for r in resumos:
+            self._emitir_exec(execucao_id, "copia.sincronizada", {k: (len(v) if isinstance(v, list) else v) for k, v in r.items()
+                                                                  if k != "copia_mantida"} | {"mantida": bool(r["copia_mantida"])})
+            mudou = len(r["aplicados"]) + len(r["criados"]) + len(r["removidos"])
+            texto = (f"A tarefa rodou numa cópia de '{r['pasta']}' sem arquivos de segredo. A Forja devolveu {mudou} alteração(ões) "
+                     "para a pasta original.")
+            if r["segredos_ignorados"]:
+                texto += f" {r['segredos_ignorados']} arquivo(s) com cara de segredo criados pelo agente NÃO foram devolvidos."
+            if r["conflitos"]:
+                texto += ("\nConflito (você mudou estes arquivos enquanto o agente trabalhava; nada foi sobrescrito): "
+                          + ", ".join(r["conflitos"][:20]) + f"\nA cópia ficou guardada em: {r['copia_mantida']}")
+                res.pendencias.append(f"copia_com_conflito: {len(r['conflitos'])} arquivo(s) em '{r['pasta']}'")
+                if res.estado == "concluida":
+                    res.estado = "bloqueada"
+                    res.resumo = "Trabalho feito na cópia sem segredos, mas há conflitos com a pasta original; veja a lista."
+            res.mensagens.append(MensagemSaida(tipo="verificacao", conteudo=texto, dados={"copia": {k: v for k, v in r.items()
+                                                                                                  if k != "copia_mantida"}}))
+        return res
 
     def _encerrar_pastas(self, execucao_id: str) -> tuple[int, list[dict]]:
         """Fecha os pontos de restauracao e libera as pastas. Devolve (pastas liberadas, resumos do que mudou)."""

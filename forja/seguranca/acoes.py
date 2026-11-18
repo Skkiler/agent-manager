@@ -12,16 +12,12 @@ from pathlib import Path
 from typing import Any
 
 from forja.observabilidade.sanitizar import sanitizar_texto
+from forja.seguranca import sensiveis
 
 MAX_ALVOS = 6
 MAX_CMD = 200
 RISCOS = ("baixo", "medio", "alto", "critico")
 
-_SENSIVEL = re.compile(
-    r"(^|[\\/])(\.env(\..*)?|.*\.(pem|key|p12|pfx|jks|kdbx)|id_(rsa|ed25519)\S*|credentials(\.json)?|"
-    r"secrets?(\.(json|ya?ml))?|api_token\.txt|\.netrc|\.npmrc|\.pypirc)$",
-    re.IGNORECASE,
-)
 _RM = re.compile(r"(?i)(^|[\s;&|])(rm|rmdir|rd|del|erase|remove-item|ri)(\s|$)")
 _FORCA = re.compile(r"(?i)(\s-[a-z]*[rf][a-z]*\b|\s-force\b|\s-recurse\b|\s/[sq]\b|\s--force\b|\s--recursive\b)")
 _PUSH = re.compile(
@@ -29,7 +25,23 @@ _PUSH = re.compile(
 _DESCARTA = re.compile(r"(?i)\bgit\s+(reset\s+--hard|clean\s+-\w*f|checkout\s+--\s|restore\s+\.|stash\s+drop)")
 _INSTALA = re.compile(
     r"(?i)\b(pip3?|uv|npm|pnpm|yarn|winget|choco|scoop|cargo|gem|apt(-get)?|brew)\s+(install|add|i)\b")
-_REDE = re.compile(r"(?i)\b(curl|wget|invoke-webrequest|iwr|invoke-restmethod|irm|ssh|scp|ftp)\b")
+_REDE = re.compile(r"(?i)\b(curl|wget|invoke-webrequest|iwr|invoke-restmethod|irm|ssh|scp|ftp)\b(?![./\\])")
+# Abre uma porta para a rede (servidor local exposto): sempre pergunta, como acesso a rede.
+_ESCUTA = re.compile(
+    r"(?i)\bhttp\.server\b|\bSimpleHTTPServer\b|\bnpx\s+(http-)?serve\b|\bngrok\b|\b(nc|ncat|netcat)\s+(-\w+\s+)*-\w*l|\bsocat\b"
+    r"|--host[= ]0\.0\.0\.0|\bNew-NetFirewallRule\b|\bnetsh\s+advfirewall\b")
+# Comando ofuscado ou que executa texto decodificado: nao da para descrever a acao -> sempre pergunta (risco alto).
+_OFUSCADO = re.compile(
+    r"(?i)\s-(e|ec|enc|encodedcommand)\s+[A-Za-z0-9+/=]{8,}|\binvoke-expression\b|(^|[\s;|&(])iex(\s|\(|$)|FromBase64String"
+    r"|\bbase64\s+(-d|--decode)\b|\bcertutil\s+-decode\b|\|\s*(sh|bash|zsh|pwsh|powershell)(\s|$)")
+# Varredura ampla: le o CONTEUDO (ou copia) de muitos arquivos de uma vez, inclusive ocultos. Numa pasta com .env, um comando
+# assim le o segredo sem nunca citar o nome do arquivo (achado no Kiro real: Get-ChildItem -Recurse -Force | Select-String).
+_VARREDURA = re.compile(
+    r"(?i)\bselect-string\b|(^|[\s;|&(])sls\s|\b(grep|egrep|fgrep)\s+(-\w*\s+)*-\w*[rR]|\bgrep\s+--recursive\b|(^|[\s;|&(])(rg|ag|ack)\s"
+    r"|\bfindstr\b.*\s/s\b|\bfind\b.*\s-(exec|print0)\b|\bxargs\b"
+    r"|\b(cat|type|get-content|gc|more|less|head|tail)\s+(\S+\s+)*\S*[*?]"
+    r"|\b(get-childitem|gci|dir|ls)\b.*\s-(r|recurse|force)\b.*\|\s*(%|foreach|select-string|get-content|gc|cat|type)"
+    r"|\b(tar|zip|7z|compress-archive|robocopy|xcopy)\b|\b(cp|copy-item|copy)\b.*\s-(r|recurse)\b")
 _MOVE = re.compile(r"(?i)(^|[\s;&|])(mv|move|ren|rename|move-item)(\s|$)")
 
 # Ferramentas do MCP da propria Forja (o Kiro intitula @forja/<nome> e marca _meta.kiro.serverName).
@@ -39,6 +51,10 @@ _FORJA_MCP = {
     "forja_buscar_memoria": "buscar no seu segundo cérebro",
     "forja_quadro_ler": "ler as mensagens do quadro endereçadas a ele",
     "forja_quadro_publicar": "publicar uma mensagem no quadro",
+    "forja_navegar_memoria": "abrir um tópico do seu segundo cérebro",
+    "forja_propor_nota": "propor uma nota candidata para você revisar",
+    "forja_caderno_salvar": "anotar no caderno desta tarefa o que já resolveu",
+    "forja_caderno_consultar": "consultar o caderno desta tarefa",
 }
 
 
@@ -52,11 +68,20 @@ def _ferramenta_forja(tc: dict[str, Any]) -> str | None:
 # Usar um .env sem le-lo: programas que recebem o arquivo e o consomem (subir containers, rodar com variaveis).
 _CONSOME_ENV = re.compile(r"(?i)^\s*(docker(\s+compose)?|docker-compose|podman(-compose)?|uv\s+run|dotenv\s+(-f\s+\S+\s+)?run)\b.*--?env-file(\s|=)")
 # ...e os que IMPRIMEM variaveis resolvidas (mesmo sem citar o arquivo): sempre tratados como leitura de segredo.
+# Nome de variavel com cara de segredo (para $NOME, ${NOME} e %NOME%): $_ e variaveis comuns do PowerShell NAO contam.
+_NOME_SEGREDO = (r"(?:(?:FORJA|APP)_[A-Za-z0-9_]+|[A-Za-z_]*(?:TOKEN|SECRET|PASSW|PASSWD|SENHA|API_?KEY|ACCESS_?KEY|PRIVATE|CRED|AUTH|"
+                 r"COOKIE|SESSION)[A-Za-z0-9_]*)")
 _IMPRIME_ENV = re.compile(
     r"(?i)(^|[;&|]\s*)(printenv|env|set|export\s+-p|get-childitem\s+env:|gci\s+env:|dir\s+env:|ls\s+env:)(\s*$|\s*[;&|])"
+    r"|\bcmd(\.exe)?\s+/c\s+set\b"
     r"|\b(docker(\s+compose)?|docker-compose|podman(-compose)?)\s+(\S+\s+)*config\b"
-    r"|\bdocker\s+(container\s+)?inspect\b|\bdocker\s+exec\b.*\b(env|printenv|set)\b|\$env:|%[A-Za-z_]+%"
-    r"|\b(echo|write-output|write-host)\s+.*\$[A-Za-z_{]")
+    r"|\bdocker\s+(container\s+)?inspect\b|\bdocker\s+exec\b.*\b(env|printenv|set)\b|\$\{?env:" + _NOME_SEGREDO +
+    r"|\b(get-item|gi|get-content|gc|get-childitem|gci|dir|ls)\s+env:"
+    r"|\bos\.environ\b|\bos\.getenv\b|\bgetenv\s*\(|\bprocess\.env\b|\[(system\.)?environment\]::|\bSystem\.getenv\b|\bENV\["
+    r"|\$\{?" + _NOME_SEGREDO + r"\}?|%" + _NOME_SEGREDO + "%")
+# Caminhos que saem da pasta: absolutos, pasta pessoal e subida de diretorio (o comando pode ler qualquer coisa la).
+_ABSOLUTO = re.compile(r"(?i)^([a-z]:[\\/]|\\\\|/[^\s/]+/|~|\$home\b|\$env:(userprofile|home|appdata|localappdata)|%(userprofile|appdata|localappdata|homepath)%)")
+_SUBIDA = re.compile(r"(^|[\\/])\.\.([\\/]|$)")
 
 
 # ".env" em qualquer ponto do texto do comando (modelos .env.example/.sample/.template/.dist nao contam).
@@ -83,8 +108,36 @@ _CAMPOS_CAMINHO = (
 
 
 def caminho_sensivel(caminho: str) -> bool:
-    """True se o caminho parece segredo/credencial (.env, chaves, tokens). Usado tambem pela ingestao de memoria."""
-    return bool(_SENSIVEL.search(caminho.replace("\\", "/")))
+    """True se o caminho parece segredo/credencial (.env, chaves, tokens). Fonte unica: forja/seguranca/sensiveis.py."""
+    return sensiveis.caminho_sensivel(caminho)
+
+
+def _caminhos_no_comando(tokens: list[str]) -> list[str]:
+    """Tokens do comando que sao caminhos para FORA da pasta: absolutos, pasta pessoal (~, $HOME, %USERPROFILE%) ou com '..'.
+    O 1o token (o executavel, ex.: C:\\Python313\\python.exe) nao conta: rodar um programa nao e ler dados fora da pasta."""
+    saida = []
+    for t in tokens[1:]:
+        t = t.strip("\"'`;,(){}")
+        if "=" in t and not _ABSOLUTO.match(t):  # --opcao=valor: olha o valor
+            t = t.split("=", 1)[1].strip("\"'")
+        if t and (_ABSOLUTO.match(t) or _SUBIDA.search(t)) and not t.startswith(("http://", "https://")):
+            saida.append(t)
+    return saida
+
+
+# Invólucro de shell que alguns agentes poem em volta do comando (codex-acp: "C:\...\powershell.exe" -Command 'python x.py').
+_INVOLUCRO = re.compile(r"""(?is)^\s*"?[^"\s]*?(?:powershell|pwsh|cmd|bash|sh|zsh)(?:\.exe)?"?\s+(?:-(?:noprofile|nologo|noninteractive)\s+)*"""
+                        r"""(?:-command|-c|/c|-lc)\s+(.+)$""")
+
+
+def _desembrulhar(cmd: str) -> str:
+    m = _INVOLUCRO.match(cmd)
+    if not m:
+        return cmd
+    interno = m.group(1).strip()
+    if len(interno) >= 2 and interno[0] == interno[-1] and interno[0] in "'\"":
+        interno = interno[1:-1]
+    return interno
 
 
 def _comando(raw: Any) -> str:
@@ -93,9 +146,9 @@ def _comando(raw: Any) -> str:
     for k in ("command", "cmd", "script"):
         v = raw.get(k)
         if isinstance(v, str):
-            return v
+            return _desembrulhar(v)
         if isinstance(v, list):
-            return " ".join(str(x) for x in v)
+            return _desembrulhar(" ".join(str(x) for x in v))
     return ""
 
 
@@ -196,8 +249,11 @@ def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None, tra
     categoria, risco = "outra", "medio"
     forja = _ferramenta_forja(tc)
 
+    ofuscado = bool(cmd) and _OFUSCADO.search(cmd) is not None
     if forja:  # a API da Forja continua decidindo (politica de pastas, integracoes); aqui so se descreve a acao
         categoria, risco = "ferramenta_forja", ("medio" if forja == "forja_quadro_publicar" else "baixo")
+    elif ofuscado:  # nao da para dizer o que o comando faz: sempre pergunta (categoria 'outra'), risco alto
+        categoria, risco = "outra", "alto"
     elif cmd and _RM.search(cmd):
         alvos = alvos or _alvos_do_comando(cmd)
         forcada = bool(_FORCA.search(cmd))
@@ -211,7 +267,7 @@ def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None, tra
     elif cmd and _MOVE.search(cmd):
         alvos = alvos or _alvos_do_comando(cmd)
         categoria, risco = "mover", "medio"
-    elif cmd and _REDE.search(cmd):
+    elif cmd and (_REDE.search(cmd) or _ESCUTA.search(cmd)):
         categoria, risco = "acessar_rede", "medio"
     elif cmd or kind == "execute":
         categoria, risco = "executar_comando", "medio"
@@ -230,21 +286,25 @@ def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None, tra
     usa_env = bool(cmd) and _CONSOME_ENV.search(cmd) is not None
     if usa_env:  # o .env so aparece como argumento de --env-file: e CONSUMIDO pelo programa, nunca impresso
         tokens = _sem_argumento_env_file(tokens)
-    candidatos = alvos + tokens  # cada token do comando conta
-    sensivel = (any(_SENSIVEL.search(c.replace("\\", "/")) for c in candidatos)
+    candidatos = alvos + [t.strip("`{}") for t in tokens]  # cada token do comando conta
+    sensivel = (any(caminho_sensivel(c) for c in candidatos if c)
                 or (bool(cmd) and _IMPRIME_ENV.search(cmd) is not None)
                 or _ENV_NO_TEXTO.search(" ".join(tokens)) is not None)  # ex.: python -c "open('.env')": o nome colado em outro texto
     raizes_escrita = [r for r in [workspace, *(trabalho or [])] if r is not None]
     raizes_leitura = raizes_escrita + list(consulta or [])
+    no_comando = _caminhos_no_comando(tokens) if cmd else []
     if raizes_escrita:  # avaliado ANTES de relativizar
         fora = any(not _dentro_de_alguma(a, raizes_leitura if categoria == "ler" else raizes_escrita) for a in alvos)
+        # caminhos citados DENTRO do comando (type C:\...\x, cat ../../y): o comando pode ler/alterar fora da pasta
+        fora = fora or any(c.startswith(("~", "$", "%")) or not _dentro_de_alguma(c, raizes_leitura) for c in no_comando)
     else:
-        fora = False
+        fora = bool(no_comando)
+    varredura = bool(cmd) and _VARREDURA.search(cmd) is not None
     em_consulta = categoria in ESCRITA and any(_dentro_de_alguma(a, list(consulta or [])) and not _dentro_de_alguma(a, raizes_escrita) for a in alvos)
     alvos = _normalizar(alvos, workspace)
     if sensivel:
         risco = "critico"
-    elif fora and RISCOS.index(risco) < RISCOS.index("alto"):
+    elif (fora or ofuscado) and RISCOS.index(risco) < RISCOS.index("alto"):
         risco = "alto"
 
     cmd_vis = sanitizar_texto(cmd)[:MAX_CMD]
@@ -260,7 +320,8 @@ def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None, tra
         "modificar_arquivos": f"Posso criar ou modificar {_lista(alvos)}?",
         "ler": f"Posso ler {_lista(alvos)}?",
         "ferramenta_forja": f"O agente pode {_FORJA_MCP.get(forja or '', 'usar uma ferramenta da Forja')}?",
-        "outra": f"Posso executar a ação «{titulo or 'não identificada'}»?",
+        "outra": (f"Posso executar um comando que não dá para descrever com segurança (`{cmd_vis}`)?" if ofuscado
+                  else f"Posso executar a ação «{titulo or 'não identificada'}»?"),
     }
     return {
         "id": str(tc.get("toolCallId") or titulo),
@@ -272,5 +333,7 @@ def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None, tra
         "fora_do_workspace": fora,
         "em_consulta": em_consulta,
         "usa_env": usa_env and not sensivel,
+        "varredura": varredura,  # le/copia muitos arquivos de uma vez: numa pasta com segredos, nunca e automatico
+        "ofuscado": ofuscado,
         "tecnico": titulo,
     }

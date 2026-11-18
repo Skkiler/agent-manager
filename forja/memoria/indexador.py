@@ -41,6 +41,8 @@ IGNORAR_DIRS = frozenset(
         "referencias-visuais-privadas",
         "segundo-cerebro",
         "memoria-local",
+        ".worktrees",  # copias isoladas (git worktree) de tarefas paralelas
+        ".forja-copias",  # copias de trabalho SEM segredos (orquestracao/copia_segura.py): temporarias
     }
 )
 LINGUAGENS = {

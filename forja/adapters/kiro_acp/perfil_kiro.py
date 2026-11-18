@@ -18,14 +18,26 @@ import json
 import logging
 from pathlib import Path
 
+from forja.seguranca import sensiveis
+
 log = logging.getLogger("forja.kiro.perfil")
 NOME = "forja"
-SEGREDOS = ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/*.jks", "**/*.kdbx", "**/id_rsa*", "**/id_ed25519*",
-            "**/credentials", "**/credentials.json", "**/secrets/**", "**/secrets.json", "**/secrets.yaml", "**/api_token.txt", "**/.netrc",
-            "**/.npmrc", "**/.pypirc"]
-MODELOS_PERMITIDOS = ["**/.env.example", "**/.env.sample", "**/.env.template"]  # modelos sem valor: podem ser lidos
+SEGREDOS = list(sensiveis.GLOBS)  # fonte unica (forja/seguranca/sensiveis.py): a mesma lista do mediador e das ferramentas
+MODELOS_PERMITIDOS = list(sensiveis.MODELOS)  # modelos sem valor: podem ser lidos
 SHELL_IMPRIME = ["cat *.env*", "type *.env*", "Get-Content *.env*", "gc *.env*", "more *.env*", "less *.env*", "head *.env*", "tail *.env*",
-                 "printenv*", "env", "set", "docker compose config*", "docker-compose config*", "docker inspect*", "docker container inspect*"]
+                 "printenv*", "env", "set", "cmd /c set*", "Get-ChildItem Env:*", "gci env:*", "dir env:*", "ls env:*", "Get-Item Env:*",
+                 "docker compose config*", "docker-compose config*", "docker inspect*", "docker container inspect*"]
+# Regra de segredos repetida no perfil e no pedido (o perfil do Kiro e o pedido da Forja sao lidos com prioridades diferentes).
+SEGREDOS_REGRA = (
+    "SEGREDOS (regra absoluta, vale em QUALQUER nivel de autonomia, inclusive acesso total): NUNCA leia, abra, busque, imprima, copie, "
+    "mova, edite ou apague .env/.env.*, chaves (.pem, .key, id_rsa), credenciais, tokens nem as pastas secrets/, .ssh/, .aws/. NUNCA rode "
+    "comando que mostre variaveis de ambiente (env, set, printenv, os.environ, process.env, $env:) nem busca/copia recursiva que passe "
+    "por esses arquivos (grep -r, rg, Select-String, Get-ChildItem -Recurse -Force, cp -r, tar) sem exclui-los. Para saber se um .env "
+    "tem uma chave use a ferramenta env.verificar da Forja (so diz se existe ou esta vazia). Precisa de um valor de configuracao? Peca "
+    "em 'Decisoes para voce'. Se topar com um segredo por acidente, nao repita o valor e avise."
+)
+SEGREDOS_CURTO = ("SEGREDOS (regra absoluta): nunca leia, busque, imprima ou copie .env, chaves, credenciais nem variaveis de ambiente; "
+                  "para conferir um .env use env.verificar da Forja.")
 PRESETS = {"restrito": ["read-workspace"], "liberado": ["edit-workspace"], "total": ["edit-workspace"]}
 
 
@@ -37,7 +49,8 @@ ESCOPO = (
     "2) NUNCA crie documentacao, README, resumos ou arquivos .md que a tarefa nao pediu. "
     "3) NUNCA refatore, renomeie, reformate ou 'melhore' codigo fora do pedido. "
     "4) Se notar algo fora do escopo que valeria fazer, NAO faca: liste em '## Próximos passos'. "
-    "5) Pare quando os criterios estiverem atendidos. Nunca invente resultado de comando ou teste que voce nao rodou."
+    "5) Pare quando os criterios estiverem atendidos. Nunca invente resultado de comando ou teste que voce nao rodou. "
+    "6) " + SEGREDOS_REGRA
 )
 PAPEIS: dict[str, dict] = {
     "planejador": {"tools": ["read", "web", "@forja"], "descricao": "planeja e investiga, sem alterar nada",

@@ -66,6 +66,9 @@ class MediadorPermissoes:
         self.limite_arquivos = 0  # 0 = sem limite; o provedor define pelo nivel da tarefa (controle de escopo)
         self._escritos: set[str] = set()
         self._avisou_escopo = False
+        # A pasta (trabalho/consulta) tem arquivos com cara de segredo? (provedor confere SO os nomes). Se sim, comando de varredura
+        # ampla (busca/copia recursiva) nunca e aprovado sozinho: ele le o .env sem citar o nome (achado no Kiro real).
+        self.pasta_com_segredos = False
 
     def _conferir_escopo(self, item: dict[str, Any]) -> bool:
         """Anti 'esticar': passou do limite de arquivos escritos da tarefa, cada nova escrita deixa de ser automatica e PERGUNTA
@@ -102,14 +105,19 @@ class MediadorPermissoes:
         if permitir is None:  # sem como permitir uma vez: nao arrisca allow_always
             return rejeitar
         alem_do_escopo = self._conferir_escopo(item)
+        varre_segredo = bool(item.get("varredura")) and self.pasta_com_segredos  # invariante: nenhuma regra do usuario afrouxa
+        if varre_segredo:
+            item = {**item, "risco": "alto", "descricao": item["descricao"].rstrip("?") + " (atenção: esta pasta tem arquivos de segredo, "
+                    "como .env, e este comando lê muitos arquivos de uma vez; ele pode ler o segredo)?"}
+            self.ctl.evento("kiro.varredura_com_segredos", {"descricao": item["descricao"][:300]})
         decisao = avaliar_regras(self.perfil.regras, item) if self.perfil.regras else None
         if decisao is not None:  # regras do usuario: auditaveis (evento com o nome da regra)
             self.ctl.evento("kiro.regra_aplicada", {"regra": decisao[1].nome[:80], "acao": decisao[0], "descricao": item["descricao"]})
             if decisao[0] == "negar":
                 return rejeitar
-            if decisao[0] == "aprovar":
+            if decisao[0] == "aprovar" and not varre_segredo:
                 return permitir
-        perguntar_sempre = (decisao is not None and decisao[0] == "perguntar") or alem_do_escopo
+        perguntar_sempre = (decisao is not None and decisao[0] == "perguntar") or alem_do_escopo or varre_segredo
         if not perguntar_sempre and self.perfil.aprova_sozinho(item):  # auditavel: toda aprovacao automatica vira evento
             self.ctl.evento("kiro.permissao_automatica", {"nivel": self.perfil.nivel, "categoria": item["categoria"], "descricao": item["descricao"]})
             return permitir

@@ -312,13 +312,15 @@ def _ctl_cp():
     return ControleExecucao(cps.append, lambda t, p: eventos.append((t, p))), cps, eventos
 
 
-def test_roteador_so_kiro_por_padrao_e_codex_desligado():
+def test_roteador_padrao_inteligente_so_kiro_e_codex_desligado():
     k, c = _Ag("kiro.acp"), _Ag("codex.acp")
     r = ProvedoresRoteados(k, c)
+    assert r.modo == "inteligente" and r.codex_ativo is True  # padrao pedido pelo usuario: Codex ligado, divisao por especialidade
+    r.modo = "so_kiro"
     ctl, cps, _ = _ctl_cp()
     assert r.executar(_t(), {}, ctl).agente_id == "kiro.acp" and not c.chamadas
     assert cps[-1]["provedor"] == "kiro.acp"  # a sessao fica carimbada com o agente
-    r.modo = "codex_primeiro"
+    r.modo, r.codex_ativo = "codex_primeiro", False
     assert r.executar(_t(), {}, ctl).agente_id == "kiro.acp"  # Codex desligado (codex_ativo=False)
     r.codex_ativo = True
     assert r.executar(_t(), {}, ctl).agente_id == "codex.acp"

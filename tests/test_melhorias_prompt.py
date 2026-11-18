@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from forja.adapters.kiro_acp.perfil_kiro import SEGREDOS_CURTO
 from forja.adapters.kiro_acp.provedor import PROTOCOLO, bloco_projeto, montar_prompt
 from forja.adapters.sqlite.repositorio import RepositorioSqlite
 from forja.contexto.construtor import ConstrutorContexto
@@ -26,7 +27,7 @@ def test_prefixo_do_prompt_e_identico_entre_usuarios_e_tarefas():
     a = montar_prompt(_t(perfil_texto="\nModo de trabalho:\n- Direto\n"))
     b = montar_prompt(_t(titulo="Outra coisa", perfil_texto="\nModo de trabalho:\n- Pesquisador\n"))
     corte = a.index("Tarefa:")
-    assert a[:corte] == b[:corte] == PROTOCOLO + "\n\n"  # tudo que varia vem DEPOIS do protocolo
+    assert a[:corte] == b[:corte] == PROTOCOLO + "\n" + SEGREDOS_CURTO + "\n\n"  # tudo que varia vem DEPOIS do protocolo fixo
     assert "Direto" in a[corte:] and "Pesquisador" in b[corte:]
 
 

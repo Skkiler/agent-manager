@@ -58,10 +58,13 @@ class ResultadoTeste:
 
 
 def _python_do_projeto(cwd: Path) -> str:
-    for rel in (".venv/Scripts/python.exe", "venv/Scripts/python.exe", ".venv/bin/python", "venv/bin/python"):
-        p = cwd / rel
-        if p.is_file() and not p.is_symlink():
-            return str(p)
+    """Python da .venv do projeto. Sobe ate 3 pastas: a copia sem segredos (`<projeto>/.forja-copias/<id>`) nao leva a .venv, mas a
+    do projeto original fica duas pastas acima (e monorepos costumam ter a .venv na raiz)."""
+    for base in [cwd, *list(cwd.parents)[:3]]:
+        for rel in (".venv/Scripts/python.exe", "venv/Scripts/python.exe", ".venv/bin/python", "venv/bin/python"):
+            p = base / rel
+            if p.is_file() and not p.is_symlink():
+                return str(p)
     return shutil.which("python") or shutil.which("python3") or sys.executable
 
 
@@ -69,7 +72,10 @@ def detectar(cwd: Path) -> ComandoTeste | None:
     """Comando de testes pelo que o projeto declara (nunca inventa um comando arbitrario)."""
     if (cwd / "pytest.ini").is_file() or (cwd / "conftest.py").is_file() or (cwd / "tests").is_dir() and any(
             (cwd / "tests").glob("test_*.py")) or "[tool.pytest" in _ler(cwd / "pyproject.toml"):
-        return ComandoTeste("pytest", (_python_do_projeto(cwd), "-m", "pytest", "-q", "-rfE", "--no-header", "-p", "no:cacheprovider"))
+        # --confcutdir/--rootdir: conftest.py de pastas ACIMA do projeto (ex.: o original, quando se testa a copia sem segredos)
+        # nao entram na sessao de testes.
+        return ComandoTeste("pytest", (_python_do_projeto(cwd), "-m", "pytest", "-q", "-rfE", "--no-header", "-p", "no:cacheprovider",
+                                       f"--rootdir={cwd}", f"--confcutdir={cwd}"))
     pacote = cwd / "package.json"
     if pacote.is_file():
         try:
@@ -100,14 +106,65 @@ def ambiente_limpo(base: dict[str, str] | None = None) -> dict[str, str]:
 
 
 def _resumir(cmd: ComandoTeste, saida: str) -> tuple[str, list[str]]:
-    if cmd.tipo == "pytest":
-        from forja.ferramentas.testes import resumir_pytest
+    """Veredito + falhas. pytest, jest/vitest (npm test), go test e cargo test tem resumidor proprio; o resto, a cauda da saida."""
+    if cmd.tipo == "lint":
+        return _resumir_lint(cmd, saida)
+    from forja.ferramentas.testes import resumir_testes
 
-        r = resumir_pytest(saida, 10)
-        falhas = [f"{f.get('id', '')}: {f.get('msg', '')}".strip(": ") for f in (r.dados.get("falhas") or []) if isinstance(f, dict)]
-        return r.resumo, falhas[:10]
-    cauda = [x for x in saida.splitlines() if x.strip()][-15:]
-    return "\n".join(cauda), []
+    fmt = {"pytest": "pytest", "go": "go", "cargo": "cargo"}.get(cmd.tipo, "auto")
+    r = resumir_testes(saida, fmt, 10)
+    falhas = [f"{f.get('id', '')}: {f.get('msg', '')}".strip(": ") for f in (r.dados.get("falhas") or []) if isinstance(f, dict)]
+    if r.dados.get("veredito") == "SEM_RESULTADO":  # formato nao reconhecido: a cauda ainda ajuda
+        cauda = [x for x in saida.splitlines() if x.strip()][-15:]
+        return "\n".join(cauda), falhas[:10]
+    return r.resumo, falhas[:10]
+
+
+_RUFF_LINHA = re.compile(r"^(?P<arq>[^\s:][^:]*):(?P<linha>\d+):(?P<col>\d+): (?P<msg>.+)$")
+
+
+def _resumir_lint(cmd: ComandoTeste, saida: str) -> tuple[str, list[str]]:
+    problemas = [m.group(0) for ln in saida.splitlines() if (m := _RUFF_LINHA.match(ln.strip()))]
+    if problemas:
+        return f"lint: {len(problemas)} problema(s)\n" + "\n".join(problemas[:15]), problemas[:10]
+    cauda = [x for x in saida.splitlines() if x.strip()][-10:]
+    return ("lint: sem problemas" if not cauda else "\n".join(cauda)), []
+
+
+def detectar_lint(cwd: Path) -> ComandoTeste | None:
+    """Lint que o projeto DECLARA: ruff (pyproject [tool.ruff] ou ruff.toml) ou o script 'lint' do package.json. Nunca inventa."""
+    pyproject = _ler(cwd / "pyproject.toml")
+    if "[tool.ruff" in pyproject or (cwd / "ruff.toml").is_file() or (cwd / ".ruff.toml").is_file():
+        ruff = _executavel_do_projeto(cwd, "ruff") or shutil.which("ruff")
+        if ruff:
+            return ComandoTeste("lint", (ruff, "check", "--no-cache", "--output-format=concise", "--quiet"))
+    pacote = cwd / "package.json"
+    if pacote.is_file():
+        try:
+            lint = (json.loads(_ler(pacote) or "{}").get("scripts") or {}).get("lint", "")
+        except ValueError:
+            lint = ""
+        npm = shutil.which("npm")
+        if lint and npm:
+            return ComandoTeste("lint", (npm, "run", "lint", "--silent"))
+    return None
+
+
+def _executavel_do_projeto(cwd: Path, nome: str) -> str | None:
+    for base in [cwd, *list(cwd.parents)[:3]]:
+        for rel in (f".venv/Scripts/{nome}.exe", f"venv/Scripts/{nome}.exe", f".venv/bin/{nome}", f"venv/bin/{nome}"):
+            p = base / rel
+            if p.is_file() and not p.is_symlink():
+                return str(p)
+    return None
+
+
+def lint_dos_alterados(cmd: ComandoTeste, alterados: list[str]) -> ComandoTeste | None:
+    """ruff so nos .py alterados (problemas antigos do projeto nao contam contra o agente). npm lint: o projeto inteiro."""
+    if Path(cmd.args[0]).name.lower().startswith("ruff"):
+        py = [a for a in alterados if a.endswith(".py")]
+        return ComandoTeste("lint", (*cmd.args, *py)) if py else None
+    return cmd
 
 
 def rodar(cmd: ComandoTeste, cwd: Path, timeout: float = 300.0, isolamento: str = "basico") -> ResultadoTeste:

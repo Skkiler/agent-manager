@@ -82,7 +82,8 @@ while True:
         versao = 99 if cenario == "protocolo" else 1
         enviar({"jsonrpc": "2.0", "id": rid, "result": {
             "protocolVersion": versao,
-            "agentCapabilities": {"promptCapabilities": {"image": False}, "loadSession": cenario.startswith("carregavel")},
+            "agentCapabilities": {"promptCapabilities": {"image": False}, "loadSession": cenario.startswith("carregavel"),
+                                  **({"sessionCapabilities": {"close": {}}} if cenario == "creditos" else {})},
             "authMethods": [{"id": "kiro-login", "name": "Kiro Login"}],
             "agentInfo": {"name": "Fake ACP Agent", "version": "0.0.1"}}})
     elif m == "session/new":
@@ -120,6 +121,7 @@ while True:
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "configOptions": opcoes()}})
         else:
             globals()["n_sessoes"] = globals().get("n_sessoes", 0) + 1
+            globals()["n_creditos"] = 0  # consumo e POR SESSAO (como no kiro-cli 3.1.0)
             if cenario == "planeja_contexto":  # cada sessao nova tem id proprio (prova a troca de sessao)
                 sid = f"sess-fake-{globals()['n_sessoes']}"
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid, "configOptions": opcoes()}})
@@ -149,6 +151,33 @@ while True:
             enviar({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": opcoes()}})
         else:
             enviar({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "modo desconhecido"}})
+    elif m == "session/prompt" and cenario in ("codex_le_fora", "codex_le_dentro"):
+        # como o codex-acp: o comando vem embrulhado no powershell; 'fora' cita um caminho ABSOLUTO fora da pasta do projeto
+        alvo = ("C:\\fora\\segredo.txt" if sys.platform == "win32" else "/etc/fora/segredo.txt") if cenario == "codex_le_fora" else "calc.py"
+        cmd_ps = f"\"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -Command 'Get-Content -Raw {alvo}'"
+        update(sid, {"sessionUpdate": "tool_call", "toolCallId": "c1", "title": f"Get-Content -Raw {alvo}", "kind": "execute",
+                     "status": "in_progress", "rawInput": {"command": cmd_ps, "cwd": "."}})
+        if cenario == "codex_le_dentro":
+            chunk(sid, "## Resposta\nli o arquivo do projeto\n")
+            enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
+        else:
+            chunk(sid, "VALOR_LIDO_FORA_123")  # o que vazaria se a Forja nao cancelasse
+            while True:
+                n = ler()
+                if n is None:
+                    sys.exit(0)
+                if n.get("method") == "session/cancel":
+                    enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "cancelled"}})
+                    break
+    elif m == "session/prompt" and cenario == "creditos":  # como o kiro-cli 3.1.0: consumo ACUMULADO da sessao a cada turno
+        globals()["n_creditos"] = globals().get("n_creditos", 0) + 1
+        update(sid, {"sessionUpdate": "session_info_update", "_meta": {"kiro": {"kind": "session_usage", "credits": [
+            {"usage": 0.01 * globals()["n_creditos"], "unit": "credit", "unitPlural": "credits"}]}}})
+        chunk(sid, "## Resposta\nok\n")
+        enviar({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
+    elif m == "session/close":
+        globals()["sessoes_fechadas"] = globals().get("sessoes_fechadas", 0) + 1
+        enviar({"jsonrpc": "2.0", "id": rid, "result": {}})
     elif m == "session/prompt" and cenario.startswith("codex"):
         import os
 

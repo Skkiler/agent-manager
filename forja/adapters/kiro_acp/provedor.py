@@ -45,12 +45,14 @@ from forja.dominio.contratos import (
 )
 from forja.ferramentas import verificacao
 from forja.ferramentas.estrutura import arquivos_de_teste_afetados, resumo_grafo
+from forja.ferramentas.verificacao import ambiente_limpo
 from forja.memoria.saneamento import estimar_tokens
 from forja.observabilidade.sanitizar import redigir_segredos, sanitizar_texto
 from forja.orquestracao import escopo
 from forja.orquestracao.roteamento import Rota, classificar
 from forja.seguranca import spotlight
 from forja.seguranca.acoes import caminhos_do_tool_call
+from forja.seguranca.sensiveis import segredos_nas_pastas
 
 log = logging.getLogger("forja.kiro")
 MAX_RESPOSTA = 200_000
@@ -137,13 +139,13 @@ PROTOCOLO_ESTUDO = (
 
 
 def _protocolo(tarefa: dict[str, Any]) -> str:
-    """Prefixo FIXO por modo (cacheavel pelo provedor). O que varia por usuario/tarefa (perfil, tarefa, contexto) vem depois."""
+    """Prefixo FIXO por modo (cacheavel pelo provedor). O que varia por usuario/tarefa (perfil, tarefa, contexto) vem depois.
+    A regra de segredos vai em TODO pedido (Kiro e Codex): o Codex nao tem perfil com regras DENY, e no Kiro ela reforca o perfil."""
     if tarefa.get("modo") == "estudo":
-        return PROTOCOLO_ESTUDO
-    p = PROTOCOLO
-    if tarefa.get("modo") in ("alteracao_codigo", "verificacao"):
-        p = ESCRITA + p.split("\n", 1)[1]  # troca so a 1a linha (analise somente leitura); o formato da resposta e o mesmo
-    return p
+        return PROTOCOLO_ESTUDO + perfil_kiro.SEGREDOS_CURTO + "\n"
+    if tarefa.get("modo") in ("alteracao_codigo", "verificacao", "documentacao"):  # escreve e roda comandos: regra completa
+        return ESCRITA + PROTOCOLO.split("\n", 1)[1] + "\n" + perfil_kiro.SEGREDOS_REGRA
+    return PROTOCOLO + "\n" + perfil_kiro.SEGREDOS_CURTO
 
 
 MAX_TEXTO_ANEXOS_PROMPT = 60_000  # todos os anexos juntos (~15 mil tokens estimados)
@@ -244,8 +246,9 @@ def montar_prompt_retomada(tarefa: dict[str, Any], sessao_carregada: bool = Fals
 DICA_MCP = (
     "\nFerramentas da Forja (MCP 'forja', carregue com tool_load): forja::forja_listar_ferramentas, forja::forja_executar_ferramenta, "
     "forja::forja_buscar_memoria, forja::forja_navegar_memoria, forja::forja_propor_nota, forja::forja_quadro_publicar, "
-    "forja::forja_quadro_ler. Prefira-as a ler arquivos inteiros: para localizar codigo use 'codigo.estrutura' (funcao, grafo, "
-    "definicao, referencias, impacto); para conhecimento busque e depois navegue so no subtopico que precisar. Registre "
+    "forja::forja_quadro_ler. Prefira-as a ler arquivos inteiros e ao shell: para BUSCAR TEXTO use 'codigo.buscar' (pula .env e "
+    "segredos; no lugar de grep -r/Select-String/rg); para Git use 'git.ler' (status, log, diff, blame); para localizar codigo use "
+    "'codigo.estrutura' (funcao, grafo, definicao, referencias, impacto); para conhecimento busque e depois navegue so no subtopico. Registre "
     "aprendizados reutilizaveis com forja_propor_nota. CONTEXTO: registre em 1 linha o que ja resolveu, decidiu ou entendeu com "
     "forja::forja_caderno_salvar e consulte com forja::forja_caderno_consultar em vez de reler arquivos ou repetir investigacao.\n"
 )
@@ -268,6 +271,30 @@ EXECUTAR_PLANO = (
 )
 
 
+def registrar_creditos(medicao: dict[str, Any], sid: str, upd: dict[str, Any]) -> None:
+    """Kiro (3.1.0, medido): `session_info_update` com `_meta.kiro.kind == "session_usage"` traz `credits[].usage` ACUMULADO na
+    sessao (3 turnos iguais: 0,0010 -> 0,0020 -> 0,0030). Guarda o maior valor visto por sessao."""
+    meta = ((upd.get("_meta") or {}).get("kiro") or {})
+    if meta.get("kind") != "session_usage":
+        return
+    total = 0.0
+    for c in meta.get("credits") or []:
+        if isinstance(c, dict) and str(c.get("unit", "credit")).startswith("credit") and isinstance(c.get("usage"), (int, float)):
+            total += float(c["usage"])
+    if total >= 0:
+        sessoes = medicao.setdefault("sessoes", {})
+        sessoes[sid] = max(sessoes.get(sid, 0.0), total)
+
+
+def medir_creditos(medicao: dict[str, Any]) -> float | None:
+    """Soma o consumo de cada sessao usada na execucao (descontando o que ja havia numa sessao reaberta). None = nada medido."""
+    sessoes = medicao.get("sessoes") or {}
+    if not sessoes:
+        return None
+    base = medicao.get("base") or {}
+    return round(sum(max(0.0, v - base.get(s, 0.0)) for s, v in sessoes.items()), 6)
+
+
 def lembrete_objetivo(tarefa: dict[str, Any]) -> str:
     """Turnos de acompanhamento chegam depois de muitas chamadas de ferramenta: a instrucao original 'afunda' no meio da
     janela, onde a atencao do modelo cai. Uma linha com o objetivo e os criterios evita o desvio (custo: ~30 tokens)."""
@@ -288,6 +315,7 @@ def montar_acompanhamento(adendos: list[str], tarefa: dict[str, Any] | None = No
 
 class ProvedorKiroAcp:
     mock = False
+    nome = "Kiro"
 
     def __init__(
         self,
@@ -306,6 +334,7 @@ class ProvedorKiroAcp:
         espera_mcp_s: float = 15.0,
     ) -> None:
         self.espera_mcp_s = espera_mcp_s
+        self.pool: Any | None = None  # PoolAcp (pool.py): processo reaproveitado entre execucoes; None = um processo por execucao
         self.subagentes = "propor"  # preferencia: desligado | propor | executar (divisao de tarefas complexas)
         self.ajustar_rota: Callable[[Rota, dict[str, Any]], Rota] | None = None  # roteamento que aprende (AprendizadoRotas)
         self.limite_contexto_reuso = 120_000  # tokens medidos pelo Kiro acima dos quais a retomada usa sessao nova + resumo
@@ -397,10 +426,46 @@ class ProvedorKiroAcp:
 
     # ganchos por agente (o Codex sobrescreve; ver adapters/codex_acp)
     def _ambiente_processo(self) -> dict[str, str] | None:
-        return None  # Kiro: ambiente do processo (login SSO do usuario); o perfil 'forja' nega leitura de segredos
+        """Ambiente LIMPO tambem para o Kiro (achado real: com o ambiente inteiro, um script do projeto rodado pelo agente imprimia
+        os tokens das integracoes, FORJA_INT_*). Sem APP_*/FORJA_* nem variaveis com cara de segredo. O login do Kiro fica nos
+        arquivos dele (conferido no kiro-cli 3.1.0: conecta e responde igual com o ambiente limpo)."""
+        return ambiente_limpo()
 
     def _sessao_carregada_segura(self, cliente: ClienteAcp) -> bool:
         return perfil_kiro.modo_para("execucao", cliente.modos()) is not None
+
+    def _abrir_cliente(self, cwd: Path, decisor: DecisorPermissao, on_update: Callable[[str, dict[str, Any]], None] | None,
+                       on_notificacao: Callable[[str, dict[str, Any]], None] | None) -> ClienteAcp:
+        """Cliente ACP iniciado e inicializado: do pool (processo ja aberto, ~2,4 s mais rapido) ou um processo novo."""
+        if self.pool is not None:
+            return self.pool.obter(self.comando, self._ambiente_processo(), str(cwd), decisor, on_update, on_notificacao,  # type: ignore[arg-type]
+                                   self.timeout_handshake)
+        cliente = ClienteAcp(self.comando, cwd=str(cwd), decisor_permissao=decisor, on_update=on_update,  # type: ignore[arg-type]
+                             on_notificacao=on_notificacao, env_base=self._ambiente_processo())
+        try:
+            cliente.iniciar()
+            cliente.inicializar(self.timeout_handshake)
+        except BaseException:
+            cliente.encerrar()
+            raise
+        return cliente
+
+    def _fechar_cliente(self, cliente: ClienteAcp | None, saudavel: bool) -> None:
+        if cliente is None:
+            return
+        if self.pool is not None:
+            self.pool.devolver(cliente, saudavel)
+        else:
+            cliente.encerrar()
+
+    def _regras_agente(self, tarefa: dict[str, Any]) -> str:
+        """Regras extras por agente no pedido. Kiro: nenhuma (o perfil 'forja' ja leva a regra completa de segredos)."""
+        return ""
+
+    def _vigiar(self, upd: dict[str, Any], raizes: list[Path]) -> str | None:
+        """Vigia de seguranca por chamada de ferramenta (motivo -> a Forja cancela o turno). Kiro: nada aqui, porque todo pedido de
+        permissao passa pelo mediador e o perfil nega segredos. O Codex sobrescreve (o sandbox dele le fora da pasta sem pedir)."""
+        return None
 
     def _presets(self, nivel: str) -> list[str]:
         return list(perfil_kiro.PRESETS.get(nivel, perfil_kiro.PRESETS["restrito"]))
@@ -442,7 +507,8 @@ class ProvedorKiroAcp:
         """Aplica perfil do papel, modelo e esforco da parte na sessao. Devolve a mensagem de bloqueio (falha fechada) ou None."""
         self._trocar_modo(cliente, sid, parte, ctl)
         modelo, esforco = self.configuracao_da_execucao(tarefa, parte)
-        if esforco_minimo and esforco and ORDEM_ESFORCO.index(esforco) < ORDEM_ESFORCO.index(esforco_minimo):
+        if (esforco_minimo and esforco in ORDEM_ESFORCO and esforco_minimo in ORDEM_ESFORCO
+                and ORDEM_ESFORCO.index(esforco) < ORDEM_ESFORCO.index(esforco_minimo)):
             esforco = esforco_minimo  # tarefa complexa: esforco minimo, mesmo que a parte esteja configurada mais baixa
         if not (modelo or esforco):
             return None
@@ -455,6 +521,17 @@ class ProvedorKiroAcp:
 
     # --------------------------------------------------------------------------------
     def executar(self, tarefa: dict[str, Any], checkpoint: dict[str, Any], ctl: ControleExecucao) -> ResultadoAgente:
+        """Executa e anexa os CREDITOS REAIS medidos pelo agente (Kiro manda `session_usage` acumulado por sessao a cada turno)."""
+        medicao: dict[str, Any] = {"sessoes": {}, "base": {}}
+        res = self._executar(tarefa, checkpoint, ctl, medicao)
+        creditos = medir_creditos(medicao)
+        if creditos is not None:
+            res.consumo.creditos = creditos
+            ctl.evento("agente.creditos", {"agente": self.id, "creditos": creditos, "sessoes": len(medicao["sessoes"])})
+        return res
+
+    def _executar(self, tarefa: dict[str, Any], checkpoint: dict[str, Any], ctl: ControleExecucao,
+                  medicao: dict[str, Any]) -> ResultadoAgente:
         t0 = time.monotonic()
         perfil = self._perfil()
         tarefa = {**tarefa, "perfil_texto": perfil.instrucoes()}
@@ -481,6 +558,15 @@ class ProvedorKiroAcp:
         cwd = trabalho[0] if trabalho else self.workspace  # projeto com pasta de trabalho: o Kiro trabalha nela
         if not trabalho:
             self.workspace.mkdir(parents=True, exist_ok=True)
+        raizes_vigia = [cwd, *trabalho[1:], *consulta]
+        seguranca_parada: list[bool] = []  # a parada foi por seguranca (vigia): a resposta parcial NAO e guardada
+        segredos_pastas: tuple[list[str], bool] = ([], True)
+        if trabalho or consulta:  # so NOMES (nada e lido): base do aviso de varredura e da regra do Codex
+            try:
+                segredos_pastas = segredos_nas_pastas([*trabalho, *consulta])
+            except OSError:
+                segredos_pastas = ([], False)
+            tarefa["_segredos_pastas"] = segredos_pastas
 
         partes: list[str] = []
         n_tools = 0
@@ -504,6 +590,7 @@ class ProvedorKiroAcp:
         def on_update(_sid: str, upd: dict[str, Any]) -> None:
             nonlocal n_tools
             if upd.get("sessionUpdate") == "session_info_update":
+                registrar_creditos(medicao, _sid, upd)
                 quebra = ((upd.get("_meta") or {}).get("kiro") or {}).get("breakdown") or {}
                 n = (quebra.get("tools") or {}).get("tokens")
                 if isinstance(n, int):
@@ -521,6 +608,14 @@ class ProvedorKiroAcp:
             elif tipo in ("tool_call", "tool_call_update"):
                 tid = str(upd.get("toolCallId") or f"sem-id-{len(observadas)}")
                 if tipo == "tool_call" and tid not in observadas and not motivo_parada:
+                    try:
+                        bloqueio_vigia = self._vigiar(upd, raizes_vigia)
+                    except Exception:  # noqa: BLE001 - vigia com erro = bloqueia (falha fechada)
+                        bloqueio_vigia = "vigia_indisponivel: a Forja nao conseguiu conferir a chamada"
+                    if bloqueio_vigia:
+                        motivo_parada.append(bloqueio_vigia)
+                        seguranca_parada.append(True)
+                        ctl.evento("agente.bloqueio_seguranca", {"agente": self.id, "motivo": bloqueio_vigia[:200]})
                     bruto0 = upd.get("rawInput") if isinstance(upd.get("rawInput"), dict) else {}
                     sequencia.append(f"{upd.get('title')}|{(caminhos_do_tool_call(upd) or [''])[0]}|{bruto0.get('command') or ''}")
                     if len(sequencia) > self.max_ferramentas:
@@ -547,22 +642,18 @@ class ProvedorKiroAcp:
                 )
 
         mediador = MediadorPermissoes(ctl, cwd, janela=self.janela_agrupamento, perfil=perfil, trabalho=trabalho[1:], consulta=consulta)
-        cliente = ClienteAcp(
-            self.comando,
-            cwd=str(cwd),
-            decisor_permissao=self._decisor or mediador.decidir,
-            on_update=on_update,
-            on_notificacao=on_notificacao,
-            env_base=self._ambiente_processo(),
-        )
+        mediador.pasta_com_segredos = bool(segredos_pastas[0]) or not segredos_pastas[1]
+        cliente: ClienteAcp | None = None
+        saudavel = True  # o processo pode voltar para o pool (pool.py)? Falha de transporte/tempo => encerra
         sid: str | None = None
         chamadas = 1
         try:
-            cliente.iniciar()
-            cliente.inicializar(self.timeout_handshake)
+            t_con = time.monotonic()
+            cliente = self._abrir_cliente(cwd, self._decisor or mediador.decidir, on_update, on_notificacao)
             ctl.evento(
                 "kiro.conectado",
-                {"agente": cliente.agent_info.get("name"), "versao": cliente.agent_info.get("version"), "mcp": self.usar_mcp and bool(self.mcp_servers)},
+                {"agente": cliente.agent_info.get("name"), "versao": cliente.agent_info.get("version"), "mcp": self.usar_mcp and bool(self.mcp_servers),
+                 "reaproveitado": cliente.reaproveitado, "ms": int((time.monotonic() - t_con) * 1000)},
             )
             mcps = [self._mcp_da_tarefa(m, tarefa) for m in self.mcp_servers] if self.usar_mcp else []
             presets = self._presets(perfil.nivel)
@@ -581,6 +672,7 @@ class ProvedorKiroAcp:
                     if trabalho and not self._sessao_carregada_segura(cliente):
                         raise AcpErro("sessao carregada sem o modo 'forja'")  # cai para sessao nova (que confere de novo)
                     sid, sessao_carregada = anterior, True
+                    medicao.setdefault("base", {})[sid] = (medicao.get("sessoes") or {}).get(sid, 0.0)  # o que ja havia na sessao
                     ctl.evento("kiro.sessao_carregada", {"reaproveitada": True})
                 except AcpErro as e:  # sessao expirada/inexistente: cai para sessao nova com o prompt completo (falha segura)
                     ctl.evento("kiro.sessao_carregada", {"reaproveitada": False, "motivo": sanitizar_texto(e.mensagem)[:120]})
@@ -628,7 +720,7 @@ class ProvedorKiroAcp:
             if trabalho and not sessao_carregada and tarefa.get("modo") != "estudo":
                 t_g = time.monotonic()  # preparacao padrao de tarefas com codigo: o grafo de funcoes (incremental, em cache)
                 try:
-                    grafo_texto = resumo_grafo(cwd, 150 if rota.nivel == "simples" else 400)
+                    grafo_texto = resumo_grafo(cwd, 150 if rota.nivel == "simples" else 400, com_ferramentas=bool(mcps))
                 except Exception as e:  # noqa: BLE001 - o grafo e ajuda; falhar nunca impede a execucao
                     log.warning("grafo de funcoes indisponivel: %s", type(e).__name__)
                 ctl.evento("kiro.grafo_funcoes", {"gerado": bool(grafo_texto), "tokens_estimados": estimar_tokens(grafo_texto),
@@ -643,7 +735,7 @@ class ProvedorKiroAcp:
                                  pendencias=[bloqueio, "Ajuste a configuracao de modelos no painel."])
             ctl.registrar_checkpoint({"sessao": "carregada" if sessao_carregada else "criada", "session_id": sid})
             dividir = planejar and self.subagentes != "desligado" and not (tarefa.get("entrada") or {}).get("subtarefa_de")
-            prompt = montar_prompt(tarefa, sessao_carregada=sessao_carregada) + (PLANEJAR if planejar else "") \
+            prompt = montar_prompt(tarefa, sessao_carregada=sessao_carregada) + self._regras_agente(tarefa) + (PLANEJAR if planejar else "") \
                 + (DIVIDIR if dividir else "") + (grafo_texto if grafo_texto else "") + (DICA_MCP if mcps else "")
             tokens_in = estimar_tokens(prompt)
             ctl.evento(
@@ -701,12 +793,15 @@ class ProvedorKiroAcp:
                 chamadas += 1
                 parada = self._aguardar(cliente, fut2, sid, ctl, parar)
             extras: dict[str, Any] = {}
-            if (parada == "end_turn" and trabalho and tarefa.get("modo") in ("alteracao_codigo", "verificacao") and rota.corrigir
+            # Verificacao REAL sempre que a tarefa altera codigo numa pasta de trabalho (inclusive no nivel 'simples': antes ela
+            # terminava 'concluida' sem a Forja rodar nenhum teste). O turno de CORRECAO pelo agente continua so nas rotas que corrigem.
+            if (parada == "end_turn" and trabalho and tarefa.get("modo") in ("alteracao_codigo", "verificacao")
                     and perfil.correcao == "uma_rodada" and not (ctl.cancelado() or ctl.pausado())):
-                bloq_r, prefixo = renovar_se_preciso("rodada de correcao")
+                bloq_r, prefixo = renovar_se_preciso("rodada de correcao") if rota.corrigir else (None, "")
                 if bloq_r is not None:
                     return bloq_r
-                extras = self._rodada_correcao(cliente, sid, ctl, perfil, cwd, observadas, partes, tarefa, parar, prefixo)
+                extras = self._rodada_correcao(cliente, sid, ctl, perfil, cwd, observadas, partes, tarefa, parar, prefixo,
+                                               corrigir=rota.corrigir)
                 chamadas += extras.get("chamadas", 0)
                 tokens_in += extras.get("tokens_in", 0)
                 parada = extras.get("parada") or parada
@@ -716,11 +811,13 @@ class ProvedorKiroAcp:
                 ctl.evento("kiro.contexto", {"tokens_por_categoria": dict(contexto_kiro), "total": sum(contexto_kiro.values())})
                 extras["contexto_kiro"] = sum(contexto_kiro.values())
             texto = redigir_segredos("".join(partes)) if partes else ""  # sem truncar: so redige segredos
-            if parada == "orcamento" or (motivo_parada and parada != "end_turn"):
+            if parada == "orcamento" or (motivo_parada and parada != "end_turn") or seguranca_parada:
+                dica = ("A chamada foi barrada por seguranca: use o Kiro para esta tarefa ou deixe so as pastas do projeto no pedido."
+                        if seguranca_parada else "Revise a tarefa (escopo menor ou criterios mais claros) e execute de novo.")
                 r = self._res("bloqueada", "Execucao interrompida pela Forja: " + motivo_parada[0].split(":", 1)[0].replace("_", " ") + ".", t0,
-                              pendencias=[motivo_parada[0], "Revise a tarefa (escopo menor ou criterios mais claros) e execute de novo."],
-                              chamadas=chamadas, tokens=(tokens_in, estimar_tokens(texto) if texto else 0))
-                if texto.strip():
+                              pendencias=[motivo_parada[0], dica], chamadas=chamadas,
+                              tokens=(tokens_in, estimar_tokens(texto) if texto else 0))
+                if texto.strip() and not seguranca_parada:  # parada por seguranca: o texto pode conter o que foi lido; nao guarda
                     r.artefatos.append(ArtefatoSaida(nome="resposta_parcial.md", tipo="texto", conteudo=texto))
                 r.mensagens = [MensagemSaida(tipo="verificacao", conteudo=f"A Forja interrompeu o agente: {motivo_parada[0]}.")]
                 return r
@@ -735,35 +832,49 @@ class ProvedorKiroAcp:
             r = self._concluir(parada, texto, cliente, n_tools, t0, mediador, chamadas, tokens_in, alegacoes, extras)
             if r.estado == "concluida":
                 self._verificar_criterios(r, tarefa, cwd, extras)
-                if extras.get("testes_ok") is False or any(p.startswith("criterios_nao_atendidos") for p in r.pendencias):
+                if extras.get("testes_ok") is False or any(p.startswith(("criterios_nao_atendidos", "testes_sem_prova")) for p in r.pendencias):
                     # entregue, mas a verificacao REAL nao passou: nao conta como concluida (o usuario decide: responder e retomar)
                     r.estado = "bloqueada"
                     r.resumo = "Trabalho entregue, mas a verificacao da Forja nao passou (testes ou criterios); veja as pendencias."
             return r
         except AcpAutenticacaoNecessaria as e:
+            saudavel = False
             return self._res(
                 "bloqueada",
-                "Autenticacao do Kiro necessaria.",
+                f"Autenticacao do {self.nome} necessaria.",
                 t0,
                 pendencias=["reautenticacao_necessaria: execute 'kiro-cli login' no desktop", e.mensagem],
             )
         except AcpCliAusente:
+            saudavel = False
             return self._res("bloqueada", "Kiro CLI nao encontrado.", t0, pendencias=["kiro_cli_ausente"])
         except AcpTimeout as e:
-            return self._res("falhou", f"Timeout: {e.mensagem}", t0)
+            saudavel = False
+            r = self._res("falhou", f"Timeout: {e.mensagem}", t0, chamadas=chamadas)
+            parcial = redigir_segredos("".join(partes)) if partes and not seguranca_parada else ""
+            if parcial.strip():  # o que ja foi pago nao se perde: a resposta parcial fica como artefato
+                r.artefatos.append(ArtefatoSaida(nome="resposta_parcial.md", tipo="texto", conteudo=parcial))
+                r.pendencias.append("resposta_parcial: o tempo acabou no meio do turno; veja resposta_parcial.md")
+            return r
         except AcpProtocoloNaoSuportado as e:
+            saudavel = False
             return self._res("falhou", e.mensagem, t0, pendencias=["protocolo_acp_incompativel"])
         except AcpDesconectado:
+            saudavel = False
             return self._res(
                 "falhou",
                 "Conexao ACP perdida durante a execucao.",
                 t0,
-                pendencias=[f"stderr: {cliente.stderr_recente()[:300]}"],
+                pendencias=[f"stderr: {cliente.stderr_recente()[:300] if cliente else ''}"],
             )
         except AcpErro as e:
+            saudavel = False
             return self._res("falhou", f"Erro ACP: {e.mensagem}", t0)
+        except BaseException:
+            saudavel = False
+            raise
         finally:
-            cliente.encerrar()
+            self._fechar_cliente(cliente, saudavel)
 
     # -------------------------------------------------------------------------------- turno avulso (status, resumos curtos)
     def turno_rapido(self, texto: str, parte: str = "status", timeout: float = 120.0) -> str:
@@ -780,11 +891,9 @@ class ProvedorKiroAcp:
             if upd.get("sessionUpdate") == "agent_message_chunk" and c.get("type") == "text" and sum(map(len, partes)) < 20_000:
                 partes.append(str(c.get("text", "")))
 
-        cliente = ClienteAcp(self.comando, cwd=str(pasta), decisor_permissao=lambda _p: None, on_update=on_update,
-                             env_base=self._ambiente_processo())
+        cliente = self._abrir_cliente(pasta, lambda _p: None, on_update, None)
+        saudavel = False
         try:
-            cliente.iniciar()
-            cliente.inicializar(self.timeout_handshake)
             sid = cliente.nova_sessao(str(pasta.resolve()), self.timeout_handshake, [], presets=self._presets("restrito"))
             self._modo_turno_rapido(cliente, sid, parte)
             modelo, esforco = self.configuracao_da_execucao({}, parte)
@@ -801,9 +910,10 @@ class ProvedorKiroAcp:
                     raise AcpTimeout("turno rapido excedeu o tempo")
                 time.sleep(0.05)
             fut.result()
+            saudavel = True
             return redigir_segredos("".join(partes)).strip()
         finally:
-            cliente.encerrar()
+            self._fechar_cliente(cliente, saudavel)
 
     def _aguardar_mcp(self, nomes: list[str], estado: dict[str, Any], tokens: list[int], ctl: ControleExecucao) -> tuple[bool, str]:
         """O Kiro conecta o MCP DEPOIS de responder session/new (~3 s). Prompt antes disso = agente sem as ferramentas.
@@ -849,18 +959,21 @@ class ProvedorKiroAcp:
     # -------------------------------------------------------------------------------- avaliador-otimizador (1 rodada)
     def _rodada_correcao(self, cliente: ClienteAcp, sid: str, ctl: ControleExecucao, perfil: PerfilTrabalho, cwd: Path,
                          observadas: dict[str, dict[str, Any]], partes: list[str], tarefa: dict[str, Any] | None = None,
-                         parar: Callable[[], str | None] | None = None, prefixo: str = "") -> dict[str, Any]:
+                         parar: Callable[[], str | None] | None = None, prefixo: str = "", corrigir: bool = True) -> dict[str, Any]:
         """A Forja roda os testes do projeto; se falharem, devolve a falha ao agente UMA vez e confere de novo.
 
         Ordem: testes afetados pelos arquivos alterados (rapido, so pytest) -> suite completa (a palavra final). Executar testes
         roda codigo do projeto: pede aprovacao (nivel 'total' ja aprova comandos dentro da pasta). Nada aqui confia no modelo."""
         extras: dict[str, Any] = {"evidencias": [], "artefatos": [], "pendencias": [], "observadas": []}
         cmd = verificacao.detectar(cwd)
-        if cmd is None:
-            ctl.evento("kiro.correcao", {"executada": False, "motivo": "projeto sem comando de testes reconhecido"})
+        lint_base = verificacao.detectar_lint(cwd)
+        if cmd is None and lint_base is None:
+            ctl.evento("kiro.correcao", {"executada": False, "motivo": "projeto sem comando de testes (nem lint) reconhecido"})
             return extras
+        o_que = " e o lint" if lint_base is not None else ""
         item = {"id": "forja-testes", "categoria": "executar_comando", "alvos": [str(cwd)], "risco": "medio", "sensivel": False,
-                "descricao": f"Rodar os testes do projeto ({cmd.texto}) para conferir o trabalho do agente"}
+                "descricao": (f"Rodar os testes do projeto ({cmd.texto}){o_que} para conferir o trabalho do agente" if cmd is not None
+                              else f"Rodar o lint do projeto ({lint_base.texto}) para conferir o trabalho do agente")}  # type: ignore[union-attr]
         if perfil.aprova_sozinho(item):
             ctl.evento("kiro.permissao_automatica", {"nivel": perfil.nivel, "categoria": item["categoria"], "descricao": item["descricao"]})
         elif "forja-testes" not in set(ctl.solicitar_aprovacao([item]).get("aprovados", [])):
@@ -875,7 +988,8 @@ class ProvedorKiroAcp:
                     alterados.append((p if p.is_absolute() else cwd / p).resolve().relative_to(cwd.resolve()).as_posix())
                 except (OSError, ValueError):
                     continue
-        afetados = arquivos_de_teste_afetados(cwd, alterados) if cmd.tipo == "pytest" and alterados else []
+        afetados = arquivos_de_teste_afetados(cwd, alterados) if cmd is not None and cmd.tipo == "pytest" and alterados else []
+        lint = verificacao.lint_dos_alterados(lint_base, alterados) if lint_base is not None else None
         timeout = float(perfil.testes_timeout_s)
         rodadas: list[verificacao.ResultadoTeste] = []
 
@@ -883,42 +997,64 @@ class ProvedorKiroAcp:
             r = verificacao.rodar(c, cwd, timeout, perfil.isolamento_testes)
             rodadas.append(r)
             ctl.evento("kiro.testes_forja", {"comando": r.comando[:300], "ok": r.ok, "codigo": r.codigo, "segundos": r.segundos,
-                                             "tempo_esgotado": r.tempo_esgotado, "falhas": len(r.falhas), "isolamento": r.isolamento})
-            extras["observadas"].append({"tipo": "execute", "status": "completed" if r.ok else "failed", "titulo": "Forja: testes",
-                                         "comando": r.comando})
+                                             "tempo_esgotado": r.tempo_esgotado, "falhas": len(r.falhas), "isolamento": r.isolamento,
+                                             "tipo": c.tipo})
+            extras["observadas"].append({"tipo": "execute", "status": "completed" if r.ok else "failed",
+                                         "titulo": "Forja: lint" if c.tipo == "lint" else "Forja: testes", "comando": r.comando})
             return r
 
-        primeira = rodar(cmd.com_alvos(afetados)) if afetados else rodar(cmd)
-        if primeira.ok and afetados:
-            primeira = rodar(cmd)  # os afetados passaram: a suite completa da a palavra final
-        final = primeira
-        if not primeira.ok and not primeira.tempo_esgotado and not (ctl.cancelado() or ctl.pausado()):
-            pedido = (prefixo + lembrete_objetivo(tarefa or {}) + f"A Forja rodou `{primeira.comando}` e os testes FALHARAM:\n{primeira.resumo[:3000]}\n\n"
-                      "Corrija a causa (esta e a unica rodada de correcao). Nao desative nem apague testes. Ao terminar, descreva "
-                      "em '## Evidências' o que mudou; a Forja vai rodar os testes de novo.")
-            partes.append("\n\n---\n### Correção após os testes da Forja\n")
+        primeira: verificacao.ResultadoTeste | None = None
+        if cmd is not None:
+            primeira = rodar(cmd.com_alvos(afetados)) if afetados else rodar(cmd)
+            if primeira.ok and afetados:
+                primeira = rodar(cmd)  # os afetados passaram: a suite completa da a palavra final
+        lint1 = rodar(lint) if lint is not None else None
+        final, lint_final = primeira, lint1
+        falhou_testes = primeira is not None and not primeira.ok and not primeira.tempo_esgotado
+        falhou_lint = lint1 is not None and not lint1.ok and not lint1.tempo_esgotado
+        if corrigir and (falhou_testes or falhou_lint) and not (ctl.cancelado() or ctl.pausado()):
+            blocos = []
+            if falhou_testes:
+                blocos.append(f"A Forja rodou `{primeira.comando}` e os testes FALHARAM:\n{primeira.resumo[:3000]}")  # type: ignore[union-attr]
+            if falhou_lint:
+                blocos.append(f"O lint do projeto nos arquivos que voce alterou acusou problemas:\n{lint1.resumo[:1500]}")  # type: ignore[union-attr]
+            pedido = (prefixo + lembrete_objetivo(tarefa or {}) + "\n\n".join(blocos) + "\n\n"
+                      "Corrija a causa (esta e a unica rodada de correcao). Nao desative nem apague testes nem regras de lint. Ao terminar, "
+                      "descreva em '## Evidências' o que mudou; a Forja vai conferir de novo.")
+            partes.append("\n\n---\n### Correção após os testes da Forja\n" if falhou_testes and not falhou_lint
+                          else "\n\n---\n### Correção após a conferência da Forja (testes e lint)\n")
             extras["tokens_in"] = estimar_tokens(pedido)
             fut = cliente.requisitar("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": pedido}]})
             extras["chamadas"] = 1
             extras["parada"] = self._aguardar(cliente, fut, sid, ctl, parar)
             if extras["parada"] == "end_turn":
-                final = rodar(cmd)
-        regressao = len(rodadas) > 1 and len(final.falhas) > len(primeira.falhas)
-        ctl.evento("kiro.correcao", {"executada": True, "comando": cmd.texto, "alterados": len(alterados), "afetados": len(afetados), "rodadas": len(rodadas),
-                                     "aprovado_final": final.ok, "corrigiu": (not primeira.ok) and final.ok, "regressao": regressao})
-        extras["evidencias"].append(EvidenciaSaida(
-            tipo="testes_forja", simulada=False, artefato="testes_forja.txt",
-            resumo=(f"A Forja rodou {final.comando}: {'PASSOU' if final.ok else 'FALHOU'} em {final.segundos}s"
-                    + (" (corrigido na rodada de correção)" if final.ok and not primeira.ok else "")
-                    + (f"; {len(afetados)} arquivo(s) de teste afetado(s) rodados antes" if afetados else ""))[:1900]))
-        extras["artefatos"].append(ArtefatoSaida(nome="testes_forja.txt", tipo="texto", conteudo="\n\n".join(
-            f"$ {r.comando}\n(codigo {r.codigo}, {r.segundos}s{', TEMPO ESGOTADO' if r.tempo_esgotado else ''})\n{r.resumo}\n--- saida (cauda) ---\n{r.saida}"
-            for r in rodadas)))
-        extras["testes_ok"] = final.ok
-        if not final.ok:
-            extras["pendencias"].append(f"testes_falhando: {final.comando} ({'tempo esgotado' if final.tempo_esgotado else f'{len(final.falhas)} falha(s)'})")
-        if regressao:
-            extras["pendencias"].append("regressao: a correcao aumentou o numero de falhas")
+                final = rodar(cmd) if cmd is not None else None
+                lint_final = rodar(lint) if lint is not None else None
+        if final is not None and primeira is not None:
+            regressao = len(rodadas) > 1 and len(final.falhas) > len(primeira.falhas)
+            ctl.evento("kiro.correcao", {"executada": True, "comando": cmd.texto, "alterados": len(alterados), "afetados": len(afetados),  # type: ignore[union-attr]
+                                         "rodadas": len(rodadas), "aprovado_final": final.ok, "corrigiu": (not primeira.ok) and final.ok,
+                                         "regressao": regressao, "lint_ok": None if lint_final is None else lint_final.ok})
+            extras["evidencias"].append(EvidenciaSaida(
+                tipo="testes_forja", simulada=False, artefato="testes_forja.txt",
+                resumo=(f"A Forja rodou {final.comando}: {'PASSOU' if final.ok else 'FALHOU'} em {final.segundos}s"
+                        + (" (corrigido na rodada de correção)" if final.ok and not primeira.ok else "")
+                        + (f"; {len(afetados)} arquivo(s) de teste afetado(s) rodados antes" if afetados else ""))[:1900]))
+            extras["testes_ok"] = final.ok
+            if not final.ok:
+                extras["pendencias"].append(f"testes_falhando: {final.comando} ({'tempo esgotado' if final.tempo_esgotado else f'{len(final.falhas)} falha(s)'})")
+            if regressao:
+                extras["pendencias"].append("regressao: a correcao aumentou o numero de falhas")
+        if lint_final is not None:
+            extras["evidencias"].append(EvidenciaSaida(tipo="lint_forja", simulada=False, artefato="testes_forja.txt",
+                                                       resumo=f"A Forja rodou o lint ({lint_final.comando[:200]}): "
+                                                              f"{'sem problemas' if lint_final.ok else lint_final.resumo[:300]}"[:1900]))
+            if not lint_final.ok:  # registra, mas nao bloqueia sozinho (o veredito de 'feito' e dos testes e criterios)
+                extras["pendencias"].append(f"lint_com_problemas: {len(lint_final.falhas) or 'veja'} problema(s) nos arquivos alterados")
+        if rodadas:
+            extras["artefatos"].append(ArtefatoSaida(nome="testes_forja.txt", tipo="texto", conteudo="\n\n".join(
+                f"$ {r.comando}\n(codigo {r.codigo}, {r.segundos}s{', TEMPO ESGOTADO' if r.tempo_esgotado else ''})\n{r.resumo}\n--- saida (cauda) ---\n{r.saida}"
+                for r in rodadas)))
         return extras
 
     @staticmethod
@@ -954,6 +1090,9 @@ class ProvedorKiroAcp:
             r.pendencias.append(f"criterios_nao_atendidos: {len(falhos)} (veja a evidencia 'criterios_forja')")
         if sem_prova:
             r.pendencias.append(f"criterios_sem_prova: {len(sem_prova)}")
+        if any(e["tipo"] == "testes" for e in sem_prova):  # pediu 'testes passam' e a Forja nao conseguiu rodar: nao conta como feito
+            r.pendencias.append("testes_sem_prova: o criterio pede testes passando, mas a Forja nao conseguiu roda-los "
+                                "(projeto sem comando de testes reconhecido, execucao nao aprovada ou conferencia desligada)")
 
     @staticmethod
     def _mensagens(b: Briefing, texto: str) -> list[MensagemSaida]:
@@ -1032,7 +1171,7 @@ class ProvedorKiroAcp:
             return r
         r = self._res(
             "concluida",
-            f"Resposta do Kiro recebida (stopReason={parada}).",
+            f"Resposta do {self.nome} recebida (stopReason={parada}).",
             t0,
             chamadas=chamadas,
             tokens=(tokens_in, tokens_out),

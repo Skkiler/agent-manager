@@ -1,5 +1,6 @@
 """Catalogo de ferramentas N0 (orientacao mestra, secao 13): contrato, validacao de entrada, raizes autorizadas,
-fallback e custo observado. Nenhuma ferramenta executa shell, acessa a rede ou escreve em disco."""
+fallback e custo observado. Nenhuma ferramenta usa shell, escreve em disco ou roda codigo do projeto. Excecao controlada:
+`git.ler` executa o `git` (argumentos fixos, sem shell, so leitura, ambiente limpo). Rede: so as ferramentas de integracao."""
 
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, Validation
 from forja.dominio.erros import ErroDominio, NaoEncontrado, ValidacaoDominio
 from forja.ferramentas.agenda import ler_agenda
 from forja.ferramentas.amostra import amostra_arquivo
+from forja.ferramentas.busca_texto import buscar_texto
 from forja.ferramentas.caminhos import resolver_dentro
 from forja.ferramentas.contrato import ResultadoFerramenta, montar
 from forja.ferramentas.conversor import converter
@@ -23,12 +25,13 @@ from forja.ferramentas.diff import resumir_diff
 from forja.ferramentas.email_mbox import ler_mbox
 from forja.ferramentas.esquema import inspecionar_sqlite
 from forja.ferramentas.estrutura import estrutura_codigo
+from forja.ferramentas.git_leitura import ler_git
 from forja.ferramentas.logs import agrupar_falhas
 from forja.ferramentas.mapa import mapa_repositorio
 from forja.ferramentas.orcamento import orcar_tokens
 from forja.ferramentas.outline import outline_arquivo
 from forja.ferramentas.segredos import varrer
-from forja.ferramentas.testes import resumir_pytest
+from forja.ferramentas.testes import resumir_testes
 from forja.ferramentas.vault import indexar_vault
 from forja.seguranca.pastas import PoliticaPastas, aplicar, proibido
 
@@ -95,6 +98,27 @@ class EntEstrutura(_Base):
         pattern=r"^(mapa|definicao|referencias|dependencias|impacto|testes_afetados|funcao|grafo)$")] = "mapa"
     alvo: Annotated[str, StringConstraints(max_length=300)] = ""
     limite: int = Field(30, ge=1, le=100)
+
+
+class EntBuscar(_Base):
+    caminho: Caminho = "."
+    padrao: Annotated[str, StringConstraints(min_length=1, max_length=200)]
+    regex: bool = False
+    ignorar_maiusculas: bool = True
+    incluir: Annotated[str, StringConstraints(max_length=60, pattern=r"^[A-Za-z0-9_.*?\-\[\]]*$")] = ""
+    contexto: int = Field(0, ge=0, le=3)
+    limite: int = Field(50, ge=1, le=200)
+
+
+class EntGit(_Base):
+    caminho: Caminho = "."
+    operacao: Annotated[str, StringConstraints(pattern=r"^(status|log|diff|blame|show|branches)$")] = "status"
+    ref: Annotated[str, StringConstraints(max_length=120)] = ""
+    ref2: Annotated[str, StringConstraints(max_length=120)] = ""
+    arquivo: Annotated[str, StringConstraints(max_length=500)] = ""
+    inicio: int = Field(1, ge=1, le=1_000_000)
+    fim: int = Field(0, ge=0, le=1_000_000)
+    limite: int = Field(20, ge=1, le=100)
 
 
 class EntJiraBuscar(_Base):
@@ -221,6 +245,7 @@ class EntLogs(_Base):
 class EntPytest(_Base):
     texto: Texto
     limite: int = Field(10, ge=1, le=30)
+    formato: Annotated[str, StringConstraints(pattern=r"^(auto|pytest|jest|vitest|go|cargo)$")] = "auto"
 
 
 class EntConverter(_Base):
@@ -314,6 +339,15 @@ def _outline(e: EntCaminho, c: Contexto) -> ResultadoFerramenta:
     return r
 
 
+def _estrutura(e: EntEstrutura, c: Contexto) -> ResultadoFerramenta:
+    """Pasta sem codigo indexavel (nenhum arquivo no indice): aciona o plano B (`repo.mapa`), antes declarado e nunca disparado."""
+    raiz, rel = c.resolver(e.caminho)
+    r = estrutura_codigo(raiz, rel, e.operacao, e.alvo, e.limite)
+    if e.operacao == "mapa" and r.resumo.startswith("0 arquivo"):
+        raise SemResultado("indice vazio")
+    return r
+
+
 def _arquivo(fn: Callable[..., ResultadoFerramenta]) -> Rodar:
     def rodar(e: Any, c: Contexto) -> ResultadoFerramenta:
         raiz, rel = c.resolver(e.caminho)
@@ -330,8 +364,14 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
     Ferramenta("codigo.estrutura", "Indice estrutural: mapa dos arquivos centrais, onde um simbolo e definido, quem o usa, "
                "de quem um arquivo depende, impacto de mudar um simbolo, quais testes rodar e o GRAFO DE FUNCOES ('funcao': assinatura, "
                "tipos, retorno, excecoes, quem chama e o que chama; 'grafo': nos e arestas). Use antes de abrir arquivos inteiros.",
-               EntEstrutura, _arquivo(estrutura_codigo), True,
+               EntEstrutura, _estrutura, True,
                fallback="repo.mapa"),
+    Ferramenta("codigo.buscar", "Busca de texto ou regex em varios arquivos (arquivo:linha: trecho), PULANDO segredos (.env, chaves), "
+               "dependencias e binarios. Use no lugar de grep -r / Select-String / rg pelo shell.", EntBuscar,
+               _arquivo(buscar_texto), True),
+    Ferramenta("git.ler", "Git somente leitura e resumido: status, log, diff (com analise de risco), blame, show (--stat) e branches. "
+               "Arquivos de segredo nunca aparecem. Use no lugar de git status/diff/log pelo shell.", EntGit,
+               _arquivo(ler_git), True),
     Ferramenta("repo.mapa", "Linguagens, pastas, entradas e configuracao de um repositorio.", EntMapa,
                _arquivo(mapa_repositorio), True),
     Ferramenta("segredos.varrer", "Possiveis segredos (arquivo:linha, sem o valor).", EntMapa, _arquivo(varrer), True),
@@ -374,8 +414,9 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
                lambda e, c: c.integracao("busca_web", "ler_pagina", e.model_dump()), integracao="busca_web"),
     Ferramenta("env.verificar", "Valida um .env sem revelar valores: existe/vazia/formato/igual-a, e o que falta vs .env.example.", EntEnv,
                _env, True),
-    Ferramenta("testes.resumir_saida", "Veredito e causa das falhas a partir da saida do pytest.", EntPytest,
-               lambda e, c: resumir_pytest(e.texto, e.limite)),
+    Ferramenta("testes.resumir_saida", "Veredito e falhas a partir da saida do pytest, jest, vitest, go test ou cargo test "
+               "(formato detectado sozinho).", EntPytest,
+               lambda e, c: resumir_testes(e.texto, e.formato, e.limite)),
     Ferramenta("git.diff_analisar", "Arquivos, areas e riscos de um diff unificado.", EntTexto,
                lambda e, c: resumir_diff(e.texto)),
     Ferramenta("logs.agrupar_falhas", "Erros de um log agrupados por assinatura.", EntLogs,
@@ -462,7 +503,7 @@ class Catalogo:
             ini = time.perf_counter()
             try:
                 with aplicar(pol):
-                    r = usada.rodar(dados if usada is f else usada.entrada(**_compat(dados)), ctx)
+                    r = usada.rodar(dados if usada is f else usada.entrada(**_compat(dados, usada.entrada)), ctx)
             except SemResultado:
                 self._registrar(usada.id, (time.perf_counter() - ini) * 1000, None)
                 alvo = self.ferramentas.get(usada.fallback or "")
@@ -486,6 +527,7 @@ class Catalogo:
             return saida
 
 
-def _compat(dados: BaseModel) -> dict[str, Any]:
-    """Entrada do fallback: aproveita os campos que a ferramenta original e a de fallback compartilham."""
-    return dados.model_dump()
+def _compat(dados: BaseModel, alvo: type[BaseModel]) -> dict[str, Any]:
+    """Entrada do fallback: SO os campos que a ferramenta de fallback aceita (as entradas sao extra='forbid'; antes o fallback
+    de codigo.estrutura -> repo.mapa quebraria com erro interno por levar 'operacao', 'alvo' e 'limite')."""
+    return {k: v for k, v in dados.model_dump().items() if k in alvo.model_fields}

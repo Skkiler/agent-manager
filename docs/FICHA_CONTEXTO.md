@@ -1,6 +1,6 @@
 # Ficha de contexto: Forja (para abrir um chat novo)
 
-Atualizada em 2026-11-13. Esta ficha substitui o histórico do chat anterior: leia-a inteira antes de agir. Não contém segredos.
+Atualizada em 2026-11-18. Esta ficha substitui o histórico do chat anterior: leia-a inteira antes de agir. Não contém segredos.
 
 ## 1 O projeto
 
@@ -25,7 +25,7 @@ Atualizada em 2026-11-13. Esta ficha substitui o histórico do chat anterior: le
 | `.kiro/specs/forja-fundacao/{requirements,design,tasks}.md` | Spec; `tasks.md` tem os itens (último: 4.49; Fase 9 = 9.1-9.19). |
 | `docs/STATUS_IMPLEMENTACAO.md` | Estado real, testes executados, pendências. **Atualizar ao fim de cada fase.** |
 | `docs/adr/0001…0023` | Decisões. ADR-023 = master, Codex, contexto, escopo, status, perfis. |
-| `docs/REFERENCIAS_VISUAIS.md` | Referências de interface. |
+| `docs/RELATORIO_AVALIACAO_2026-11-18.md` | Avaliação geral, achados de segurança/eficiência, ferramentas e direção visual. |
 | `README.md` | Uso completo: fast-start, sumário e seções numeradas estilo ABNT (1, 1.1, 1.1.1). |
 
 ## 3 Regras do projeto e preferências do usuário
@@ -37,7 +37,8 @@ Atualizada em 2026-11-13. Esta ficha substitui o histórico do chat anterior: le
   conhecimento, código); ferramenta determinística antes de LLM; contratos tipados (Pydantic), logs sanitizados, testes reais.
 - **Aprovações**: pedir pela ação em linguagem natural, agrupadas, aceitando adendo; declarar risco em ações de alto risco.
 - **Já autorizado pelo usuário**: push para `main`; qualquer teste ("bandeira verde"); uso do Kiro empresarial para desenvolver.
-  **Não autorizado ainda**: usar o Codex com código de empresa (conferir governança antes).
+  **Não autorizado ainda**: usar o Codex com código de empresa (conferir governança antes). Desde 2026-11-18 o Codex vem
+  **ligado por padrão** (pedido do usuário) com o roteador `inteligente`: para projetos com código de empresa, use `so_kiro`.
 - **Commit**: `git -c user.name=Kjo commit ...` (pre-commit roda gitleaks, ruff e checagens; nunca `--no-verify`). Depois do push,
   conferir o CI (`https://api.github.com/repos/Skkiler/agent-manager/actions/runs?per_page=1`; a API pública tem limite de taxa).
 - **Ao terminar**: atualizar `docs/STATUS_IMPLEMENTACAO.md` com os testes realmente executados; relatório final **em português**.
@@ -75,9 +76,18 @@ Atualizada em 2026-11-13. Esta ficha substitui o histórico do chat anterior: le
   Turno real "pronto" em 5,6 s; tarefa de análise real em pasta sintética concluída em 22,5 s em `read-only`. Na Forja hospedada o
   Codex aparece `configurado: true`, `ativo: false` (preferência `codex_ativo` desligada; ligar em Config > Consumo).
 
+- **Etapa de 2026-11-18 (ADR-024)**: avaliação geral (`docs/RELATORIO_AVALIACAO_2026-11-18.md`) e correções aprovadas:
+  lista única de segredos (`seguranca/sensiveis.py`), classificador de comandos reforçado, varredura em pasta com segredo sempre
+  pergunta, **cópia sem segredos** (`orquestracao/copia_segura.py`), regra de segredos no perfil e em todo pedido, ambiente limpo no
+  Kiro, **vigia do Codex** (cancela leitura fora da pasta), **verificação sempre** em tarefa de código (+ lint declarado),
+  **créditos reais** (`consumo.creditos`), **processos reaproveitados** (`adapters/kiro_acp/pool.py`), esforço por parte no Codex,
+  **roteador inteligente** (padrão; Codex ligado por padrão), ferramentas `codigo.buscar` e `git.ler`.
+  O usuário decidiu: painel continua em JS puro sem build; oficina com arte própria; próximas etapas = fases visuais V1-V4.
+
 ## 5 Testes e verificações (último estado)
 
-- `python -m pytest -p no:cacheprovider -o addopts="" -q` -> **1119 passed** (~4,5 min).
+- `python -m pytest -p no:cacheprovider -o addopts="" -q` -> **1186 passed** (~3 min).
+- Testes reais desta etapa com Kiro e Codex: scripts e resultados em `%TEMP%\forja_sonda\` (fora do Git, dados fictícios).
 - `python -m ruff check forja tests scripts` -> ok; `node --check` nos 21 arquivos JS -> ok.
 - Navegador real: `inspecionar_painel.py --interagir --a11y` -> 0 problemas (inclui o fluxo do master); `--login --a11y` -> 12 OK.
 - `benchmark_busca.py` global 0.94/0.87/0.89 (recall@5/MRR/nDCG@5).
@@ -85,9 +95,9 @@ Atualizada em 2026-11-13. Esta ficha substitui o histórico do chat anterior: le
 
 ## 6 O que falta
 
-1. Conferir o CI do commit `2ab8719` (ajustes do Codex + esta ficha), já enviado ao `main`.
-2. Ligar o Codex de fato (decisão do usuário + governança para código de empresa) e medir uso contínuo, custo e `equilibrar`.
-3. Passar o MCP da Forja (memória, caderno) também ao Codex (hoje só o Kiro recebe).
+1. Fases visuais V1-V4 (seção 8 do relatório): layout de IDE, caixa "Precisa de você", diff/revisão, Oficina 2.0 (arte própria).
+2. Codex ligado por padrão (decisão do usuário): medir uso contínuo e o roteador `inteligente`; governança para código de empresa.
+3. Passar o MCP da Forja (memória, caderno) também ao Codex (hoje só o Kiro recebe); ler o uso/créditos do Codex.
 4. Medir com o Kiro real: taxa de pausas por escopo (falso positivo) e economia da renovação de sessão.
 5. Lacunas antigas (ver STATUS): auditoria com leitor de tela, embeddings só se superarem o baseline (4.9), pool de processos ACP.
 

@@ -116,6 +116,50 @@ class ClienteAcp:
         self._tool_calls: dict[str, dict[str, Any]] = {}
         self.permissoes_vistas: list[dict[str, Any]] = []
         self._fechado = False
+        # Reaproveitamento (pool.py): o processo pode ter atendido OUTRA execucao antes. So as sessoes desta execucao valem:
+        # atualizacoes de outra sessao sao descartadas e pedidos de permissao dela sao negados.
+        self._sessoes: set[str] = set()
+        self._criando = False
+        self.filtrar_sessoes = False
+        self.usou_mcp = False
+        self.usos = 0
+        self.reaproveitado = False
+
+    def reatribuir(self, decisor_permissao: DecisorPermissao, on_update: Atualizacao | None,
+                   on_notificacao: Callable[[str, dict[str, Any]], None] | None) -> None:
+        """Entrega um processo JA iniciado a uma nova execucao: callbacks novos e estado por execucao zerado."""
+        with self._mu:
+            self._tool_calls.clear()
+        self._decisor, self._on_update, self._on_notificacao = decisor_permissao, on_update, on_notificacao
+        self.permissoes_negadas = self.permissoes_aprovadas = 0
+        self.permissoes_vistas = []
+        self.opcoes_sessao = []
+        self._sessoes = set()
+        self.usou_mcp = False
+        self.filtrar_sessoes = True
+        for atributo in ("modo_forja", "so_leitura_forja"):  # estado POR sessao gravado pelos provedores
+            self.__dict__.pop(atributo, None)
+
+    def vivo(self) -> bool:
+        return self._proc is not None and self._proc.poll() is None and not self._fechado
+
+    def fechar_sessoes(self, timeout: float = 10.0) -> bool:
+        """Fecha as sessoes desta execucao (session/close: o agente libera MCPs e memoria). False = nao deu (nao reaproveitar)."""
+        if (self.capacidades.get("sessionCapabilities") or {}).get("close") is None:
+            sem_mcp = not self.usou_mcp  # sem session/close, MCPs abertos pela sessao ficariam vivos no processo
+            self._sessoes.clear()
+            return sem_mcp
+        ok = True
+        for sid in list(self._sessoes):
+            try:
+                self.chamar("session/close", {"sessionId": sid}, timeout)
+            except AcpErro:
+                ok = False
+        self._sessoes.clear()
+        return ok
+
+    def _da_execucao(self, sid: str) -> bool:
+        return not self.filtrar_sessoes or self._criando or sid in self._sessoes
 
     # ---------------------------------------------------------------- ciclo de vida
     def iniciar(self) -> None:
@@ -213,6 +257,8 @@ class ClienteAcp:
             if msg["method"] == "session/update":
                 p = msg.get("params") or {}
                 upd = p.get("update") or {}
+                if not self._da_execucao(str(p.get("sessionId", ""))):
+                    return  # sessao de uma execucao anterior (processo reaproveitado): nao e desta
                 self._memorizar_tool_call(upd)
                 if self._on_update:
                     try:
@@ -256,6 +302,11 @@ class ClienteAcp:
     def _atender_pedido(self, msg: dict[str, Any]) -> None:
         """Pedidos do agente ao cliente. TODA requisicao recebe resposta (nenhuma fica pendente)."""
         metodo, rid, params = msg["method"], msg["id"], msg.get("params") or {}
+        if metodo == "session/request_permission" and not self._da_execucao(str(params.get("sessionId", ""))):
+            escolhida = decisor_negar_tudo(params)  # pedido de uma sessao que nao e desta execucao: sempre negado
+            self._responder(rid, {"outcome": {"outcome": "selected", "optionId": escolhida}} if escolhida
+                            else {"outcome": {"outcome": "cancelled"}})
+            return
         if metodo == "session/request_permission":
             params = self._enriquecer(params)
             titulo = str((params.get("toolCall") or {}).get("title", ""))
@@ -342,10 +393,16 @@ class ClienteAcp:
         params: dict[str, Any] = {"cwd": cwd, "mcpServers": mcp_servers or []}
         if presets:
             params["_meta"] = {"kiro": {"policyPreset": list(presets)}}  # presets de permissao do Kiro (so "allow"; deny do perfil vence)
-        res = self.chamar("session/new", params, timeout)
+        self._criando = True
+        try:
+            res = self.chamar("session/new", params, timeout)
+        finally:
+            self._criando = False
         sid = res.get("sessionId")
         if not isinstance(sid, str) or not sid:
             raise AcpErro("Resposta de session/new sem sessionId.")
+        self._sessoes.add(sid)
+        self.usou_mcp = self.usou_mcp or bool(mcp_servers)
         self.opcoes_sessao = [o for o in res.get("configOptions") or [] if isinstance(o, dict)]
         return sid
 
@@ -362,6 +419,8 @@ class ClienteAcp:
         params: dict[str, Any] = {"sessionId": session_id, "cwd": cwd, "mcpServers": mcp_servers or []}
         if presets:
             params["_meta"] = {"kiro": {"policyPreset": list(presets)}}
+        self._sessoes.add(session_id)  # antes da chamada: o replay do historico chega ANTES da resposta
+        self.usou_mcp = self.usou_mcp or bool(mcp_servers)
         res = self.chamar("session/load", params, timeout)
         self.opcoes_sessao = [o for o in res.get("configOptions") or [] if isinstance(o, dict)]
         return session_id

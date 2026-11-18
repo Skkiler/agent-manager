@@ -19,6 +19,7 @@ from forja.adapters.agentes_mock.mock import AgenteMock
 from forja.adapters.codex_acp.provedor import ProvedorCodexAcp, resolver_codex
 from forja.adapters.kiro_acp import perfil_kiro
 from forja.adapters.kiro_acp.modelos import CatalogoModelos
+from forja.adapters.kiro_acp.pool import PoolAcp
 from forja.adapters.kiro_acp.provedor import ProvedorKiroAcp, montar_comando, resolver_cli
 from forja.adapters.sqlite import tabelas as T
 from forja.adapters.sqlite.banco import criar_engines, migrar
@@ -42,6 +43,7 @@ from forja.orquestracao.caderno import Caderno
 from forja.orquestracao.configuracao_servico import ConfiguracaoServico
 from forja.orquestracao.contas_servico import ContasServico
 from forja.orquestracao.coordenacao import CoordenacaoServico
+from forja.orquestracao.copia_segura import CopiasSemSegredos
 from forja.orquestracao.custos import CustosServico
 from forja.orquestracao.estudos import EstudoServico
 from forja.orquestracao.grafo_servico import GrafoServico
@@ -171,6 +173,13 @@ def _melhorias_orquestrador(app: FastAPI, cfg: Configuracoes, servico: Servico) 
     prefs, repo, prov = app.state.prefs, servico.repo, servico.provedor
     servico.restauracao = app.state.restauracao = PontosRestauracao(repo, cfg.artefatos_dir.parent / "pontos")
     servico.isolamento = app.state.isolamento = Isolamento(repo)
+    servico.copias = app.state.copias = CopiasSemSegredos()  # pasta com .env + autonomia: o agente trabalha numa copia sem segredos
+    prefs.registrar_aplicador("copia_sem_segredos", lambda v: setattr(servico.copias, "modo", str(v)))
+    app.state.pool_acp = PoolAcp()  # processos do Kiro/Codex reaproveitados entre tarefas (pool.py)
+    for ag in agentes_reais(prov):
+        if ag.comando:
+            ag.pool = app.state.pool_acp
+    prefs.registrar_aplicador("reaproveitar_processos", lambda v: setattr(app.state.pool_acp, "ativo", bool(v)))
     app.state.kanban.restauracao = app.state.restauracao
     app.state.telemetria = Telemetria(repo, cfg.logs_dir, cfg.app_otel_endpoint)
     app.state.aprendizado = AprendizadoRotas(repo)
@@ -230,6 +239,11 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
         app.state.servico.recuperar()
         app.state.acoes_externas.recuperar()
         app.state.organizador.iniciar()  # organizacao do segundo cerebro em segundo plano (so sugere; preferencia)
+        kiro_real = kiro_de(app.state.servico.provedor)
+        if kiro_real is not None and kiro_real.comando and app.state.pool_acp.ativo:  # 1a tarefa sem os ~2 s de abrir o processo
+            kiro_real.workspace.mkdir(parents=True, exist_ok=True)
+            app.state.pool_acp.aquecer(kiro_real.comando, kiro_real._ambiente_processo(), str(kiro_real.workspace),
+                                       kiro_real.timeout_handshake)
         log.info("servidor pronto", extra={"evento": "servidor.pronto"})
         try:
             yield
@@ -237,6 +251,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
             app.state.encerrando.set()
             app.state.organizador.parar()
             app.state.servico.encerrar()
+            app.state.pool_acp.encerrar_todos()
 
     app = FastAPI(title="Forja", version=__import__("forja").__version__, lifespan=lifespan,
                   docs_url="/api/docs", openapi_url="/api/openapi.json")

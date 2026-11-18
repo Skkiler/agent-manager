@@ -99,8 +99,10 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         "Depois que o agente altera código, a Forja roda os testes do projeto (pytest, npm test, cargo ou go, conforme o projeto declara). "
         "Se falharem, devolve a falha ao agente UMA vez para ele corrigir e roda de novo. O resultado vira evidência real. "
         "Rodar testes executa código do projeto: pede sua aprovação, exceto no nível 'Acesso total'.", "uma_rodada",
-        (Exemplo("Desligada", "desligada", "A Forja não roda nada; vale a palavra do agente (marcada como não verificada)."),
-         Exemplo("Uma rodada", "uma_rodada", "Testes conferidos de verdade; no máximo um turno extra do agente.")),
+        (Exemplo("Desligada", "desligada", "A Forja não roda nada; vale a palavra do agente (marcada como não verificada). Critério "
+                 "'testes passam' fica sem prova e a tarefa não conta como concluída."),
+         Exemplo("Uma rodada", "uma_rodada", "Testes conferidos de verdade em TODA tarefa que altera código (inclusive as simples); "
+                 "nas tarefas normais e complexas, no máximo um turno extra do agente para corrigir.")),
         se_ligar="Mais confiança no resultado; custa o tempo dos testes e, se falharem, um turno do agente.",
         se_desligar="Mais rápido e barato; 'os testes passaram' fica sem prova.", risco="medio",
         opcoes=(("desligada", "Desligada"), ("uma_rodada", "Uma rodada"))),
@@ -126,6 +128,18 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         "depois. Arquivos com cara de segredo (.env, chaves), pastas como .git e node_modules e arquivos acima de 5 MB ficam de fora.",
         True, se_ligar="Você pode voltar atrás em qualquer tarefa; custa alguns segundos e espaço em disco por tarefa que escreve.",
         se_desligar="Nada é copiado; desfazer depende só do seu Git."),
+    Preferencia(
+        "copia_sem_segredos", "agentes", "geral", "Trabalhar numa cópia sem segredos", "selecao",
+        "Se a pasta de trabalho tem arquivos de segredo (.env, chaves, credenciais), o agente trabalha numa CÓPIA da pasta sem esses "
+        "arquivos (em .forja-copias/, dentro do projeto e fora do Git). Ao terminar, a Forja devolve só o que o agente mudou e só onde "
+        "você não mexeu no meio-tempo; segredos nunca voltam. Assim, nem um comando de busca consegue ler o .env.", "autonomia",
+        (Exemplo("Com autonomia", "autonomia", "Nos níveis 'liberado' e 'total' (em que o agente edita ou roda comandos sozinho), em tarefas "
+                 "que alteram arquivos."),
+         Exemplo("Sempre", "sempre", "Toda tarefa com pasta de trabalho que tenha segredos, inclusive análise."),
+         Exemplo("Desligado", "desligado", "O agente trabalha na pasta original; valem só o perfil que nega segredos e as perguntas.")),
+        se_ligar="O segredo fica fora do alcance do agente; custa alguns segundos para copiar a pasta (sem dependências).",
+        se_desligar="Mais rápido; o segredo continua na pasta e a proteção depende das regras e das suas aprovações.", risco="alto",
+        opcoes=(("autonomia", "Com autonomia"), ("sempre", "Sempre"), ("desligado", "Desligado"))),
     Preferencia(
         "isolar_paralelas", "agentes", "avancado", "Pasta isolada para tarefas em paralelo (git worktree)", "bool",
         "Se duas tarefas vão escrever na mesma pasta ao mesmo tempo, a segunda ganha uma cópia isolada do repositório "
@@ -300,6 +314,13 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         True, se_ligar="Prompt de retomada bem menor e o agente mantém o histórico real da conversa.",
         se_desligar="Cada retomada começa uma sessão nova com um resumo (comportamento anterior); um pouco mais de tokens."),
     Preferencia(
+        "reaproveitar_processos", "eficiencia", "avancado", "Manter o agente aberto entre tarefas", "bool",
+        "Em vez de abrir um processo novo do Kiro (ou do Codex) a cada tarefa, a Forja mantém até 2 abertos por até 15 minutos e "
+        "reaproveita. Medido no kiro-cli 3.1.0: abrir o processo custa de 1,5 a 3,5 s; com ele aberto, uma sessão nova sai em ~0,2 s. "
+        "Cada processo atende uma tarefa por vez, as sessões são fechadas ao terminar e qualquer erro descarta o processo.",
+        True, se_ligar="Tarefas, turnos do master e resumos de status começam ~2 s mais rápido; cada processo parado ocupa ~50 MB.",
+        se_desligar="Um processo novo por tarefa (comportamento anterior)."),
+    Preferencia(
         "kiro_mcp_ativo", "eficiencia", "avancado", "Dar ao Kiro as ferramentas da Forja (MCP)", "bool",
         "Anexa à sessão do Kiro um servidor MCP local (sem rede) com 5 ferramentas: listar/executar as ferramentas da Forja, buscar na memória "
         "e usar o quadro. Cada uso ainda passa pelas suas aprovações por ação. O MCP só fala com a Forja em loopback e nunca recebe segredos.",
@@ -319,19 +340,26 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
     Preferencia(
         "codex_ativo", "consumo", "avancado", "Usar também o Codex (OpenAI)", "bool",
         "Liga o Codex como segundo agente, pelo mesmo protocolo (ACP). Exige o adaptador instalado (npm i -g @agentclientprotocol/codex-acp) "
-        "e 'codex login' com o seu plano. Por segurança, o Codex só trabalha em pastas SEM arquivos de segredo (.env, chaves): ele não "
-        "tem as regras de bloqueio que a Forja aplica no Kiro. Confirme se o uso com código da empresa é permitido.", False,
+        "e 'codex login' com o seu plano (sem o adaptador, nada muda). Por segurança, o Codex só trabalha em pastas SEM arquivos de segredo "
+        "(.env, chaves) ou na cópia sem segredos, e a Forja cancela o turno se ele tentar ler fora das pastas do projeto. Comandos que ele "
+        "roda dentro da pasta não passam pelas suas aprovações (o sandbox dele decide). Confirme se o uso com código da empresa é permitido.",
+        True,
         se_ligar="Mais capacidade e reserva quando o Kiro estiver sem cota; cada agente mantém o próprio contexto.",
         se_desligar="Só o Kiro.", risco="alto"),
     Preferencia(
         "distribuicao_provedores", "consumo", "avancado", "Como dividir o trabalho entre Kiro e Codex", "selecao",
-        "Vale só com o Codex ligado. A retomada de uma conversa sempre volta ao agente que a começou.", "so_kiro",
-        (Exemplo("Só Kiro", "so_kiro", "O Codex fica parado."),
+        "Vale só com o Codex ligado. A retomada de uma conversa sempre volta ao agente que a começou. Em 'Inteligente', cada tarefa "
+        "vai para quem costuma fazê-la melhor: tarefas complexas, refatoração, arquitetura, segurança, interface, estudo e o master no "
+        "Kiro (Claude); simples, status, verificação, análise/documentação normais e revisões (segunda opinião) no Codex (GPT). O motivo "
+        "da escolha aparece nos eventos da execução.", "inteligente",
+        (Exemplo("Inteligente", "inteligente", "Por especialidade; cada agente é reserva do outro."),
+         Exemplo("Só Kiro", "so_kiro", "O Codex fica parado."),
          Exemplo("Automático", "auto", "Kiro primeiro; Codex quando o Kiro estiver indisponível ou sem cota."),
          Exemplo("Equilibrar", "equilibrar", "Simples, revisões e resumos no Codex; o resto no Kiro."),
          Exemplo("Codex primeiro", "codex_primeiro", "Codex primeiro; Kiro de reserva.")),
         se_ligar="Usa os dois planos; menos espera por cota.", se_desligar="Tudo num agente só.", risco="medio",
-        opcoes=(("so_kiro", "Só Kiro"), ("auto", "Automático"), ("equilibrar", "Equilibrar"), ("codex_primeiro", "Codex primeiro"))),
+        opcoes=(("inteligente", "Inteligente"), ("so_kiro", "Só Kiro"), ("auto", "Automático"), ("equilibrar", "Equilibrar"),
+                ("codex_primeiro", "Codex primeiro"))),
     # ------------------------------------------------------------------ privacidade
     Preferencia(
         "ferramentas_arquivos_ativas", "privacidade", "geral", "Permitir que os agentes leiam arquivos do computador", "bool",

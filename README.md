@@ -6,7 +6,7 @@ protocolo ACP), media cada permissão que o agente pede, confere o resultado por
 guarda o conhecimento útil num **segundo cérebro** consultável. Tudo roda no seu computador: servidor em `127.0.0.1`, banco
 SQLite no seu perfil e um painel web no navegador.
 
-> Estado: em uso. Fases 0 a 4 e 9 implementadas e testadas (1119 testes automatizados, inspeção em navegador real e CI).
+> Estado: em uso. Fases 0 a 4 e 9 implementadas e testadas (1186 testes automatizados, inspeção em navegador real e CI).
 > Números medidos e pendências em [`docs/STATUS_IMPLEMENTACAO.md`](docs/STATUS_IMPLEMENTACAO.md); decisões em [`docs/adr/`](docs/adr/).
 > Licença [Apache-2.0](LICENSE).
 
@@ -66,7 +66,8 @@ Detalhes em [2 INSTALAÇÃO E HOSPEDAGEM](#2-instalação-e-hospedagem).
 - [7 CONTROLES DE QUALIDADE](#7-controles-de-qualidade)
   - [7.1 Aprovações, autonomia e regras](#71-aprovações-autonomia-e-regras)
   - [7.2 Controle de escopo](#72-controle-de-escopo)
-  - [7.3 Verificação determinística](#73-verificação-determinística)
+  - [7.3 Segredos fora do alcance](#73-segredos-fora-do-alcance)
+  - [7.4 Verificação determinística](#74-verificação-determinística)
 - [8 CONTEXTO E STATUS](#8-contexto-e-status)
   - [8.1 Contexto econômico](#81-contexto-econômico)
   - [8.2 Gestão de contexto](#82-gestão-de-contexto)
@@ -315,12 +316,16 @@ sessão pertence a quem a abriu e uma retomada volta para ele. Preferência `dis
 
 | Modo | Comportamento |
 |---|---|
-| `so_kiro` (padrão) | Tudo no Kiro; o Codex nem é consultado. |
+| `inteligente` (padrão) | Por especialidade: complexas, arquitetura, refatoração, migração, segurança, interface, alteração de código normal, estudo e master no **Kiro** (Claude); simples, status, verificação, análise/documentação normais e revisões (segunda opinião de outra família de modelo) no **Codex** (GPT). Pasta com segredo sem cópia sem segredos: Kiro. |
+| `so_kiro` | Tudo no Kiro; o Codex nem é consultado. |
 | `auto` | Kiro primeiro; Codex de reserva quando o Kiro está indisponível (sem CLI, sem login, limite de uso). |
 | `equilibrar` | Tarefas simples, revisões e status no Codex; o resto no Kiro (cada um é reserva do outro). |
 | `codex_primeiro` | Codex primeiro, Kiro de reserva. |
 
-A reserva só acontece quando o agente falhou **antes** de produzir trabalho; o que falhou fica 15 min em resfriamento.
+A reserva só acontece quando o agente falhou **antes** de produzir trabalho; o que falhou fica 15 min em resfriamento. O motivo
+de cada escolha fica no evento `provedor.escolhido` da execução. Base da regra `inteligente`: comparativos públicos de 2026 (empate
+em benchmarks gerais; Claude com mais qualidade em mudanças amplas; GPT mais rápido e econômico em tarefas curtas), ver ADR-024.
+`codex_ativo` vem ligado, mas só vale com o `codex-acp` instalado.
 
 #### 6.3.2 Como ligar o Codex
 
@@ -330,15 +335,20 @@ npm i -g @agentclientprotocol/codex-acp     # adaptador ACP (precisa de Node.js;
 
 O login é o do Codex: se o app **Codex** (OpenAI, Microsoft Store) ou o ChatGPT já está logado neste usuário, o adaptador
 reaproveita (`~/.codex`). Sem o app, o adaptador oferece o login pelo ChatGPT. O app do ChatGPT sozinho **não** fala ACP: a Forja
-precisa do `codex-acp`. Depois, em Config > Consumo: ligue `codex_ativo` e escolha a distribuição. `APP_CODEX_ACP_COMMAND` e
-`APP_CODEX_MODEL` são opcionais. Confira as regras da sua organização antes de usar o Codex com código de empresa.
+precisa do `codex-acp`. Em Config > Consumo dá para desligar `codex_ativo` ou trocar a distribuição. `APP_CODEX_ACP_COMMAND` e
+`APP_CODEX_MODEL` são opcionais. O esforço de raciocínio do Codex é escolhido por parte (`low` em rápidas, status e master;
+`medium` na execução; `high` em planejamento e revisão). Confira as regras da sua organização antes de usar o Codex com código de empresa.
 
 #### 6.3.3 Segurança do Codex
 
 O Codex não tem as regras deny que a Forja aplica no Kiro. Por isso, em falha fechada:
 
 - o processo recebe ambiente limpo (sem variáveis com cara de segredo e sem `APP_*`/`FORJA_*`; chave de API por variável não chega);
-- só trabalha em pastas **sem** arquivos com cara de segredo (`.env`, chaves, credenciais); se houver, a tarefa fica bloqueada;
+- só trabalha em pastas **sem** arquivos com cara de segredo (`.env`, chaves, credenciais) ou na **cópia sem segredos**; se
+  houver segredo, a tarefa vai para o Kiro (ou fica bloqueada);
+- **vigia em tempo real**: se uma chamada do Codex citar um segredo ou um caminho fora das pastas do projeto, a Forja cancela o
+  turno, bloqueia a tarefa e não guarda a resposta parcial (o sandbox `read-only` do Codex lê o disco quase inteiro sem pedir);
+- comandos que o Codex roda **dentro** da pasta não passam pelas suas aprovações: o sandbox dele decide;
 - modo da sessão (`codex-acp` 2.7): `read-only` para planejar, revisar, estudar, coordenar, status e toda tarefa que não escreve
   (análise, estudo) ou sem pasta de trabalho; `workspace-write` só para executar alteração, documentação ou verificação, com cada
   permissão voltando para a Forja. Nunca `agent` ("Auto review", o Codex aprovaria sozinho) nem `agent-full-access`.
@@ -375,9 +385,25 @@ prompt do kiro-cli priorizar proatividade sobre o prompt do agente. A Forja não
    pedida. Com `controle_escopo = pausar` (padrão), a tarefa fica `bloqueada` com a lista: desfaça com um clique ou responda
    aceitando. `avisar` só registra; `desligado` não confere.
 
-### 7.3 Verificação determinística
+### 7.3 Segredos fora do alcance
 
-- **Testes do projeto** (pytest, npm, cargo, go): primeiro os afetados, depois a suíte. Falhou: volta ao agente **uma vez**.
+Medido no Kiro real: no nível `total`, um comando de busca inofensivo (`Get-ChildItem -Recurse | Select-String`) lia o `.env`
+sem citar o nome. Camadas, todas ativas por padrão:
+
+1. **Regra de segredos** no perfil do Kiro e em todo pedido (Kiro e Codex): nunca ler, buscar, imprimir ou copiar `.env`, chaves,
+   credenciais ou variáveis de ambiente; para conferir um `.env`, `env.verificar`.
+2. **Cópia sem segredos** (`copia_sem_segredos`, padrão `autonomia`): nos níveis `liberado`/`total`, em tarefa que escreve numa
+   pasta com segredo, o agente trabalha em `.forja-copias/` (dentro do projeto, fora do Git) sem `.env`, chaves, `.git` e
+   dependências. No fim, a Forja devolve só o que mudou e só onde você não mexeu; conflito não sobrescreve nada; segredos nunca voltam.
+3. **Varredura ampla pergunta** numa pasta com segredo (busca/cópia recursiva), em qualquer nível e mesmo com regra "aprovar".
+4. **Ambiente limpo** no Kiro e no Codex: nenhuma variável `APP_*`, `FORJA_*` ou com cara de segredo chega ao agente.
+5. Lista **única** de padrões de segredo (`forja/seguranca/sensiveis.py`) para o perfil DENY, o mediador, as ferramentas e a cópia.
+
+### 7.4 Verificação determinística
+
+- **Testes do projeto** (pytest, npm, cargo, go) em **toda** tarefa que altera código, inclusive as simples: primeiro os afetados,
+  depois a suíte. Falhou: volta ao agente **uma vez** (rotas normal e complexa). Critério `testes passam` sem prova não conclui.
+- **Lint declarado pelo projeto** (ruff nos `.py` alterados ou `npm run lint`) na mesma conferência.
 - **Isolamento dos testes:** árvore de processos presa (Job Object), teto de memória, TMP próprio; modo estrito troca HOME e corta rede.
 - **Critérios verificáveis:** `testes passam` e `arquivo: caminho`.
 - **Alegações** ("rodei os testes") comparadas com as ferramentas usadas de fato.
@@ -445,7 +471,9 @@ Preferência `status_resumos`:
 
 ## 11 FERRAMENTAS, MCP E INTEGRAÇÕES
 
-- **31 ferramentas determinísticas** (`GET /api/v1/ferramentas`): `codigo.estrutura`, `repo.mapa`, `testes.resumir_saida`,
+- **33 ferramentas determinísticas** (`GET /api/v1/ferramentas`): `codigo.buscar` (busca de texto que pula segredos),
+  `git.ler` (status/log/diff/blame só leitura, sem segredos), `codigo.estrutura`, `repo.mapa`, `testes.resumir_saida`
+  (pytest, jest, vitest, go, cargo),
   `logs.agrupar_falhas`, `git.diff_analisar`, `segredos.varrer`, `env.verificar` (só presença), `tokens.orcar` e outras. As de
   arquivo só enxergam as **pastas permitidas**.
 - **MCP da Forja** (stdio, sem porta; 9 ferramentas): `forja_listar_ferramentas`, `forja_executar_ferramenta`,
@@ -524,9 +552,9 @@ As que mais mudam o comportamento:
 
 | Categoria | Preferências |
 |---|---|
-| Agentes | autonomia, correção automática, `subagentes`, `controle_escopo` (pausar/avisar/desligado), `master_executar` (executar/propor), métodos, observações guia |
-| Eficiência | limites de ferramentas e tempo, contexto e orçamento, `contexto_limite_sessao`, `status_resumos` (desligado/deterministico/marcos), roteamento que aprende, MCP |
-| Consumo | modelos por parte, `codex_ativo`, `distribuicao_provedores` |
+| Agentes | autonomia, `copia_sem_segredos`, correção automática, `subagentes`, `controle_escopo` (pausar/avisar/desligado), `master_executar` (executar/propor), métodos, observações guia |
+| Eficiência | limites de ferramentas e tempo, contexto e orçamento, `contexto_limite_sessao`, `status_resumos` (desligado/deterministico/marcos), roteamento que aprende, `reaproveitar_processos`, MCP |
+| Consumo | modelos por parte, `codex_ativo`, `distribuicao_provedores` (painel Custo com créditos **medidos** pelo Kiro) |
 | Segurança | pastas permitidas/proibidas, regras de controle, isolamento dos testes |
 | Manutenção | desfazer, pastas isoladas, retomada após queda, organização da memória, pacotes, telemetria |
 
@@ -576,7 +604,7 @@ Camadas não se misturam: rotas não têm SQL, a orquestração não conhece HTT
 
 ```powershell
 pip install -r requirements-dev.txt          # + requirements-ui.txt para o navegador real
-python -m pytest -q                          # 1119 testes (agente ACP falso por subprocesso; nada real é chamado)
+python -m pytest -q                          # 1186 testes (agente ACP falso por subprocesso; nada real é chamado)
 python -m ruff check forja tests scripts
 pre-commit install                           # gitleaks + ruff a cada commit
 
@@ -596,8 +624,9 @@ O CI (GitHub Actions) roda gitleaks, ruff, a suíte, o painel em Chromium com ac
 
 ## 18 LIMITES CONHECIDOS
 
-- O Codex real (`codex-acp` 2.7.0) foi conferido em turnos curtos com dados sintéticos; uso contínuo, custo e a distribuição
-  `equilibrar` ainda não foram medidos. O MCP da Forja (memória, caderno) ainda não é passado ao Codex.
+- O Codex real (`codex-acp` 2.7.0) foi conferido com dados sintéticos (segurança, correção, roteamento); o uso contínuo ainda
+  não foi medido e os créditos do Codex não são lidos. Perfis de permissão do Codex foram recusados pelo adaptador nesta versão
+  (a Forja usa a vigia em tempo real). O MCP da Forja (memória, caderno) ainda não é passado ao Codex.
 - Workflows do Kiro IDE e `/compact` não são expostos pelo ACP; a Forja orquestra e gerencia o contexto por conta própria.
 - A hospedagem contínua é por sessão do Windows: a Forja fica no ar enquanto você estiver conectado.
 - Pastas isoladas exigem Git; sem Git, tarefas na mesma pasta rodam uma por vez.

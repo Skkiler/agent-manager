@@ -538,9 +538,10 @@ def _op_funcao(idx: Indice, alvo: str, limite: int, avisos: list[str], origem: i
     return montar("codigo.estrutura", "", "\n".join(linhas), {"funcoes": itens}, len(achados) > 5, avisos, origem)
 
 
-def resumo_grafo(raiz: Path, orcamento_tokens: int = 400) -> str:
+def resumo_grafo(raiz: Path, orcamento_tokens: int = 400, com_ferramentas: bool = True) -> str:
     """Bloco CURTO para o prompt (preparacao de tarefas de codigo): as funcoes mais centrais com assinatura e ligacoes.
-    O agente ve o mapa e so abre o que precisa; detalhes sob demanda via `codigo.estrutura` (funcao/grafo)."""
+    O agente ve o mapa e so abre o que precisa; detalhes sob demanda via `codigo.estrutura` (funcao/grafo).
+    `com_ferramentas=False` (sem MCP): nao cita a ferramenta (o agente respondia que ela 'nao existe nesta sessao')."""
     idx = construir(raiz)
     g = grafo_funcoes(idx, "", 60)
     if not g["nos"]:
@@ -554,7 +555,10 @@ def resumo_grafo(raiz: Path, orcamento_tokens: int = 400) -> str:
             break
         linhas.append(linha)
         usado += custo
-    linhas.append("Detalhes (o que cada funcao exige, de onde vem, quem chama): ferramenta 'codigo.estrutura' operacao 'funcao' ou 'grafo'.\n")
+    if com_ferramentas:
+        linhas.append("Detalhes (o que cada funcao exige, de onde vem, quem chama): ferramenta 'codigo.estrutura' operacao 'funcao' ou 'grafo'.\n")
+    else:
+        linhas[-1] += "\n"
     return "\n".join(linhas)
 
 

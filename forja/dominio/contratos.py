@@ -130,6 +130,8 @@ class ConsumoMedicao(_Estrito):
     chamadas_modelo: int = Field(default=0, ge=0)
     # Nunca inventar consumo: 'provedor' | 'estimado' | 'indisponivel' | 'simulado'
     fonte: Literal["provedor", "estimado", "indisponivel", "simulado"] = "indisponivel"
+    # Creditos MEDIDOS pelo proprio agente (Kiro: `session_info_update` kind=session_usage, acumulado por sessao). None = nao medido.
+    creditos: float | None = Field(default=None, ge=0)
 
 
 class ArtefatoSaida(_Estrito):
