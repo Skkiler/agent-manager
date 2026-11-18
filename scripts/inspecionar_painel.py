@@ -83,7 +83,7 @@ def login(nav, base: str, saida: Path, a11y: bool) -> int:
     expect(tela).to_contain_text("Bem-vindo, ana", timeout=6000)
     pg.screenshot(path=str(saida / "login-sucesso.png"))
     expect(tela).to_be_hidden(timeout=6000)
-    expect(pg.locator(".master-grade .arvore-coord").first).to_be_visible(timeout=8000)  # tela inicial: Master
+    expect(pg.locator(".boas-vindas .bv-grade").first).to_be_visible(timeout=8000)  # tela inicial: Boas-vindas da bancada
     passo("primeiro acesso cria a conta, mostra sucesso e abre o painel", pg.locator("#usuario-atual").inner_text() == "ana")
     pg.locator("#usuario-atual").click()
     pg.get_by_role("button", name="Sair da conta").click()
