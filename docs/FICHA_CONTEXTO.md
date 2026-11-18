@@ -85,8 +85,7 @@ Atualizada em 2026-11-13. Esta ficha substitui o histórico do chat anterior: le
 
 ## 6 O que falta
 
-1. **Commitar e enviar os ajustes do Codex desta sessão** se ainda não estiverem no `main` (conferir `git status`): modos do
-   `codex-acp` 2.7, `read-only` para tarefas que não escrevem, testes, README, STATUS, ADR-023 e esta ficha.
+1. Conferir o CI do commit `2ab8719` (ajustes do Codex + esta ficha), já enviado ao `main`.
 2. Ligar o Codex de fato (decisão do usuário + governança para código de empresa) e medir uso contínuo, custo e `equilibrar`.
 3. Passar o MCP da Forja (memória, caderno) também ao Codex (hoje só o Kiro recebe).
 4. Medir com o Kiro real: taxa de pausas por escopo (falso positivo) e economia da renovação de sessão.
