@@ -383,6 +383,23 @@ Relatorio completo: `docs/RELATORIO_AVALIACAO_2026-11-18.md`. Somente avaliacao;
   (`session_usage`), ignorados pela Forja; Codex sem modelo/esforco por parte (72,4 s x 26,8 s do Kiro numa correcao trivial).
 - **Pendente:** decisoes do usuario (secao 9 do relatorio) e implementacao das prioridades P0/P1; fases visuais V1-V4.
 
+## Rodada 3: Codex no nivel do Kiro, bancada estilo IDE e tres visualizacoes (2026-11-18, ADR-025) — resultados reais
+- **Testes executados:** `python -m pytest` -> **1226 passed** (todos os testes; novos: `tests/test_area_trabalho.py` 12 e
+  `tests/test_rodada3_agentes_ferramentas.py` 20); `ruff check .` ok; `node --check` em todos os modulos JS ok.
+- **Painel em navegador real** (servidor de teste 8799, dados ficticios, `semear_demo.py`): `inspecionar_painel.py --interagir --a11y`
+  -> **problemas: 0** (12 vistas, inclusive inicio/explorador/chat/agentes; axe sem violacao grave; 420 px sem estouro; fluxo novo
+  `bancada`: explorador sem `.env`, editor com realce, Ctrl+S grava no disco, conflito 409 nao sobrescreve, JSON invalido vira
+  problema, previa de Markdown, Ctrl+P, terminal roda `echo` e recusa `cat .env`, divisoria pelo teclado, modos Chat e Agentes).
+- **Codex real (codex-acp 2.7.0):** `c_fora` recusado pelo proprio agente (instrucao da sessao), sem chamada de ferramenta e sem
+  vazamento; `c_env_proc` sem vazar `FORJA_INT_*` (shell_environment_policy); pelo provedor da Forja com MCP: chamou
+  `forja::forja_listar_ferramentas` e recebeu 17 ferramentas.
+- **Kiro real (kiro-cli 3.1.0):** `k_rapida` concluida (12,5 s, 0,0187 credito medido); sessao real emitiu
+  `kiro.privacidade {coleta_de_conteudo: desligada}`.
+- **Bugs achados na verificacao e corrigidos:** rota `/area/*` usava parametro de caminho em vez de query; corrida da barra
+  lateral (desenho assincrono do Explorador apagava o menu da tela); tela montada duas vezes no carregamento; arquivo CRLF aparecia
+  como "nao salvo"; paleta usava a lista antiga ao apertar Enter logo apos digitar; pasta sem Git gerava 422.
+- **Pendente:** perfis de permissao nativos do Codex (o adaptador recusa); editor sem LSP/IntelliSense; revisao de diff lado a
+  lado; auditoria com leitor de tela real; textos sem acento nos dados de demonstracao (`semear_demo.py`).
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -397,12 +414,12 @@ Relatorio completo: `docs/RELATORIO_AVALIACAO_2026-11-18.md`. Somente avaliacao;
 - Heuristicas de PII/injection (regex) reduzem risco, **nao** o eliminam; resultados sao sempre tratados como dados nao confiaveis.
 - `confianca` e informada pelo usuario e **nao calibrada**; nao entra no ranking.
 - A memoria e injetada no prompt apenas para namespaces em `APP_CONTEXT_NAMESPACES` (padrao `publico`).
-- Painel (JS): verificado em navegador real por script (Playwright), nao ha CI; auditoria com leitor de tela pendente.
+- Painel (JS): verificado em navegador real por script (Playwright) no CI; auditoria com leitor de tela pendente.
 - gitleaks e CI ativos (ver Fase 9). Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1186 passed. Proximo: Codex real (aprovacao
-   do usuario), medir pausas por escopo e renovacao de sessao com o Kiro real.
+1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1226 passed. Proximo: revisao de diff lado a lado na bancada, LSP opcional
+   e perfis de permissao do Codex quando o adaptador aceitar.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

@@ -148,7 +148,7 @@ class OficinaServico:
                                        decorrido / tempo_max if tempo_max and ex["estado"] == "executando" else None) if x is not None]
                 fracao = round(min(1.0, max(fracoes) if fracoes else 0.0), 3)
                 agentes.append({
-                    "execucao_id": ex["id"], "tarefa_id": tarefa["id"], "titulo": tarefa["titulo"], "projeto_id": tarefa["projeto_id"],
+                    "execucao_id": ex["id"], "tarefa_id": tarefa["id"], "agente": str(ex["agente_id"]).split(".")[0], "titulo": tarefa["titulo"], "projeto_id": tarefa["projeto_id"],
                     "estado": tarefa["estado"], "nivel": proj.nivel, "papel": proj.papel, "papel_rotulo": PAPEIS.get(proj.papel, proj.papel), "acao": proj.acao,
                     "acao_rotulo": ACOES.get(proj.acao, proj.acao), "aguardando": proj.aguardando, "aprovacoes_pendentes": pendentes,
                     "ferramentas": proj.ferramentas, "max_ferramentas": limite, "chamadas_modelo": chamadas,

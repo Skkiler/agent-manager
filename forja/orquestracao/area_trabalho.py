@@ -70,29 +70,29 @@ class AreaTrabalho:
 
     def _arquivo(self, projeto_id: str, raiz: int, rel: str) -> tuple[dict[str, str], Path, Path]:
         if not rel or caminho_sensivel(rel):
-            raise ValidacaoDominio("arquivo de segredo (.env, chaves, credenciais) nunca e aberto pelo painel")
+            raise ValidacaoDominio("arquivo de segredo (.env, chaves, credenciais) nunca é aberto pelo painel")
         projeto = self.projetos.obter(projeto_id)
         base, alvo = self.projetos._resolver(projeto, raiz, rel)
         pasta = next(p for p in self.projetos.pastas_validas(projeto) if Path(p["caminho"]).resolve() == base)
         if alvo.is_symlink():
-            raise ValidacaoDominio("links simbolicos nao sao abertos")
+            raise ValidacaoDominio("links simbólicos não são abertos")
         return pasta, base, alvo
 
     @staticmethod
     def _so_trabalho(pasta: dict[str, str]) -> None:
         if pasta.get("papel") != "trabalho":
-            raise ValidacaoDominio("pasta de CONSULTA e somente leitura: use uma pasta de trabalho do projeto")
+            raise ValidacaoDominio("pasta de CONSULTA é somente leitura: use uma pasta de trabalho do projeto")
 
     # ------------------------------------------------------------------ arquivos
     def ler(self, projeto_id: str, raiz: int, rel: str) -> dict[str, Any]:
         pasta, base, alvo = self._arquivo(projeto_id, raiz, rel)
         if not alvo.is_file():
-            raise ValidacaoDominio("nao e um arquivo")
+            raise ValidacaoDominio("não é um arquivo")
         if alvo.stat().st_size > MAX_LER:
             raise ValidacaoDominio(f"arquivo acima de {MAX_LER // 1_000_000} MB (abra no seu editor)")
         dados = alvo.read_bytes()
         if b"\x00" in dados[:8000]:
-            raise ValidacaoDominio("arquivo binario: o editor do painel abre so texto")
+            raise ValidacaoDominio("arquivo binário: o editor do painel abre só texto")
         texto = dados.decode("utf-8", errors="replace")
         return {"rel": alvo.relative_to(base).as_posix(), "nome": alvo.name, "conteudo": texto, "sha": _sha(dados),
                 "linguagem": linguagem_de(alvo.name), "tamanho": len(dados), "somente_leitura": pasta.get("papel") != "trabalho",
@@ -106,13 +106,13 @@ class AreaTrabalho:
             raise ValidacaoDominio("conteudo grande demais para o editor do painel")
         if alvo.exists():
             if not alvo.is_file():
-                raise ValidacaoDominio("nao e um arquivo")
+                raise ValidacaoDominio("não é um arquivo")
             atual = _sha(alvo.read_bytes())
             if sha_esperado != atual:
-                raise Conflito("O arquivo mudou no disco desde que voce abriu (outro editor ou um agente). Recarregue e refaca a "
-                               "alteracao; nada foi sobrescrito.")
+                raise Conflito("O arquivo mudou no disco desde que você abriu (outro editor ou um agente). Recarregue e refaça a "
+                               "alteração; nada foi sobrescrito.")
         elif sha_esperado:
-            raise Conflito("O arquivo foi apagado no disco desde que voce abriu; nada foi gravado.")
+            raise Conflito("O arquivo foi apagado no disco desde que você abriu; nada foi gravado.")
         alvo.parent.mkdir(parents=True, exist_ok=True)
         tmp = alvo.with_name(f".{alvo.name}.forja.tmp")
         tmp.write_bytes(dados)
@@ -164,8 +164,13 @@ class AreaTrabalho:
     # ------------------------------------------------------------------ Git
     def git(self, projeto_id: str, raiz: int, operacao: str, ref: str = "", arquivo: str = "", limite: int = 30) -> dict[str, Any]:
         _pasta, base = self._pasta(projeto_id, raiz)
-        r = ler_git(base, ".", operacao, ref, "", arquivo, 1, 0, limite)
-        return {"resumo": r.resumo, "dados": r.dados, "avisos": r.avisos}
+        try:
+            r = ler_git(base, ".", operacao, ref, "", arquivo, 1, 0, limite)
+        except ValidacaoDominio as e:
+            if operacao == "status" and "repositorio git" in e.mensagem:  # pasta comum: estado normal, nao erro
+                return {"resumo": "a pasta nao e um repositorio git", "dados": {"branch": "", "alterados": [], "repositorio": False}, "avisos": []}
+            raise
+        return {"resumo": r.resumo, "dados": {**r.dados, "repositorio": True} if operacao == "status" else r.dados, "avisos": r.avisos}
 
     def git_acao(self, projeto_id: str, raiz: int, acao: str, arquivos: list[str], mensagem: str = "") -> dict[str, Any]:
         pasta, base = self._pasta(projeto_id, raiz)
@@ -187,7 +192,7 @@ class AreaTrabalho:
         if acao == "commit":
             preparados = self._git(base, ["diff", "--cached", "--name-only"]).splitlines()
             if any(caminho_sensivel(x) for x in preparados):
-                raise ValidacaoDominio("ha arquivo de segredo preparado para o commit; tire-o (unstage) antes")
+                raise ValidacaoDominio("há arquivo de segredo preparado para o commit; tire-o (unstage) antes")
         saida = self._git(base, args)
         avisos = []
         if acao == "stage":  # 'add -u' pode pegar um .env versionado: a Forja tira de novo e avisa
@@ -212,7 +217,7 @@ class AreaTrabalho:
     # ------------------------------------------------------------------ terminal
     def terminal(self, projeto_id: str, raiz: int, comando: str) -> dict[str, Any]:
         if not self.terminal_ativo:
-            raise ValidacaoDominio("terminal desligado (Configuracoes > Seguranca)")
+            raise ValidacaoDominio("terminal desligado (Configurações > Segurança)")
         comando = (comando or "").strip()
         if not comando or len(comando) > 2000:
             raise ValidacaoDominio("comando vazio ou longo demais")
@@ -220,7 +225,7 @@ class AreaTrabalho:
         self._so_trabalho(pasta)
         item = descrever_acao({"kind": "execute", "toolCallId": "terminal", "rawInput": {"command": comando}}, base)
         if item["sensivel"]:
-            raise ValidacaoDominio("comando recusado: ele le ou imprime segredo (.env, chaves ou variaveis de ambiente). "
+            raise ValidacaoDominio("comando recusado: ele lê ou imprime segredo (.env, chaves ou variáveis de ambiente). "
                                    "Use 'env.verificar' em Ferramentas para conferir um .env.")
         args = (["powershell", "-NoProfile", "-NonInteractive", "-Command", comando] if os.name == "nt"
                 else ["bash", "-c", comando])
@@ -234,12 +239,12 @@ class AreaTrabalho:
     def _docker(args: list[str], timeout: float = 20) -> str:
         exe = shutil.which("docker")
         if not exe:
-            raise ValidacaoDominio("Docker nao encontrado nesta maquina")
+            raise ValidacaoDominio("Docker não encontrado nesta máquina")
         try:
             r = subprocess.run([exe, *args], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,  # noqa: S603
                                env=ambiente_limpo(), stdin=subprocess.DEVNULL, check=False)
         except subprocess.TimeoutExpired as e:
-            raise ValidacaoDominio("o Docker nao respondeu (o servico esta ligado?)") from e
+            raise ValidacaoDominio("o Docker não respondeu (o serviço está ligado?)") from e
         except OSError as e:
             raise ValidacaoDominio(f"Docker indisponivel: {type(e).__name__}") from e
         if r.returncode != 0:

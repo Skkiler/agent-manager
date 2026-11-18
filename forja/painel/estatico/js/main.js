@@ -1,10 +1,16 @@
-// Shell do orquestrador: barra de atividades, barra lateral, area principal, conversa/decisoes, painel inferior e SSE.
+// Shell da Forja: tres visualizacoes (Editor estilo VS Code/Kiro, Chat de agentes e Agentes em pixel art), barra de atividades,
+// barra lateral, abas do editor, barra do agente (direita), painel inferior, paleta de comandos e tempo real (SSE).
 import { api, lerToken } from "./api.js";
-import { dialogoConta, garantirAcesso } from "./login.js";
+import * as area from "./area.js";
+import { abaAtiva, abas, abrirInicio, abrirVista, ativar, fechar, iniciarBancada, lateralAtual, marcarAtividade, mostrarLateral, reexibir } from "./bancada.js";
+import { abrirPaleta, iniciarPaleta, registrarComandos } from "./comandos.js";
 import * as direita from "./direita.js";
-import { agrupar, alternarPainel, definirNivel, definirPainel, emitir, estado, ouvir, painelAberto } from "./estado.js";
+import * as escritorio from "./escritorio.js";
+import { agrupar, alternarPainel, definirModo, definirNivel, definirPainel, emitir, estado, ouvir, painelAberto, painelLembrado } from "./estado.js";
+import { icone } from "./icones.js";
 import * as inferior from "./inferior.js";
-import { $, el, iniciarTexto, limpar } from "./ui.js";
+import { dialogoConta, garantirAcesso } from "./login.js";
+import { $, el, iniciarTexto } from "./ui.js";
 import * as config from "./views/config.js";
 import * as custos from "./views/custos.js";
 import * as ferramentas from "./views/ferramentas.js";
@@ -14,56 +20,72 @@ import * as memoria from "./views/memoria.js";
 import * as quadro from "./views/quadro.js";
 import * as tarefas from "./views/tarefas.js";
 
-const VISTAS = [
-  { id: "master", rotulo: "Master", glifo: "✦", modulo: master }, // conversa com o coordenador (cria e acompanha tarefas)
-  { id: "tarefas", rotulo: "Tarefas", glifo: "▦", modulo: tarefas },
-  { id: "quadro", rotulo: "Quadro", glifo: "✉", modulo: quadro },
-  { id: "memoria", rotulo: "Memória", glifo: "◉", modulo: memoria },
-  { id: "ferramentas", rotulo: "Ferram.", glifo: "⚒", modulo: ferramentas },
-  { id: "integracoes", rotulo: "Integr.", glifo: "⇄", modulo: integracoes },
-  { id: "custos", rotulo: "Custo", glifo: "¤", modulo: custos },
-  { id: "config", rotulo: "Config", glifo: "⚙", modulo: config, janela: true }, // tela secundaria: janela flutuante, nao pagina
+// tipo "painel": so a barra lateral (como o Explorador do VS Code); "vista": aba no editor (+ menu na barra lateral, se houver)
+const ATIVIDADES = [
+  { id: "explorador", rotulo: "Explorador", curto: "Explorar", icone: "explorador", tipo: "painel", montarLateral: area.montarExplorador, atalho: "Ctrl+Shift+E" },
+  { id: "busca", rotulo: "Buscar nos arquivos", curto: "Buscar", icone: "busca", tipo: "painel", montarLateral: area.montarBusca, atalho: "Ctrl+Shift+F" },
+  { id: "git", rotulo: "Controle de código (Git)", curto: "Git", icone: "git", tipo: "painel", montarLateral: area.montarGit, atalho: "Ctrl+Shift+G" },
+  { id: "docker", rotulo: "Docker", curto: "Docker", icone: "docker", tipo: "painel", montarLateral: area.montarDocker },
+  { separador: true },
+  { id: "master", rotulo: "Master", curto: "Master", icone: "master", tipo: "vista", modulo: master },
+  { id: "tarefas", rotulo: "Tarefas", curto: "Tarefas", icone: "tarefas", tipo: "vista", modulo: tarefas },
+  { id: "quadro", rotulo: "Quadro de mensagens", curto: "Quadro", icone: "quadro", tipo: "vista", modulo: quadro },
+  { id: "memoria", rotulo: "Memória", curto: "Memória", icone: "memoria", tipo: "vista", modulo: memoria },
+  { id: "ferramentas", rotulo: "Ferramentas", curto: "Ferram.", icone: "ferramentas", tipo: "vista", modulo: ferramentas },
+  { id: "integracoes", rotulo: "Integrações", curto: "Integr.", icone: "integracoes", tipo: "vista", modulo: integracoes },
+  { id: "custos", rotulo: "Custo", curto: "Custo", icone: "custos", tipo: "vista", modulo: custos },
+  { espaco: true },
+  { id: "conta", rotulo: "Sua conta", curto: "Conta", icone: "conta", tipo: "acao", fazer: () => dialogoConta($("#usuario-atual").textContent) },
+  { id: "config", rotulo: "Configurações", curto: "Config", icone: "config", tipo: "acao", fazer: () => config.abrirJanela(), atalho: "Ctrl+," },
 ];
-let atual = null;
+const REAIS = ATIVIDADES.filter((a) => a.id);
+const atividade = (id) => REAIS.find((a) => a.id === id);
 let fonte = null;
 const vistos = new Set();
 
-function marcarAtual() {
-  for (const b of document.querySelectorAll("#atividades button")) b.setAttribute("aria-current", b.dataset.id === atual ? "page" : "false");
-}
-
-/** Troca a area principal. O menu lateral da area abre por cima do conteudo (gaveta) e fecha ao clicar fora, Esc ou Ctrl+B. */
+/** Navega para uma area. Vistas abrem (ou reativam) a aba e mostram o menu delas na barra lateral. */
 function ir(id, { abrirMenu = true } = {}) {
-  const v = VISTAS.find((x) => x.id === id) || VISTAS[0];
-  if (v.janela) { // a area de fundo continua; o endereco #/config reabre a janela (link direto e recarregar)
-    if (!atual) ir("tarefas", { abrirMenu: false });
-    history.replaceState(null, "", `#/${v.id}`);
+  if (id === "config") {
+    if (!abaAtiva()) abrirInicio();
+    history.replaceState(null, "", "#/config");
     config.abrirJanela();
     return;
   }
-  atual = v.id;
-  if (location.hash !== `#/${v.id}`) history.replaceState(null, "", `#/${v.id}`);
-  marcarAtual();
-  const lat = $("#lateral");
-  limpar(lat);
-  const temMenu = typeof v.modulo.montarLateral === "function";
-  if (temMenu) v.modulo.montarLateral(lat);
-  definirPainel("lateral", temMenu && abrirMenu);
-  v.modulo.montar($("#principal"));
-  $("#principal").setAttribute("aria-label", v.rotulo);
+  if (id === "agentes" || id === "chat") return definirModo(id);
+  if (id === "inicio") { if (estado.modo !== "editor") definirModo("editor"); abrirInicio(); return; }
+  const at = atividade(id);
+  if (!at) return ir("inicio");
+  if (estado.modo !== "editor") definirModo("editor");
+  if (at.tipo === "painel") return mostrarLateral(id);
+  if (at.tipo === "acao") return at.fazer();
+  abrirVista(id);
+  if (typeof at.modulo.montarLateral === "function") mostrarLateral(id, { abrir: abrirMenu });
 }
 
 function clicarAtividade(id) {
-  if (id === atual && painelAberto("lateral")) return definirPainel("lateral", false); // como nas IDEs: clicar na area ativa recolhe
-  if (id === atual) return definirPainel("lateral", true);
+  const at = atividade(id);
+  if (at.tipo === "acao") return at.fazer();
+  if (estado.modo !== "editor") definirModo("editor");
+  const aba = abaAtiva();
+  const mostrando = painelAberto("lateral") && lateralAtual() === id;
+  if (at.tipo === "painel") return mostrando ? definirPainel("lateral", false) : mostrarLateral(id);
+  if (aba?.tipo === "vista" && aba.id === id) { // como nas IDEs: clicar na area ativa recolhe/abre a barra lateral
+    if (mostrando) return definirPainel("lateral", false);
+    if (typeof at.modulo.montarLateral === "function") return mostrarLateral(id);
+    return;
+  }
   ir(id);
 }
 
 function montarAtividades() {
   const nav = $("#atividades");
-  nav.append(...VISTAS.map((v) => el("button", { type: "button", dataset: { id: v.id }, title: v.rotulo, "aria-label": v.rotulo, onclick: () => clicarAtividade(v.id) },
-    el("span", { className: "glifo", "aria-hidden": "true", textContent: v.glifo }), el("span", { textContent: v.rotulo }))));
-  // Navegacao por setas ↑/↓ entre as areas (padrao de barras de atividade de IDEs)
+  for (const a of ATIVIDADES) {
+    if (a.separador) { nav.append(el("hr", { className: "sep-ativ", "aria-hidden": "true" })); continue; }
+    if (a.espaco) { nav.append(el("span", { className: "espaco" })); continue; }
+    nav.append(el("button", { type: "button", dataset: { id: a.id }, title: a.atalho ? `${a.rotulo} (${a.atalho})` : a.rotulo, "aria-label": a.rotulo,
+      onclick: () => clicarAtividade(a.id) }, icone(a.icone, 22), el("span", { textContent: a.curto })));
+  }
+  // setas ↑/↓ entre as areas (padrao das barras de atividade das IDEs)
   nav.addEventListener("keydown", (ev) => {
     if (ev.key !== "ArrowDown" && ev.key !== "ArrowUp") return;
     const bs = [...nav.querySelectorAll("button")]; const i = bs.indexOf(document.activeElement);
@@ -72,31 +94,92 @@ function montarAtividades() {
   });
 }
 
+function proximaAba(passo) {
+  const lista = abas(); const i = lista.findIndex((a) => a.chave === abaAtiva()?.chave);
+  if (lista.length > 1) ativar(lista[(i + passo + lista.length) % lista.length].chave);
+}
+
+function comandos() {
+  const c = (rotulo, executar, atalho = "") => ({ rotulo, executar, atalho });
+  return [
+    ...REAIS.map((a) => c(`Ir para: ${a.rotulo}`, () => (a.tipo === "acao" ? a.fazer() : ir(a.id)), a.atalho || "")),
+    c("Visualização: Editor", () => definirModo("editor"), "Ctrl+Alt+1"),
+    c("Visualização: Chat de agentes", () => definirModo("chat"), "Ctrl+Alt+2"),
+    c("Visualização: Agentes (oficina)", () => definirModo("agentes"), "Ctrl+Alt+3"),
+    c("Novo pedido ao master", novoPedido),
+    c("Alternar barra lateral", () => alternarPainel("lateral"), "Ctrl+B"),
+    c("Alternar painel inferior", () => alternarPainel("inferior"), "Ctrl+J"),
+    c("Alternar conversa (barra do agente)", () => alternarPainel("direita"), "Ctrl+Alt+B"),
+    c("Abrir terminal", () => emitir("inferior", "terminal"), "Ctrl+`"),
+    c("Mostrar problemas", () => emitir("inferior", "problemas")),
+    c("Mostrar eventos", () => emitir("inferior", "eventos")),
+    c("Mostrar decisões pendentes", () => emitir("abrir-direita", "decisoes")),
+    c("Arquivo: salvar", () => abaAtiva()?.editor?.salvar(), "Ctrl+S"),
+    c("Arquivo: buscar no arquivo", () => abaAtiva()?.editor?.abrirBusca(false), "Ctrl+F"),
+    c("Arquivo: substituir no arquivo", () => abaAtiva()?.editor?.abrirBusca(true), "Ctrl+H"),
+    c("Arquivo: alternar prévia (Markdown/HTML)", () => abaAtiva()?.editor?.alternarPrevia(), "Ctrl+Shift+V"),
+    c("Arquivo: ir para a linha…", () => abrirPaleta(":"), "Ctrl+G"),
+    c("Abas: fechar a aba atual", () => abaAtiva() && fechar(abaAtiva().chave), "Ctrl+Alt+W"),
+    c("Abas: próxima aba", () => proximaAba(1), "Ctrl+Alt+→"),
+    c("Abas: aba anterior", () => proximaAba(-1), "Ctrl+Alt+←"),
+    c("Abrir boas-vindas", () => ir("inicio")),
+    c("Detalhe: alternar Simples/Avançado", () => { const n = $("#nivel"); n.value = n.value === "simples" ? "avancado" : "simples"; n.dispatchEvent(new Event("change")); }),
+  ];
+}
+
+function novoPedido() {
+  localStorage.setItem("forja_fio", JSON.stringify({ tipo: "master" }));
+  definirModo("chat");
+  requestAnimationFrame(() => setTimeout(() => $("#direita-corpo textarea")?.focus(), 200));
+}
+
 function atalhos() {
   $("#alternar-lateral").addEventListener("click", () => alternarPainel("lateral"));
   $("#alternar-direita").addEventListener("click", () => alternarPainel("direita"));
   $("#alternar-inferior").addEventListener("click", () => alternarPainel("inferior"));
-  for (const b of document.querySelectorAll("[data-fechar]")) b.addEventListener("click", () => definirPainel(b.dataset.fechar, false));
-  // Clique fora do menu lateral (no conteudo ou no painel inferior) o recolhe; o clique continua valendo para o que foi clicado.
-  for (const alvo of ["#principal", "#inferior", "#direita"]) $(alvo).addEventListener("pointerdown", () => { if (painelAberto("lateral")) definirPainel("lateral", false); });
-  // Arrastar um cartao: os paineis sobrepostos ficam translucidos e deixam o ponteiro passar (a coluna de destino pode estar embaixo).
+  $("#centro-comandos").addEventListener("click", () => abrirPaleta(""));
+  for (const b of document.querySelectorAll("#modos button")) b.addEventListener("click", () => definirModo(b.dataset.modo));
+  for (const b of document.querySelectorAll("[data-fechar]")) b.addEventListener("click", () => { if (b.dataset.fechar === "direita" && estado.modo === "chat") definirModo("editor"); definirPainel(b.dataset.fechar, false); });
+  $('[data-expandir="direita"]').addEventListener("click", () => definirModo(estado.modo === "chat" ? "editor" : "chat"));
+  $('[data-maximizar="inferior"]').addEventListener("click", (ev) => {
+    const a = $("#area"); const max = a.dataset.inferiorMax !== "on";
+    a.dataset.inferiorMax = max ? "on" : "off"; ev.currentTarget.setAttribute("aria-pressed", String(max));
+  });
+  // Arrastar um cartao com o painel sobreposto (tela estreita): os paineis deixam o ponteiro passar.
   document.addEventListener("dragstart", () => document.body.classList.add("arrastando"));
   for (const t of ["dragend", "drop"]) document.addEventListener(t, () => document.body.classList.remove("arrastando"));
-  // Escolher um item de lista do menu (nota, ferramenta) e "navegar": o menu sai da frente do conteudo escolhido.
-  $("#lateral").addEventListener("click", (ev) => { if (ev.target.closest(".lista-notas button")) definirPainel("lateral", false); });
+  const estreita = matchMedia("(max-width: 760px)");
+  // Em tela estreita os paineis viram gavetas: clicar no conteudo recolhe o menu lateral.
+  $("#principal").addEventListener("pointerdown", () => { if (estreita.matches && painelAberto("lateral")) definirPainel("lateral", false, { lembrar: false }); });
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && !document.querySelector("dialog[open]")) {
-      // Fecha o painel sobreposto de cima: menu lateral, depois o painel em foco (conversa ou inferior).
-      const emFoco = ["direita", "inferior"].find((n) => $(`#${n}`).contains(document.activeElement));
-      const alvo = painelAberto("lateral") ? "lateral" : emFoco && painelAberto(emFoco) ? emFoco : null;
-      if (alvo) { ev.preventDefault(); definirPainel(alvo, false); }
+      const emFoco = ["lateral", "direita", "inferior"].find((n) => $(`#${n}`).contains(document.activeElement));
+      const alvo = emFoco && painelAberto(emFoco) ? emFoco : estreita.matches && painelAberto("lateral") ? "lateral" : null;
+      if (alvo && !(alvo === "direita" && estado.modo === "chat")) { ev.preventDefault(); definirPainel(alvo, false); }
       return;
     }
+    if (ev.key === "F1") { ev.preventDefault(); abrirPaleta(">"); return; }
     if (!(ev.ctrlKey || ev.metaKey)) return;
     const k = ev.key.toLowerCase();
-    if (k === "b" && ev.shiftKey) { ev.preventDefault(); alternarPainel("direita"); }
+    const comAlt = ev.altKey;
+    if (comAlt && ev.target instanceof Element && ev.target.matches("textarea, input, [contenteditable]")) return; // AltGr (= Ctrl+Alt) digita caracteres
+    if (comAlt && ["1", "2", "3"].includes(ev.key)) { ev.preventDefault(); definirModo(["editor", "chat", "agentes"][Number(ev.key) - 1]); }
+    else if (comAlt && k === "b") { ev.preventDefault(); alternarPainel("direita"); }
+    else if (comAlt && k === "i") { ev.preventDefault(); definirPainel("direita", true); requestAnimationFrame(() => $("#direita-corpo textarea")?.focus()); }
+    else if (comAlt && k === "w") { ev.preventDefault(); if (abaAtiva()) fechar(abaAtiva().chave); }
+    else if (comAlt && ev.key === "ArrowRight") { ev.preventDefault(); proximaAba(1); }
+    else if (comAlt && ev.key === "ArrowLeft") { ev.preventDefault(); proximaAba(-1); }
+    else if (k === "s" && !ev.shiftKey) { ev.preventDefault(); abaAtiva()?.editor?.salvar(); } // fora do editor tambem salva a aba ativa
+    else if (k === "b" && ev.shiftKey) { ev.preventDefault(); alternarPainel("direita"); }
+    else if (k === "p" && ev.shiftKey) { ev.preventDefault(); abrirPaleta(">"); }
+    else if (k === "p") { ev.preventDefault(); abrirPaleta(""); }
+    else if (k === "g" && !ev.shiftKey) { ev.preventDefault(); abrirPaleta(":"); }
+    else if (k === "e" && ev.shiftKey) { ev.preventDefault(); ir("explorador"); }
+    else if (k === "f" && ev.shiftKey) { ev.preventDefault(); ir("busca"); }
+    else if (k === "g" && ev.shiftKey) { ev.preventDefault(); ir("git"); }
     else if (k === "b") { ev.preventDefault(); alternarPainel("lateral"); }
     else if (k === "j") { ev.preventDefault(); alternarPainel("inferior"); }
+    else if (ev.key === "`") { ev.preventDefault(); emitir("inferior", "terminal"); }
     else if (k === ",") { ev.preventDefault(); config.abrirJanela(); }
   });
 }
@@ -108,7 +191,7 @@ function conectarSse() {
   fonte = new EventSource(`/api/v1/eventos/stream${t ? `?token=${encodeURIComponent(t)}` : ""}`);
   const pill = $("#conexao");
   fonte.onopen = () => { pill.textContent = "conectado"; pill.classList.add("ok"); };
-  fonte.onerror = () => { pill.textContent = "reconectando..."; pill.classList.remove("ok"); };
+  fonte.onerror = () => { pill.textContent = "reconectando…"; pill.classList.remove("ok"); };
   fonte.onmessage = (e) => {
     let d;
     try { d = JSON.parse(e.data); } catch { return; }
@@ -123,16 +206,16 @@ async function atualizarChip() {
     const q = await api("GET", "/kanban");
     const chip = $("#atalho-precisa");
     chip.hidden = !q.precisa_de_voce;
-    chip.textContent = `${q.precisa_de_voce} precisam de você`;
+    chip.textContent = q.precisa_de_voce === 1 ? "1 precisa de você" : `${q.precisa_de_voce} precisam de você`;
     emitir("kanban", q);
   } catch { /* o chip e informativo */ }
 }
-const agendarChip = agrupar(() => { atualizarChip(); if (atual === "tarefas") tarefas.atualizar(); });
+const agendarChip = agrupar(() => { atualizarChip(); const a = abaAtiva(); if (a?.tipo === "vista" && a.id === "tarefas" && estado.modo === "editor") tarefas.atualizar(); });
 
 function mostrarUsuario(usuario) {
   const b = $("#usuario-atual");
   b.hidden = !usuario;
-  if (usuario) { b.textContent = usuario; b.title = `Conectado como ${usuario}: trocar senha ou sair`; }
+  if (usuario) { b.replaceChildren(icone("conta", 14), el("span", { className: "trunc", textContent: usuario })); b.title = `Conectado como ${usuario}: trocar senha ou sair`; b.setAttribute("aria-label", `Sua conta: ${usuario}`); }
 }
 
 let reautenticando = false;
@@ -144,30 +227,67 @@ async function sessaoExpirou() {
   location.reload(); // recarrega as telas com a sessao nova
 }
 
+let pronto = false;
+function aoMudarModo(m) {
+  if (!pronto) return;
+  if (m === "agentes") { $("#principal").setAttribute("aria-label", "Agentes"); escritorio.montar($("#vista")); history.replaceState(null, "", "#/agentes"); }
+  else if (m === "chat") { definirPainel("direita", true, { lembrar: false }); history.replaceState(null, "", "#/chat"); }
+  else { reexibir(); const a = abaAtiva(); history.replaceState(null, "", a?.tipo === "vista" ? `#/${a.id}` : "#/editor"); }
+  marcarAtividade();
+}
+
 async function iniciar() {
-  montarAtividades(); atalhos(); iniciarTexto();
-  ouvir("janela-fechada", () => { marcarAtual(); if (atual) history.replaceState(null, "", `#/${atual}`); });
+  montarAtividades(); atalhos(); iniciarTexto(); iniciarPaleta();
+  registrarComandos(comandos());
+  ouvir("janela-fechada", () => { marcarAtividade(); const a = abaAtiva(); history.replaceState(null, "", a?.tipo === "vista" ? `#/${a.id}` : estado.modo === "editor" ? "#/editor" : `#/${estado.modo}`); });
   const nivel = $("#nivel");
   nivel.value = estado.nivel; definirNivel(estado.nivel);
   nivel.addEventListener("change", () => { definirNivel(nivel.value); config.definirPreferencia("nivel_detalhe", nivel.value).catch(() => {}); });
   document.addEventListener("forja:auth", sessaoExpirou);
   $("#usuario-atual").addEventListener("click", () => dialogoConta($("#usuario-atual").textContent));
   ouvir("ir", ir);
+  ouvir("paleta", (prefixo) => abrirPaleta(prefixo || ""));
+  ouvir("atividade", (id) => ir(id));
+  ouvir("modo-pedido", novoPedido);
+  ouvir("modo", aoMudarModo);
+  ouvir("aba", (a) => {
+    if (a.tipo === "vista") {
+      history.replaceState(null, "", `#/${a.id}`);
+      const at = atividade(a.id);
+      const lat = atividade(lateralAtual());
+      if (typeof at?.modulo.montarLateral === "function" && lat?.tipo === "vista" && lat.id !== a.id) mostrarLateral(a.id, { abrir: painelAberto("lateral") });
+    } else if (estado.modo === "editor") history.replaceState(null, "", "#/editor");
+  });
   ouvir("evento", (e) => {
     const t = String(e.tipo);
     if (/^(tarefa|execucao|aprovacao|conversa)\./.test(t)) agendarChip();
     if (t.startsWith("configuracao.")) config.recarregar().catch(() => {});
   });
-  $("#atalho-precisa").addEventListener("click", () => ir("tarefas"));
+  $("#atalho-precisa").addEventListener("click", () => { if (estado.modo === "agentes") definirModo("editor"); ir("tarefas"); });
   setInterval(() => { $("#st-hora").textContent = new Date().toLocaleTimeString("pt-BR"); }, 1000);
 
   mostrarUsuario(await garantirAcesso()); // so segue depois de um login valido (ou se o servidor nao exige login)
+  const ativaSalva = iniciarBancada(REAIS);
+  definirPainel("lateral", painelLembrado("lateral", true), { lembrar: false });
+  definirPainel("inferior", painelLembrado("inferior", false), { lembrar: false });
   direita.iniciar(); inferior.iniciar();
-  ir((location.hash.match(/^#\/(\w+)/) || [])[1] || "master");
+  const rota = (location.hash.match(/^#\/(\w+)/) || [])[1];
+  const modo = rota === "chat" || rota === "agentes" ? rota : rota && rota !== "editor" ? "editor" : estado.modo;
+  estado.modo = modo; // as abas montam (ou nao) conforme o modo inicial
+  const alvoRota = rota ? atividade(rota) : null; // vista (abre a aba dela) ou painel (Explorador, Git...: so a barra lateral)
+  const rotaVista = alvoRota?.tipo === "vista";
+  if (!rotaVista) { if (ativaSalva && abas().some((a) => a.chave === ativaSalva)) ativar(ativaSalva); else abrirInicio(); }
+  const ativa = abaAtiva(); // a barra lateral volta com o menu da tela aberta (ou o Explorador)
+  const menuDaTela = ativa?.tipo === "vista" && typeof atividade(ativa.id)?.modulo.montarLateral === "function";
+  mostrarLateral(menuDaTela ? ativa.id : "explorador", { abrir: painelAberto("lateral") });
+  if (alvoRota || rota === "config") ir(rota);
+  definirModo(modo);
+  pronto = true;
+  if (modo !== "editor") aoMudarModo(modo);
   conectarSse(); atualizarChip();
   config.recarregar().catch(() => {});
   config.carregarPreferencias().catch(() => {});
-  addEventListener("hashchange", () => { const id = (location.hash.match(/^#\/(\w+)/) || [])[1]; if (id && id !== atual) ir(id); });
+  addEventListener("hashchange", () => { const id = (location.hash.match(/^#\/(\w+)/) || [])[1]; if (id && id !== abaAtiva()?.id && id !== "editor") ir(id); });
 }
 
 iniciar();

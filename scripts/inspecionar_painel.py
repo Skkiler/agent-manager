@@ -34,6 +34,10 @@ VISTAS = {
     "integracoes": ".grade .card",
     "custos": ".custos .metricas",
     "config": "#janela-config .opcao",
+    "inicio": ".boas-vindas .bv-grade",
+    "explorador": "#lateral-corpo .arvore",
+    "chat": ".chat-grade .chat-fios",
+    "agentes": ".escritorio canvas.escritorio-cena",
 }
 
 
@@ -358,7 +362,7 @@ def integracoes(pagina, base: str, saida: Path, expect, passo) -> int:
 
 
 def abrir_menu(pagina) -> None:
-    """O menu lateral e uma gaveta SOBREPOSTA: abre ao entrar numa area e fecha ao clicar no conteudo."""
+    """A barra lateral (estilo VS Code) EMPURRA o conteudo; o botao da barra de titulo (Ctrl+B) abre e recolhe."""
     if pagina.locator("#area").get_attribute("data-lateral") != "on":
         pagina.locator("#alternar-lateral").click()
     pagina.locator("#lateral").wait_for(state="visible")
@@ -367,9 +371,9 @@ def abrir_menu(pagina) -> None:
 def fechar_menu(pagina) -> None:
     from playwright.sync_api import expect
 
-    expect(pagina.locator("dialog[open]")).to_have_count(0, timeout=8000)  # com janela aberta, o Esc e da janela
+    expect(pagina.locator("dialog[open]")).to_have_count(0, timeout=8000)  # com janela aberta, o clique e da janela
     if pagina.locator("#area").get_attribute("data-lateral") == "on":
-        pagina.keyboard.press("Escape")
+        pagina.locator("#alternar-lateral").click()
     pagina.locator("#lateral").wait_for(state="hidden")
 
 
@@ -393,6 +397,99 @@ def fluxo_master(pagina, base: str, saida: Path, expect, passo) -> None:
     pagina.keyboard.press("Escape")
 
 
+def bancada(pagina, base: str, saida: Path, expect, passo) -> None:
+    """Bancada estilo VS Code: explorador sem segredos, editor (realce, salvar, conflito), problemas, previa de Markdown, paleta,
+    terminal (recusa segredo), divisoria pelo teclado e as visualizacoes Chat e Agentes. Pasta temporaria com dados ficticios."""
+    pasta = Path(tempfile.mkdtemp(prefix="forja-bancada-"))
+    (pasta / "src").mkdir()
+    (pasta / "src" / "app.py").write_text("def soma(a, b):\n    return a + b\n", encoding="utf-8")
+    (pasta / "notas.md").write_text("# Notas da bancada\n\nTexto **ficticio**.\n", encoding="utf-8")
+    (pasta / "ruim.json").write_text('{"a": 1,,}\n', encoding="utf-8")
+    (pasta / ".env").write_text("SEGREDO=ficticio\n", encoding="utf-8")
+    nome = f"Bancada {pasta.name}"
+    r = pagina.request.post(base + "api/v1/projetos", data={"nome": nome})
+    proj = r.json()
+    pagina.request.put(base + f"api/v1/projetos/{proj['id']}/pastas", data={"expected_version": proj.get("versao", 1),
+                                                                            "pastas": [{"caminho": str(pasta), "papel": "trabalho"}]})
+    pagina.goto(base + "#/explorador")
+    pagina.reload()
+    raiz = pagina.locator(".raiz-projeto", has_text=nome)
+    raiz.locator(".no-arvore.pasta").first.click()
+    expect(raiz.locator(".no-arvore.arquivo", has_text="notas.md")).to_be_visible(timeout=6000)
+    passo("explorador lista as pastas do projeto e esconde .env", ".env" not in raiz.inner_text())
+    raiz.locator(".no-arvore.pasta", has_text="src").click()
+    raiz.locator(".no-arvore.arquivo", has_text="app.py").click()
+    pagina.wait_for_selector(".editor .fonte", timeout=8000)
+    passo("editor abre o arquivo com realce de sintaxe e numeros de linha",
+          pagina.locator(".editor .realce .tk-kw").count() >= 1 and "2" in pagina.locator(".editor .numeros").inner_text())
+    pagina.locator(".editor .fonte").click()
+    pagina.keyboard.press("Control+End")
+    pagina.keyboard.type("# editado pela bancada")
+    passo("aba mostra alteracao nao salva", pagina.locator(".aba-editor.suja").count() == 1)
+    pagina.keyboard.press("Control+s")
+    expect(pagina.locator(".aba-editor.suja")).to_have_count(0, timeout=6000)
+    passo("Ctrl+S salva no disco pela API da area de trabalho", "editado pela bancada" in (pasta / "src" / "app.py").read_text(encoding="utf-8"))
+    (pasta / "src" / "app.py").write_text("x = 'mudou fora'\n", encoding="utf-8")
+    pagina.keyboard.type("\n# segunda")
+    pagina.keyboard.press("Control+s")  # o confirm de recarregar e recusado (Playwright dispensa dialogos)
+    pagina.wait_for_selector(".toast.erro", timeout=6000)
+    passo("arquivo mudado fora do editor nao e sobrescrito (concorrencia otimista)",
+          (pasta / "src" / "app.py").read_text(encoding="utf-8") == "x = 'mudou fora'\n")
+    raiz.locator(".no-arvore.arquivo", has_text="ruim.json").click()
+    expect(pagina.locator("#st-problemas")).to_contain_text("⊗ 1", timeout=6000)
+    passo("JSON invalido vira problema na barra de status e na calha", pagina.locator(".marca-problema").count() >= 1)
+    raiz.locator(".no-arvore.arquivo", has_text="notas.md").click()
+    pagina.wait_for_selector(".editor[data-linguagem=markdown]", timeout=6000)
+    pagina.get_by_role("button", name="Prévia").click()
+    expect(pagina.locator(".previa h1")).to_have_text("Notas da bancada", timeout=4000)
+    passo("previa de Markdown ao lado do codigo", True)
+    pagina.screenshot(path=str(saida / "bancada-editor.png"))
+    pagina.keyboard.press("Control+p")
+    pagina.locator("#paleta-busca").fill("app")
+    expect(pagina.locator(".paleta-op", has_text="app.py").first).to_be_visible(timeout=6000)
+    pagina.keyboard.press("Enter")
+    expect(pagina.locator(".aba-editor.ativa")).to_contain_text("app.py", timeout=4000)
+    passo("Ctrl+P (abrir arquivo) encontra e abre o arquivo", True)
+    pagina.keyboard.press("Control+Shift+P")
+    pagina.locator("#paleta-busca").fill(">abrir terminal")
+    pagina.keyboard.press("Enter")
+    entrada = pagina.locator(".terminal-entrada")
+    expect(entrada).to_be_visible(timeout=6000)
+    entrada.fill("echo forja-ok")
+    entrada.press("Enter")
+    expect(pagina.locator(".terminal-saida")).to_contain_text("forja-ok", timeout=30000)
+    passo("paleta de comandos abre o terminal e o terminal roda um comando", True)
+    entrada.fill("cat .env")
+    entrada.press("Enter")
+    expect(pagina.locator(".terminal-saida")).to_contain_text("recusado", timeout=10000)
+    passo("terminal recusa comando que le segredo", "SEGREDO=ficticio" not in pagina.locator(".terminal-saida").inner_text())
+    pagina.screenshot(path=str(saida / "bancada-terminal.png"))
+    pagina.keyboard.press("Control+j")
+    abrir_menu(pagina)
+    antes = pagina.locator("#lateral").bounding_box()["width"]
+    pagina.locator(".divisor-lateral").focus()
+    pagina.keyboard.press("ArrowRight")
+    pagina.keyboard.press("ArrowRight")
+    pagina.wait_for_timeout(400)
+    passo("divisoria redimensiona a barra lateral pelo teclado", pagina.locator("#lateral").bounding_box()["width"] >= antes + 40)
+    pagina.keyboard.press("Home")
+    pagina.locator('#modos button[data-modo="chat"]').click()
+    expect(pagina.locator(".chat-grade .chat-fios")).to_be_visible(timeout=6000)
+    passo("modo Chat expande a conversa para a tela toda (editor escondido)", pagina.locator("#principal").is_hidden())
+    pagina.locator("button.fio", has_text="Conversa com o master").click()
+    expect(pagina.locator(".chat-painel .conversa-master")).to_be_visible(timeout=6000)
+    passo("lista de conversas abre a conversa com o master", True)
+    pagina.screenshot(path=str(saida / "bancada-chat.png"))
+    pagina.locator('#modos button[data-modo="agentes"]').click()
+    expect(pagina.locator("canvas.escritorio-cena")).to_be_visible(timeout=6000)
+    passo("modo Agentes mostra o escritorio em pixel art com lista acessivel", pagina.locator(".escritorio-lista li").count() >= 1)
+    pagina.wait_for_timeout(600)
+    pagina.screenshot(path=str(saida / "bancada-agentes.png"))
+    pagina.locator('#modos button[data-modo="editor"]').click()
+    expect(pagina.locator(".faixa-abas")).to_be_visible(timeout=4000)
+    passo("volta ao modo Editor com as abas abertas", pagina.locator(".aba-editor").count() >= 3)
+
+
 def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     from playwright.sync_api import expect  # a CSP da pagina proibe eval: wait_for_function nao funciona aqui
 
@@ -412,10 +509,13 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.reload()
     pagina.wait_for_selector(".cartao")
     passo("painel de conversa comeca recolhido", pagina.locator("#direita").is_hidden())
-    passo("menu lateral abre ao entrar na area, por cima do conteudo (nao empurra)",
-          pagina.locator("#lateral").is_visible() and pagina.locator("#principal").bounding_box()["x"] <= 60)
+    lat, princ = pagina.locator("#lateral").bounding_box(), pagina.locator("#principal").bounding_box()
+    passo("barra lateral mostra o menu da area e EMPURRA o conteudo (estilo VS Code)",
+          pagina.locator("#lateral").is_visible() and princ["x"] >= lat["x"] + lat["width"] - 1)
     fechar_menu(pagina)
-    passo("Esc fecha o menu lateral", pagina.locator("#lateral").is_hidden())
+    pagina.wait_for_timeout(400)  # transicao da grade
+    passo("botao da barra de titulo recolhe a barra lateral e o conteudo ocupa o espaco",
+          pagina.locator("#lateral").is_hidden() and pagina.locator("#principal").bounding_box()["x"] <= 60)
     pagina.locator(".cartao", has_text="Definir autenticacao").click()
     pagina.wait_for_selector("#direita .msg", timeout=8000)
     passo("selecionar tarefa abre a conversa com o briefing do agente", pagina.locator("#direita .decisao").count() >= 1)
@@ -477,11 +577,12 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     passo("nivel avancado mostra campos tecnicos", pagina.locator(".so-avancado").first.is_visible())
     pagina.select_option("#nivel", "simples")
 
-    largura_antes = pagina.locator("#principal").bounding_box()["width"]
+    altura_antes = pagina.locator("#principal").bounding_box()["height"]
     pagina.keyboard.press("Control+j")
     expect(pagina.locator("#inferior")).to_be_visible(timeout=3000)
-    passo("Ctrl+J abre o painel inferior por cima do conteudo (sem empurrar)",
-          abs(pagina.locator("#principal").bounding_box()["width"] - largura_antes) < 1)
+    pagina.wait_for_timeout(400)  # transicao da grade
+    passo("Ctrl+J abre o painel inferior e EMPURRA o conteudo (nada fica coberto)",
+          pagina.locator("#principal").bounding_box()["height"] < altura_antes - 50)
     pagina.keyboard.press("Control+j")
     expect(pagina.locator("#inferior")).to_be_hidden(timeout=3000)
     passo("Ctrl+J recolhe o painel inferior", True)
@@ -645,6 +746,7 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
 
     melhorias(pagina, base, saida, expect, passo)
     fluxo_master(pagina, base, saida, expect, passo)
+    bancada(pagina, base, saida, expect, passo)
 
     pagina.goto(base + "#/ferramentas")
     pagina.reload()
@@ -652,7 +754,8 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.get_by_role("button", name="Executar").click()
     pagina.wait_for_selector("pre.saida", timeout=6000)
     passo("executar ferramenta mostra resumo e custo", pagina.locator(".tag", has_text="reducao").count() >= 1)
-    passo("nenhum erro de console/CSP durante as interacoes", not [e for e in erros if "404" not in e and "422" not in e])
+    passo("nenhum erro de console/CSP durante as interacoes", not [e for e in erros if "404" not in e and "422" not in e
+                                                                  and not ("409" in e and ("/area/arquivo" in e or "Failed to load resource" in e))])  # conflito provocado no teste
     for e in erros[:5]:
         print("   ", e[:200])
     return falhas

@@ -1,12 +1,12 @@
 {
   "name": "Forja — orquestrador local",
   "short_name": "Forja",
-  "description": "Orquestrador local de agentes Kiro (roda so no seu computador).",
+  "description": "Orquestrador local de agentes Kiro e Codex (roda so no seu computador).",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#1f1f1f",
-  "theme_color": "#181818",
+  "background_color": "#002838",
+  "theme_color": "#002838",
   "lang": "pt-BR",
   "icons": [
     { "src": "/estatico/icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },

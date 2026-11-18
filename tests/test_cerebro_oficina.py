@@ -100,7 +100,7 @@ def test_cena_da_oficina_e_replay(client):
     client.app.state.servico.aguardar(ex["id"])
     cena = client.get(f"{API}/oficina").json()
     [ag] = [a for a in cena["agentes"] if a["tarefa_id"] == t["id"]]
-    assert ag["aguardando"] and ag["acao"] == "aguardando" and ag["papel"] == "simulado" and 0 <= ag["orcamento"] <= 1
+    assert ag["aguardando"] and ag["acao"] == "aguardando" and ag["papel"] == "simulado" and 0 <= ag["orcamento"] <= 1 and ag["agente"] == "mock"
     assert "aguardando você" in cena["resumo"] and cena["aguardando"] >= 1
     assert client.get(f"{API}/oficina", params={"projeto_id": "P-outro"}).json()["agentes"] == []
     rep = client.get(f"{API}/execucoes/{ex['id']}/replay").json()

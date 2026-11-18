@@ -8,16 +8,24 @@
   <title>Forja — orquestrador local</title>
   <link rel="icon" href="/estatico/icone.svg" type="image/svg+xml" />
   <link rel="manifest" href="/estatico/manifest.webmanifest" />
-  <meta name="theme-color" content="#181818" />
+  <meta name="theme-color" content="#002838" />
   <link rel="stylesheet" href="/estatico/tema.css" />
   <link rel="stylesheet" href="/estatico/app.css" />
+  <link rel="stylesheet" href="/estatico/bancada.css" />
 </head>
 <body data-nivel="simples">
   <a class="pular" href="#principal">Pular para o conteúdo</a>
 
   <header id="barra-titulo" role="banner">
-    <strong class="marca">Forja</strong>
-    <span class="subtitulo">orquestrador local</span>
+    <span class="marca"><img src="/estatico/icone.svg" alt="" width="20" height="20" /><strong>FORJA</strong></span>
+    <button id="centro-comandos" type="button" class="centro-comandos" title="Abrir arquivo (Ctrl+P) · Comandos (Ctrl+Shift+P)">
+      <span aria-hidden="true">⌕</span><span class="trunc">Buscar arquivos e comandos</span><kbd>Ctrl+P</kbd>
+    </button>
+    <div id="modos" class="modos" role="group" aria-label="Visualização">
+      <button type="button" data-modo="editor" aria-pressed="true" aria-label="Visualização Editor" title="Editor (Ctrl+Alt+1)">Editor</button>
+      <button type="button" data-modo="chat" aria-pressed="false" aria-label="Visualização Chat" title="Chat de agentes (Ctrl+Alt+2)">Chat</button>
+      <button type="button" data-modo="agentes" aria-pressed="false" aria-label="Visualização Agentes" title="Oficina dos agentes (Ctrl+Alt+3)">Agentes</button>
+    </div>
     <span class="espaco"></span>
     <button id="atalho-precisa" type="button" class="chip" hidden aria-label="Itens que precisam de você"></button>
     <label class="chip-rotulo" for="nivel">Detalhe
@@ -27,20 +35,33 @@
       </select>
     </label>
     <span id="nivel-ajuda" class="sr-only">Simples esconde campos técnicos; Avançado mostra tudo.</span>
-    <button id="alternar-lateral" type="button" aria-pressed="false" aria-controls="lateral" title="Menu lateral (Ctrl+B)">Menu</button>
-    <button id="alternar-direita" type="button" aria-pressed="false" aria-controls="direita" title="Conversa e decisões (Ctrl+Shift+B)">Conversa</button>
-    <button id="alternar-inferior" type="button" aria-pressed="false" aria-controls="inferior" title="Painel inferior (Ctrl+J)">Painel</button>
-    <button id="usuario-atual" type="button" class="chip" hidden aria-label="Sua conta"></button>
+    <span class="grupo-paineis" role="group" aria-label="Painéis">
+      <button id="alternar-lateral" type="button" class="icone-painel" aria-pressed="false" aria-controls="lateral" aria-label="Barra lateral" title="Barra lateral (Ctrl+B)"></button>
+      <button id="alternar-inferior" type="button" class="icone-painel" aria-pressed="false" aria-controls="inferior" aria-label="Painel inferior" title="Painel inferior (Ctrl+J)"></button>
+      <button id="alternar-direita" type="button" class="icone-painel" aria-pressed="false" aria-controls="direita" aria-label="Conversa" title="Conversa e decisões (Ctrl+Alt+B)"></button>
+    </span>
+    <button id="usuario-atual" type="button" class="chip-conta" hidden aria-label="Sua conta"></button>
     <span id="conexao" role="status" aria-live="polite" class="pill">desconectado</span>
   </header>
 
-  <div id="area" data-lateral="off" data-direita="off" data-inferior="off">
+  <div id="area" data-lateral="off" data-direita="off" data-inferior="off" data-modo="editor">
     <nav id="atividades" aria-label="Áreas do orquestrador"></nav>
-    <main id="principal" tabindex="-1"></main>
-    <aside id="lateral" aria-label="Menu lateral" inert></aside>
+    <aside id="lateral" aria-label="Barra lateral" inert>
+      <div class="cabeca-lateral"><h2 id="lateral-titulo">Explorador</h2><span class="espaco"></span><span id="lateral-acoes" class="linha"></span></div>
+      <div id="lateral-corpo"></div>
+    </aside>
+    <main id="principal" tabindex="-1">
+      <div class="faixa-abas">
+        <ul id="editor-abas" class="abas-editor" aria-label="Abas abertas"></ul>
+        <span id="editor-acoes" class="linha"></span>
+      </div>
+      <nav id="trilha" class="trilha" aria-label="Caminho"></nav>
+      <div id="vista" tabindex="-1"></div>
+    </main>
     <aside id="direita" aria-label="Conversa e decisões" inert>
       <div class="cabeca-painel">
         <div role="tablist" aria-label="Painel de conversa" id="direita-abas"></div>
+        <button type="button" class="fechar" data-expandir="direita" aria-label="Expandir conversa (modo chat)" title="Expandir (modo chat)">⤢</button>
         <button type="button" class="fechar" data-fechar="direita" aria-label="Fechar conversa" title="Fechar (Esc)">✕</button>
       </div>
       <div id="direita-corpo" tabindex="0" aria-label="Conteudo da conversa"></div>
@@ -48,6 +69,7 @@
     <section id="inferior" aria-label="Painel inferior" inert>
       <div class="cabeca-painel">
         <div role="tablist" aria-label="Painel inferior" id="inferior-abas"></div>
+        <button type="button" class="fechar" data-maximizar="inferior" aria-label="Maximizar painel inferior" title="Maximizar">⌃</button>
         <button type="button" class="fechar" data-fechar="inferior" aria-label="Fechar painel inferior" title="Fechar (Esc)">✕</button>
       </div>
       <div id="inferior-corpo" tabindex="0" aria-label="Conteudo do painel inferior"></div>
@@ -55,15 +77,25 @@
   </div>
 
   <footer id="barra-status" role="contentinfo">
+    <button id="st-git" type="button" class="st" hidden title="Controle de código (Git)"></button>
+    <button id="st-problemas" type="button" class="st" title="Problemas do arquivo aberto">⊗ 0 ⚠ 0</button>
     <span id="st-config">config —</span>
     <span id="st-modelo">modelo —</span>
     <span class="espaco"></span>
+    <span id="st-cursor"></span>
+    <span id="st-linguagem"></span>
     <span id="st-tokens" title="Tokens exibidos são estimativas (~4 caracteres por token)">tokens estimados</span>
     <span id="st-hora"></span>
   </footer>
 
   <div id="tela-login" hidden></div>
   <dialog id="dlg-geral" aria-labelledby="dlg-geral-t"><div id="dlg-geral-corpo"></div></dialog>
+  <dialog id="paleta" class="paleta" aria-label="Paleta de comandos">
+    <input id="paleta-busca" type="text" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="paleta-lista"
+           aria-autocomplete="list" aria-label="Buscar arquivos, comandos (>) ou linha (:)" />
+    <ul id="paleta-lista" role="listbox" aria-label="Resultados"></ul>
+    <p id="paleta-dica" class="mudo"></p>
+  </dialog>
   <div id="avisos" role="status" aria-live="polite" popover="manual"></div>
 
   <script src="/estatico/js/main.js" type="module"></script>

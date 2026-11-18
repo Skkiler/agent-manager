@@ -126,3 +126,15 @@ def test_docker_ausente_da_erro_amigavel(client, monkeypatch):
 
 def test_linguagem_de():
     assert linguagem_de("Dockerfile") == "docker" and linguagem_de("a.TSX") == "typescript" and linguagem_de("x.zzz") == "texto"
+
+
+def test_pasta_sem_git_nao_e_erro_no_status(client, proj):
+    pid, _, _ = proj
+    r = client.get(f"{A}/git", params={"projeto": pid})
+    assert r.status_code == 200 and r.json()["dados"] == {"branch": "", "alterados": [], "repositorio": False}
+    assert client.get(f"{A}/git", params={"projeto": pid, "operacao": "log"}).status_code == 422  # as outras operacoes avisam
+
+
+def test_quadro_usa_rotulos_acentuados(client):
+    rotulos = {c["id"]: c["rotulo"] for c in client.get("/api/v1/kanban").json()["colunas"]}
+    assert rotulos["executando"] == "Em execução" and rotulos["atencao"] == "Precisa de você" and rotulos["concluida"] == "Concluída"

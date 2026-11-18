@@ -1,6 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Forja">
-  <rect width="512" height="512" rx="96" fill="#1f1f1f"/>
-  <path d="M136 356h240l-28 44H164z" fill="#0078d4"/>
-  <path d="M168 132h176v56h-112v40h96v52h-96v76h-64z" fill="#e7e7e7"/>
-  <circle cx="356" cy="156" r="20" fill="#e2b340"/>
+  <!-- Marca da Forja vetorizada: bigorna branca cuja parte esquerda (chifre + haste + braco) forma um "F". -->
+  <rect width="512" height="512" rx="96" fill="#002838"/>
+  <g fill="#ffffff">
+    <path d="M60 172C104 150 146 144 194 144H434Q452 144 452 162V200Q452 216 436 216H218V392H150V216C114 214 86 200 60 172Z"/>
+    <path d="M218 262H302V314H218Z"/>
+    <path d="M324 216H424L404 268Q396 304 418 330L446 354V392H246V354L290 330Q328 304 330 268Z"/>
+  </g>
 </svg>

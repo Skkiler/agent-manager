@@ -83,7 +83,7 @@ def ler_git(raiz: Path, caminho: str = ".", operacao: str = "status", ref: str =
         bruto = _git(["status", "--porcelain=v1", "-b", "--untracked-files=normal"], pasta)
         linhas = bruto.splitlines()
         ramo = linhas[0][3:] if linhas and linhas[0].startswith("##") else ""
-        itens = [{"estado": ln[:2].strip() or "?", "arquivo": ln[3:]} for ln in linhas[1:] if ln.strip()]
+        itens = [{"estado": ln[:2].strip() or "?", "x": ln[0], "y": ln[1], "arquivo": ln[3:]} for ln in linhas[1:] if len(ln) > 3]
         ocultos = sum(1 for i in itens if caminho_sensivel(i["arquivo"].split(" -> ")[-1]))
         itens = [i for i in itens if not caminho_sensivel(i["arquivo"].split(" -> ")[-1])]
         if ocultos:

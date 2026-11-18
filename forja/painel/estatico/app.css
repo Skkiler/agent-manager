@@ -1,6 +1,6 @@
 /* Forja: componentes e layout (tokens e paletas em tema.css).
    Principios: (1) o texto se adapta ao botao, o botao se adapta a tela; o botao nunca cresce por causa do texto (altura fixa,
-   reticencias e dica com o texto inteiro); (2) menus e paineis SOBREPOEM o conteudo, nunca o empurram; (3) telas secundarias sao
+   reticencias e dica com o texto inteiro); (2) paineis EMPURRAM o conteudo e se redimensionam por divisorias (gavetas so em tela estreita); (3) telas secundarias sao
    janelas flutuantes (<dialog>); (4) controles do mesmo tipo reagem igual (hover, foco, pressionado, desabilitado). */
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -84,50 +84,87 @@ button.chip:hover:not(:disabled) { background: var(--aviso); filter: brightness(
 [role="tab"][aria-selected="true"] { color: var(--titulo); border-bottom-color: var(--acento); }
 
 /* ---------------------------------------------------------------- moldura: titulo, atividades, area, status */
+[hidden] { display: none !important; } /* nada com 'hidden' aparece, mesmo com display definido pela classe (chip vazio, V4) */
 #barra-titulo, #barra-status { display: flex; gap: var(--e2); align-items: center; padding: 0 var(--e3); min-width: 0; }
 #barra-titulo { background: var(--ativ); border-bottom: 1px solid var(--borda); position: relative; z-index: var(--z-menu); }
 #barra-titulo button { height: 24px; background: transparent; padding: 0 var(--e2); font-size: var(--fs-s); }
 #barra-titulo select { height: 24px; font-size: var(--fs-s); }
-.marca { letter-spacing: .04em; color: var(--titulo); }
-#barra-status { background: var(--acento-forte); color: var(--sobre-acento); font-size: var(--fs-xs); }
-#barra-status span { padding: 0 6px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-#barra-status span:hover { background: #ffffff26; }
+.marca { display: inline-flex; align-items: center; gap: 6px; letter-spacing: .18em; color: var(--titulo); font-size: var(--fs-s); flex: none; }
+.marca img { border-radius: 4px; }
+#barra-status { background: var(--acento-forte); color: var(--sobre-acento); font-size: var(--fs-xs); gap: 2px; }
+#barra-status > span, #barra-status > .st { padding: 0 6px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#barra-status > span:hover { background: #ffffff26; }
+#barra-status .st { height: 18px; border: 0; background: transparent; color: inherit; font-size: inherit; }
+#barra-status .st:hover:not(:disabled) { background: #ffffff26; border: 0; }
 
-/* clip (e nao hidden): paineis recolhidos ficam transladados para fora; com 'hidden' um foco programatico rolava a area inteira
-   para o lado (conteudo deslocado sem barra de rolagem, achado na inspecao da oficina) */
-#area { position: relative; overflow: clip; display: grid; min-height: 0; grid-template-columns: var(--larg-ativ) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-#atividades { grid-column: 1; background: var(--ativ); border-right: 1px solid var(--borda); display: flex; flex-direction: column; align-items: center;
-  padding-top: 6px; gap: 2px; position: relative; z-index: calc(var(--z-painel) + 1); overflow-y: auto; scrollbar-width: none; }
-#atividades button { width: 48px; height: 48px; flex: none; display: grid; place-items: center; align-content: center; gap: 1px; padding: 2px;
-  border: 0; border-left: 2px solid transparent; border-radius: 0; background: transparent; color: var(--mudo); font-size: 10px; line-height: 1.1; }
+/* Paineis EMPURRAM o conteudo (como no VS Code) e tem divisorias; fechados ocupam 0 px e ficam inertes.
+   Larguras/alturas vem de --w-lateral/--w-direita/--w-inferior (JS, arrastando as divisorias). */
+#area { position: relative; overflow: clip; display: grid; min-height: 0; min-width: 0;
+  --col-lat: 0px; --col-dir: 0px; --lin-inf: 0px;
+  grid-template-columns: var(--larg-ativ) var(--col-lat) minmax(0, 1fr) var(--col-dir);
+  grid-template-rows: minmax(0, 1fr) var(--lin-inf);
+  grid-template-areas: "ativ lat principal dir" "ativ lat inferior dir"; }
+#area[data-lateral="on"] { --col-lat: var(--w-lateral, 280px); }
+#area[data-direita="on"] { --col-dir: var(--w-direita, 420px); }
+#area[data-inferior="on"] { --lin-inf: var(--w-inferior, 260px); }
+#area[data-inferior="on"][data-inferior-max="on"] { grid-template-rows: 0 minmax(0, 1fr); }
+#atividades { grid-area: ativ; background: var(--ativ); border-right: 1px solid var(--borda); display: flex; flex-direction: column; align-items: center;
+  padding: 4px 0; gap: 2px; position: relative; z-index: calc(var(--z-painel) + 1); overflow-y: auto; scrollbar-width: none; }
+#atividades button { width: 48px; height: 46px; flex: none; display: grid; place-items: center; align-content: center; gap: 1px; padding: 2px;
+  border: 0; border-left: 2px solid transparent; border-radius: 0; background: transparent; color: var(--mudo); font-size: 9.5px; line-height: 1.1; }
 #atividades button > span:last-child { max-width: 44px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#atividades button .glifo { font-size: 18px; }
 #atividades button:hover:not(:disabled) { color: var(--titulo); background: var(--hover); }
 #atividades button[aria-current="page"] { color: var(--titulo); border-left-color: var(--acento); background: color-mix(in srgb, var(--acento) 10%, transparent); }
-#principal { grid-column: 2; overflow: auto; min-width: 0; padding: var(--e4) var(--e5); background: var(--bg); }
+#atividades .sep-ativ { width: 28px; border: 0; border-top: 1px solid var(--borda); margin: 4px 0; }
+#atividades .espaco { flex: 1; min-height: 8px; }
+#principal { grid-area: principal; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
+#vista { flex: 1; min-height: 0; overflow: auto; padding: var(--e4) var(--e5); }
+#vista[data-tipo="arquivo"], #vista[data-tipo="texto"] { padding: 0; overflow: hidden; display: flex; }
+#vista:focus { outline: none; }
 .titulo-vista { position: sticky; top: calc(-1 * var(--e4)); z-index: var(--z-fixo); display: flex; align-items: center; gap: var(--e2); flex-wrap: wrap;
   background: var(--bg); padding: var(--e2) 0; margin: calc(-1 * var(--e2)) 0 var(--e2); border-bottom: 1px solid var(--borda); }
-.titulo-vista h1 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.titulo-vista h1 { font-size: 20px; }
 
-/* paineis SOBREPOSTOS (lateral, conversa, inferior): deslizam por cima do conteudo, sem empurrar nada */
-#lateral, #direita, #inferior { position: absolute; z-index: var(--z-painel); display: flex; flex-direction: column; min-width: 0; min-height: 0;
-  background: var(--lateral); box-shadow: var(--sombra-2); transition: transform var(--dur-l) var(--curva), visibility 0s linear 0s; }
-#lateral { display: block; top: 0; bottom: 0; left: var(--larg-ativ); width: var(--w-lateral); border-right: 1px solid var(--borda); overflow: auto; padding: var(--e2) var(--e3); }
-#direita { top: 0; bottom: 0; right: 0; width: var(--w-direita); border-left: 1px solid var(--borda); overflow: hidden; }
-#inferior { left: var(--larg-ativ); right: 0; bottom: 0; height: var(--h-inferior); border-top: 1px solid var(--borda); overflow: hidden; background: var(--painel); }
-#area[data-direita="on"] #inferior { right: var(--w-direita); }
-#area:not([data-lateral="on"]) #lateral { transform: translateX(calc(-100% - var(--larg-ativ))); visibility: hidden; transition: transform var(--dur-l) var(--curva), visibility 0s linear var(--dur-l); }
-#area:not([data-direita="on"]) #direita { transform: translateX(100%); visibility: hidden; transition: transform var(--dur-l) var(--curva), visibility 0s linear var(--dur-l); }
-#area:not([data-inferior="on"]) #inferior { transform: translateY(100%); visibility: hidden; transition: transform var(--dur-l) var(--curva), visibility 0s linear var(--dur-l); }
-#lateral { z-index: calc(var(--z-painel) + 2); }
-body.arrastando #lateral, body.arrastando #direita, body.arrastando #inferior { pointer-events: none; opacity: .3; } /* o menu lateral fica acima da conversa e do painel inferior */
-.cabeca-painel { display: flex; align-items: center; min-width: 0; border-bottom: 1px solid var(--borda); }
+#lateral, #direita, #inferior { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--lateral); }
+#lateral { grid-area: lat; border-right: 1px solid var(--borda); }
+#direita { grid-area: dir; border-left: 1px solid var(--borda); }
+#inferior { grid-area: inferior; border-top: 1px solid var(--borda); background: var(--painel); }
+#area:not([data-lateral="on"]) #lateral, #area:not([data-direita="on"]) #direita, #area:not([data-inferior="on"]) #inferior { visibility: hidden; border: 0; }
+@media (prefers-reduced-motion: no-preference) { #area { transition: grid-template-columns var(--dur-l) var(--curva), grid-template-rows var(--dur-l) var(--curva); } }
+body.redimensionando #area { transition: none; } body.redimensionando { cursor: col-resize; user-select: none; }
+body.redimensionando iframe { pointer-events: none; }
+
+/* modo chat: a barra do agente ocupa a area toda; modo agentes: a oficina ocupa a area principal (sem abas) */
+#area[data-modo="chat"] { grid-template-columns: var(--larg-ativ) 0 0 minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 0; }
+#area[data-modo="chat"] #lateral, #area[data-modo="chat"] #principal, #area[data-modo="chat"] #inferior { display: none; }
+#area[data-modo="chat"] #direita { visibility: visible; border-left: 0; }
+#area[data-modo="chat"] .divisor-direita { display: none; }
+#area[data-modo="agentes"] .faixa-abas, #area[data-modo="agentes"] .trilha { display: none; }
+
+.cabeca-painel { display: flex; align-items: center; min-width: 0; border-bottom: 1px solid var(--borda); flex: none; }
 .cabeca-painel [role="tablist"] { flex: 1; border-bottom: 0; min-width: 0; }
 .cabeca-painel .fechar { height: 32px; width: 32px; padding: 0; border: 0; background: transparent; color: var(--mudo); flex: none; }
 .cabeca-painel .fechar:hover:not(:disabled) { color: var(--titulo); background: var(--hover); }
 #direita-corpo, #inferior-corpo { overflow: auto; padding: var(--e2) var(--e3); flex: 1; min-height: 0; }
 #inferior-corpo:focus-visible, #direita-corpo:focus-visible { outline-offset: -2px; }
+#lateral-corpo { overflow: auto; padding: var(--e1) var(--e3) var(--e3); flex: 1; min-height: 0; }
 #lateral nav { display: grid; gap: 2px; }
+
+/* tela estreita (celular, janela dividida): os paineis voltam a ser gavetas POR CIMA do conteudo */
+@media (max-width: 760px) {
+  #area, #area[data-lateral="on"], #area[data-direita="on"], #area[data-inferior="on"] { grid-template-columns: var(--larg-ativ) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "ativ principal"; }
+  #lateral, #direita, #inferior { position: absolute; z-index: var(--z-painel); box-shadow: var(--sombra-2); transition: transform var(--dur-l) var(--curva), visibility 0s linear 0s; }
+  #lateral { top: 0; bottom: 0; left: var(--larg-ativ); width: min(300px, calc(100vw - var(--larg-ativ) - 24px)); z-index: calc(var(--z-painel) + 2); }
+  #direita { top: 0; bottom: 0; right: 0; width: calc(100vw - var(--larg-ativ)); }
+  #inferior { left: var(--larg-ativ); right: 0; bottom: 0; height: min(280px, 45vh); }
+  #area:not([data-lateral="on"]) #lateral { transform: translateX(calc(-100% - var(--larg-ativ))); }
+  #area:not([data-direita="on"]) #direita { transform: translateX(100%); }
+  #area:not([data-inferior="on"]) #inferior { transform: translateY(100%); }
+  #area[data-modo="chat"] #direita { position: absolute; inset: 0 0 0 var(--larg-ativ); width: auto; transform: none; }
+  .divisor { display: none; }
+  body.arrastando #lateral, body.arrastando #direita, body.arrastando #inferior { pointer-events: none; opacity: .3; }
+}
 
 /* ---------------------------------------------------------------- cartoes e grades (tamanho estavel; texto se adapta) */
 .grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: var(--e3); }
@@ -166,7 +203,7 @@ dl.perfil { display: grid; grid-template-columns: max-content 1fr; gap: 2px var(
 .faixa > h3 { padding: 6px var(--e2); margin: 0; border-bottom: 1px solid var(--borda); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg-q { margin: 6px; padding: 6px var(--e2); background: var(--cartao); border: 1px solid var(--borda); border-left: 3px solid var(--mudo); border-radius: var(--raio-p); min-width: 0; }
 .msg-q[data-prio="1"] { border-left-color: var(--erro); } .msg-q[data-prio="2"] { border-left-color: var(--aviso); }
-.msg-q.resolvida, .msg-q.expirada { opacity: .65; }
+.msg-q.resolvida, .msg-q.expirada { background: transparent; border-style: dashed; } /* sem opacity: o texto mantem contraste AA */
 .msg-q pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: var(--e1) 0; font-size: var(--fs-xs); max-height: 8rem; overflow: auto; }
 .alertas { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: var(--e2); }
 
@@ -369,12 +406,12 @@ dialog.janela-config .janela-corpo { padding: 0; display: flex; overflow: hidden
 ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--mudo) 40%, transparent); border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
 
 /* ---------------------------------------------------------------- responsividade: o layout encolhe; os controles mantem a altura */
-@media (max-width: 1000px) { .memoria { grid-template-columns: minmax(0, 1fr); } #area[data-direita="on"] #inferior { right: 0; } }
+@media (max-width: 1000px) { .memoria { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) {
   :root { --larg-ativ: 44px; }
   #atividades button { width: 42px; height: 42px; } #atividades button > span:last-child { display: none; }
   #barra-titulo { gap: var(--e1); padding: 0 var(--e2); } #barra-titulo .subtitulo, #barra-titulo .chip-rotulo { display: none; }
-  #principal { padding: var(--e3); } .grade { grid-template-columns: minmax(0, 1fr); }
+  #vista { padding: var(--e3); } .grade { grid-template-columns: minmax(0, 1fr); }
   .kanban { grid-auto-columns: 82%; scroll-snap-type: x mandatory; } .coluna { scroll-snap-align: start; }
   .config-janela { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .config-nav { border-right: 0; border-bottom: 1px solid var(--borda); } .config-nav nav { display: flex; overflow-x: auto; gap: var(--e1); }

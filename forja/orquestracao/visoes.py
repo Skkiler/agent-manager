@@ -14,9 +14,9 @@ from forja.dominio.tempo import Relogio, RelogioSistema, iso
 COLUNAS: tuple[tuple[str, str, tuple[E, ...]], ...] = (
     ("backlog", "Backlog", (E.RASCUNHO, E.CLASSIFICADA, E.PREPARADA, E.AGUARDANDO_DEPENDENCIAS)),
     ("pronta", "Pronta", (E.PRONTA, E.ATRIBUIDA)),
-    ("executando", "Em execucao", (E.EXECUTANDO, E.VALIDANDO)),
-    ("atencao", "Precisa de voce", (E.BLOQUEADA, E.AGUARDANDO_APROVACAO)),
-    ("concluida", "Concluida", (E.CONCLUIDA,)),
+    ("executando", "Em execução", (E.EXECUTANDO, E.VALIDANDO)),
+    ("atencao", "Precisa de você", (E.BLOQUEADA, E.AGUARDANDO_APROVACAO)),
+    ("concluida", "Concluída", (E.CONCLUIDA,)),
     ("encerradas", "Falhou / cancelada", (E.FALHOU, E.CANCELADA, E.EXPIRADA)),
 )
 LIMITE_POR_COLUNA = 50
@@ -35,7 +35,7 @@ def acoes_do_cartao(estado: str) -> list[dict[str, str]]:
     if e == E.BLOQUEADA:
         acoes.append({"id": "conversa", "rotulo": "Responder"})
     if e == E.AGUARDANDO_APROVACAO:
-        acoes.append({"id": "aprovacoes", "rotulo": "Ver aprovacoes"})
+        acoes.append({"id": "aprovacoes", "rotulo": "Ver aprovações"})
     if e != E.BLOQUEADA:
         acoes.append({"id": "conversa", "rotulo": "Conversa"})
     if not eh_terminal(e):

@@ -6,7 +6,7 @@ import { dataCurta, el, limpar, recolhivel, tag, toast } from "../ui.js";
 
 const PAPEIS = { usuario: "Você", master: "Master", submaster: "Sub-master", sistema: "Forja", status: "Status" };
 const ESTADO_TAG = { concluida: "ok", bloqueada: "aviso", falhou: "aviso", cancelada: "", expirada: "" };
-let ultimo = null;
+const instancias = new Set(); // a mesma conversa pode estar na aba Master, na barra da direita e no modo chat
 let alvo = null; // null = master; id = conversa de um sub-master
 
 function abrirTarefa(id) { selecionarTarefa(id); emitir("abrir-direita", "conversa"); }
@@ -45,21 +45,24 @@ function fala(m) {
 }
 
 export async function atualizar() {
-  if (!ultimo?.conversa.isConnected) return;
+  if (!instancias.size) return;
   try {
     const p = await api("GET", "/master");
+    for (const i of [...instancias]) if (!i.conversa.isConnected) instancias.delete(i); // montada fora da tela e trocada: sai da lista
     const sub = alvo ? p.submasters.find((s) => s.id === alvo) : null;
     if (alvo && !sub) alvo = null;
     const msgs = sub ? (await api("GET", `/coordenacoes/${alvo}`)).conversa : p.conversa;
-    limpar(ultimo.arvore); ultimo.arvore.append(arvore(p));
-    ultimo.titulo.textContent = sub ? sub.titulo : "Master";
-    ultimo.encerrar.hidden = !sub && !p.master.chamadas_usadas;
-    ultimo.encerrar.onclick = () => encerrar(sub || p.master);
-    limpar(ultimo.conversa);
-    ultimo.conversa.append(...(msgs.length ? msgs.map(fala) : [el("p", { className: "mudo", textContent:
-      "Diga o que você quer. O master entende, cria as tarefas certas (uma tarefa bem descrita quando basta) e conta o resultado aqui." })]));
-    ultimo.conversa.scrollTop = ultimo.conversa.scrollHeight;
-  } catch (e) { limpar(ultimo.conversa); ultimo.conversa.append(el("p", { className: "aviso", textContent: `Erro: ${e.message}` })); }
+    for (const ultimo of instancias) {
+      limpar(ultimo.arvore); ultimo.arvore.append(arvore(p));
+      ultimo.titulo.textContent = sub ? sub.titulo : "Master";
+      ultimo.encerrar.hidden = !sub && !p.master.chamadas_usadas;
+      ultimo.encerrar.onclick = () => encerrar(sub || p.master);
+      limpar(ultimo.conversa);
+      ultimo.conversa.append(...(msgs.length ? msgs.map(fala) : [el("div", { className: "master-vazio" }, el("p", { className: "pergunta-inicial", textContent: "O que vamos criar hoje?" }),
+        el("p", { className: "mudo", textContent: "Diga o que você quer. O master entende, cria as tarefas certas (uma tarefa bem descrita quando basta) e conta o resultado aqui." }))]));
+      ultimo.conversa.scrollTop = ultimo.conversa.scrollHeight;
+    }
+  } catch (e) { for (const ultimo of instancias) { limpar(ultimo.conversa); ultimo.conversa.append(el("p", { className: "aviso", textContent: `Erro: ${e.message}` })); } }
 }
 
 async function encerrar(c) {
@@ -67,7 +70,25 @@ async function encerrar(c) {
   try { await api("POST", `/coordenacoes/${c.id}/encerrar`); alvo = null; await atualizar(); } catch (e) { toast(e.message, "erro"); }
 }
 
-export function montar(raiz) {
+// Chips do compositor (como no Codex): onde roda, autonomia e modelo. Informativos; clicar abre as Configuracoes.
+let prefsCache = null;
+function chipsComposer() {
+  const caixa = el("div", { className: "chips-composer", "aria-label": "Como o pedido será executado" });
+  const chip = (texto, titulo) => el("button", { type: "button", className: "chip-info", title: titulo, textContent: texto, onclick: () => emitir("ir", "config") });
+  caixa.append(chip("Este computador", "Tudo roda no seu computador (servidor local)."));
+  prefsCache ||= api("GET", "/preferencias").catch(() => null);
+  prefsCache.then((p) => {
+    const item = p?.categorias.flatMap((c) => c.itens).find((i) => i.id === "nivel_autonomia");
+    const rotulo = item ? (item.opcoes.find((o) => o[0] === item.valor) || [item.valor, item.valor])[1] : null;
+    if (rotulo) caixa.append(chip(`Autonomia: ${rotulo}`, "Nível de autonomia dos agentes (Configurações > Agentes)."));
+    const modelo = document.getElementById("st-modelo")?.textContent.replace(/^modelo:?\s*/, "").trim();
+    if (modelo && modelo !== "—") caixa.append(chip(`Modelo: ${modelo}`, "Modelo da execução (Configurações > Consumo)."));
+  });
+  return caixa;
+}
+ouvir("evento", (e) => { if (String(e.tipo).startsWith("preferencias.")) prefsCache = null; });
+
+export function montar(raiz, { compacto = false } = {}) {
   limpar(raiz);
   const titulo = el("h1", { textContent: "Master" });
   const encerrar = el("button", { type: "button", textContent: "Encerrar conversa", hidden: true });
@@ -88,13 +109,13 @@ export function montar(raiz) {
     el("span", { className: "mudo", textContent: "O master não executa nada sozinho: cria tarefas dentro da sua autonomia e dos limites da Forja." })));
   texto.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) form.requestSubmit(); });
   raiz.append(el("div", { className: "titulo-vista" }, titulo, el("div", { className: "linha" }, el("button", { type: "button", textContent: "Atualizar", onclick: atualizar }), encerrar)),
-    el("div", { className: "master-grade" }, el("section", { className: "master-chat" }, conversa, form), arvoreNo));
-  ultimo = { conversa, arvore: arvoreNo, titulo, encerrar };
+    el("div", { className: `master-grade${compacto ? " compacto" : ""}` }, el("section", { className: "master-chat" }, conversa, form, chipsComposer()), arvoreNo));
+  instancias.add({ conversa, arvore: arvoreNo, titulo, encerrar });
   atualizar();
 }
 
 const reagir = agrupar(() => atualizar());
 ouvir("evento", (e) => {
   const t = String(e.tipo);
-  if (t.startsWith("coordenacao.") || t === "status.resumo" || (ultimo && /^tarefa\.(estado|transicao)/.test(t))) reagir();
+  if (t.startsWith("coordenacao.") || t === "status.resumo" || (instancias.size && /^tarefa\.(estado|transicao)/.test(t))) reagir();
 });

@@ -83,21 +83,28 @@ Atualizada em 2026-11-18. Esta ficha substitui o histórico do chat anterior: le
   **créditos reais** (`consumo.creditos`), **processos reaproveitados** (`adapters/kiro_acp/pool.py`), esforço por parte no Codex,
   **roteador inteligente** (padrão; Codex ligado por padrão), ferramentas `codigo.buscar` e `git.ler`.
   O usuário decidiu: painel continua em JS puro sem build; oficina com arte própria; próximas etapas = fases visuais V1-V4.
+- **Rodada 3 de 2026-11-18 (ADR-025)**: Codex no nível do Kiro (`CODEX_CONFIG` com `developer_instructions` + `shell_environment_policy`;
+  o Codex recusa sozinho ler fora da pasta), MCP da Forja no Codex, `contentCollection` desligado no Kiro, coordenação com consulta
+  filtrada e trava, laço A/B, roteamento, ferramentas (amostra com busca, outline CSS, fim de funções JS, teto de 30 s) e a
+  **bancada** do painel: três visualizações (Editor estilo VS Code, Chat estilo Codex, Agentes em pixel art), painéis que empurram
+  com divisórias, editor próprio (`js/editor.js` + `js/realce.js`), Explorador/Busca/Git/Docker (`js/area.js`), terminal e
+  problemas (`js/inferior.js`), paleta (`js/comandos.js`), escritório (`js/escritorio.js`), API `/api/v1/area/*`
+  (`orquestracao/area_trabalho.py`, `servidor/rotas_area.py`) e logomarca vetorizada (`icone.svg`, `logo.svg`).
 
 ## 5 Testes e verificações (último estado)
 
-- `python -m pytest -p no:cacheprovider -o addopts="" -q` -> **1186 passed** (~3 min).
+- `python -m pytest -p no:cacheprovider -q` -> **1226 passed** (~3,5 min).
 - Testes reais desta etapa com Kiro e Codex: scripts e resultados em `%TEMP%\forja_sonda\` (fora do Git, dados fictícios).
-- `python -m ruff check forja tests scripts` -> ok; `node --check` nos 21 arquivos JS -> ok.
-- Navegador real: `inspecionar_painel.py --interagir --a11y` -> 0 problemas (inclui o fluxo do master); `--login --a11y` -> 12 OK.
+- `python -m ruff check .` -> ok; `node --check` em todos os módulos JS -> ok.
+- Navegador real: `inspecionar_painel.py --interagir --a11y` -> 0 problemas (12 vistas, fluxo do master e da bancada); `--login --a11y` -> 12 OK.
 - `benchmark_busca.py` global 0.94/0.87/0.89 (recall@5/MRR/nDCG@5).
 - CI do commit `f705048`: verde.
 
 ## 6 O que falta
 
-1. Fases visuais V1-V4 (seção 8 do relatório): layout de IDE, caixa "Precisa de você", diff/revisão, Oficina 2.0 (arte própria).
-2. Codex ligado por padrão (decisão do usuário): medir uso contínuo e o roteador `inteligente`; governança para código de empresa.
-3. Passar o MCP da Forja (memória, caderno) também ao Codex (hoje só o Kiro recebe); ler o uso/créditos do Codex.
+1. Bancada: revisão de diff lado a lado, LSP/IntelliSense opcional, auditoria com leitor de tela real.
+2. Codex: perfis de permissão nativos quando o `codex-acp` aceitar; ler o uso/créditos do Codex; medir o roteador `inteligente`.
+3. Dados de demonstração (`semear_demo.py`) ainda sem acentos.
 4. Medir com o Kiro real: taxa de pausas por escopo (falso positivo) e economia da renovação de sessão.
 5. Lacunas antigas (ver STATUS): auditoria com leitor de tela, embeddings só se superarem o baseline (4.9), pool de processos ACP.
 

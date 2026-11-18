@@ -96,23 +96,39 @@ async function soltar(colunaId, c) {
   await acao(id, c);
 }
 
-function cartao(c) {
+const ESTADO_CURTO = { rascunho: "rascunho", classificada: "classificada", preparada: "preparada", aguardando_dependencias: "aguarda dependência",
+  pronta: "pronta", atribuida: "atribuída", executando: "executando", validando: "validando", bloqueada: "precisa de você", aguardando_aprovacao: "aprovação",
+  concluida: "concluída", falhou: "falhou", cancelada: "cancelada", expirada: "expirou" };
+function haQuanto(iso) {
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (!Number.isFinite(s)) return "";
+  return s < 60 ? "agora" : s < 3600 ? `há ${Math.round(s / 60)} min` : s < 86400 ? `há ${Math.round(s / 3600)} h` : dataCurta(iso);
+}
+
+// Cartao compacto (V6): o estado so aparece quando a coluna junta varios estados; clicar no cartao abre a conversa (sem botao
+// "Conversa" repetido); a acao principal fica em destaque e Cancelar vira um botao pequeno.
+function cartao(c, multiplos) {
   const sel = estado.tarefaId === c.id;
+  const acoes = c.acoes.filter((a) => !(a.id === "conversa" && a.rotulo === "Conversa"));
   return el("article", {
     className: `cartao${c.precisa_de_voce ? " precisa" : ""}${sel ? " sel" : ""}`, draggable: true, dataset: { id: c.id, prio: c.prioridade },
-    "aria-label": `${c.titulo}, ${c.estado}`,
+    "aria-label": `${c.titulo}, ${ESTADO_CURTO[c.estado] || c.estado}`,
     ondragstart: (ev) => { ev.dataTransfer.setData("text/plain", c.id); ev.dataTransfer.effectAllowed = "move"; },
     onclick: (ev) => { if (!ev.target.closest("button")) { selecionarTarefa(c.id); emitir("abrir-direita", "conversa"); } },
   },
-    el("div", { className: "meta" }, tag(c.id, "so-avancado"), tag(`P${c.prioridade}`), tag(c.estado, c.precisa_de_voce ? "aviso" : ""),
-      c.tentativas ? tag(`${c.tentativas} tent.`, "so-avancado") : null, c.dependencias ? tag(`${c.dependencias} dep.`) : null),
     el("h3", { textContent: c.titulo }),
-    c.motivo ? el("div", { className: "mudo so-avancado", textContent: c.motivo }) : null,
-    el("div", { className: "acoes" }, ...c.acoes.map((a) => el("button", { type: "button", textContent: a.rotulo, className: a.id === "executar" || a.id === "preparar" ? "primario" : "", onclick: () => acao(a.id, c) }))));
+    el("div", { className: "meta" }, tag(`P${c.prioridade}`), multiplos ? tag(ESTADO_CURTO[c.estado] || c.estado, c.precisa_de_voce ? "aviso" : "") : null,
+      el("span", { className: "mudo", textContent: c.modo === "alteracao_codigo" ? "altera código" : c.modo }), el("span", { className: "mudo", textContent: haQuanto(c.atualizado_em) }),
+      tag(c.id, "so-avancado"), c.tentativas ? tag(`${c.tentativas} tent.`, "so-avancado") : null, c.dependencias ? tag(`${c.dependencias} dep.`) : null),
+    c.motivo ? el("div", { className: "mudo so-avancado trunc", textContent: c.motivo }) : null,
+    acoes.length ? el("div", { className: "acoes" }, ...acoes.map((a) => a.id === "cancelar"
+      ? el("button", { type: "button", className: "icone pequeno", "aria-label": `Cancelar ${c.titulo}`, title: "Cancelar tarefa", textContent: "✕", onclick: () => acao(a.id, c) })
+      : el("button", { type: "button", textContent: a.rotulo, className: ["executar", "preparar", "conversa", "aprovacoes"].includes(a.id) ? "primario" : "", onclick: () => acao(a.id, c) }))) : null);
 }
 
 function coluna(col) {
-  const corpo = el("div", { className: "cartoes" }, ...(col.cartoes.length ? col.cartoes.map(cartao) : [el("p", { className: "mudo", textContent: "Vazio" })]));
+  const multiplos = (col.estados || []).length > 1;
+  const corpo = el("div", { className: "cartoes" }, ...(col.cartoes.length ? col.cartoes.map((c) => cartao(c, multiplos)) : [el("p", { className: "mudo", textContent: "Vazio" })]));
   const raiz = el("section", { className: "coluna", dataset: { id: col.id }, "aria-label": `${col.rotulo}, ${col.total} tarefas`,
     ondragover: (ev) => { ev.preventDefault(); raiz.classList.add("alvo"); }, ondragleave: () => raiz.classList.remove("alvo"),
     ondrop: (ev) => {
@@ -121,7 +137,7 @@ function coluna(col) {
       if (c) soltar(col.id, c);
     } },
     el("header", {}, el("span", { textContent: col.rotulo }), tag(String(col.total))), corpo);
-  if (col.total > col.cartoes.length) corpo.append(el("p", { className: "mudo", textContent: `+${col.total - col.cartoes.length} nao exibidas` }));
+  if (col.total > col.cartoes.length) corpo.append(el("p", { className: "mudo", textContent: `+${col.total - col.cartoes.length} não exibidas` }));
   return raiz;
 }
 
@@ -131,7 +147,7 @@ export async function atualizar() {
     quadro = await api("GET", `/kanban?${consulta({ projeto_id: projetoFiltro })}`);
     limpar(ultimo.quadro);
     ultimo.quadro.append(...quadro.colunas.map(coluna));
-    ultimo.resumo.textContent = `${quadro.total} tarefa(s)` + (quadro.precisa_de_voce ? ` · ${quadro.precisa_de_voce} precisam de voce` : "");
+    ultimo.resumo.textContent = `${quadro.total} tarefa(s)` + (quadro.precisa_de_voce ? ` · ${quadro.precisa_de_voce} precisam de você` : "");
     emitir("kanban", quadro);
   } catch (e) { limpar(ultimo.quadro); ultimo.quadro.append(el("p", { className: "aviso", textContent: `Erro: ${e.message}` })); }
 }

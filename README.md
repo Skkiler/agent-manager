@@ -195,14 +195,37 @@ docker compose down -v --rmi local      # apaga a demonstração
 
 ## 3 O PAINEL
 
-Barra de atividades à esquerda; o menu de cada área abre por cima do conteúdo (Ctrl+B). Conversa da tarefa à direita
-(Ctrl+Shift+B) e painel inferior (Ctrl+J). Tudo navegável por teclado, com descrição para leitores de tela e movimento reduzido.
+Uma bancada no estilo VS Code/Kiro com **três visualizações** (botões no topo ou Ctrl+Alt+1/2/3):
+
+- **Editor**: barra de atividades, barra lateral (Ctrl+B), abas (arquivos e telas da Forja), trilha, painel inferior (Ctrl+J) e
+  a barra do agente à direita (Ctrl+Alt+B). Os painéis **empurram** o conteúdo e se redimensionam arrastando a divisória (ou
+  com as setas, com a divisória em foco; duplo clique restaura). Em tela estreita viram gavetas.
+- **Chat**: a barra do agente ocupa a tela, com a lista de conversas à esquerda (master, "precisa de você" e as tarefas por projeto).
+- **Agentes**: escritório em pixel art (uma sala por projeto e a do master), com cada execução real como um personagem animado
+  pela ação; clique abre a conversa. A lista ao lado é o equivalente acessível; com movimento reduzido a cena fica parada.
+
+Atalhos: Ctrl+P abre arquivo, Ctrl+Shift+P (ou F1) mostra os comandos, Ctrl+G vai para a linha, Ctrl+Shift+F busca nos arquivos,
+Ctrl+Shift+E Explorador, Ctrl+Shift+G Git, Ctrl+\` terminal, Ctrl+S salva, Ctrl+F/Ctrl+H busca e substitui no arquivo,
+Ctrl+Shift+V prévia, Ctrl+Alt+W fecha a aba, Ctrl+, Configurações. Tudo navegável por teclado, com movimento reduzido.
+
+### 3.0 Bancada: editor, terminal, Git e Docker
+
+| Recurso | Como funciona |
+|---|---|
+| **Explorador** | Árvore das pastas de cada projeto. Arquivos de segredo (`.env`, chaves) não aparecem e não abrem. Pasta de consulta: somente leitura. |
+| **Editor** | Realce de sintaxe (Python, JS/TS, JSON, CSS, HTML, Markdown, SQL, shell/PowerShell, YAML/TOML, Dockerfile, diff), números de linha, busca/substituição, indentação, correção ortográfica do navegador e prévia de Markdown/HTML (HTML isolado, sem scripts). Ctrl+S grava pela API; se o arquivo mudou no disco, nada é sobrescrito. Mantém o fim de linha (CRLF/LF) do arquivo. |
+| **Problemas** | JSON (sintaxe) e Python (compilação + `ruff`, se instalado) ao abrir, editar e salvar; marcas na calha e lista no painel inferior. |
+| **Busca** | Texto ou expressão regular em todas as pastas do projeto, sem olhar segredos. |
+| **Terminal** | Um comando por vez na pasta de trabalho (sem shell interativo), ambiente limpo, até 2 min e saída redigida. Comando que lê segredo é recusado. Desligável em Configurações > Segurança (`terminal_ativo`). |
+| **Git** | Status (preparadas/alterações), diff, histórico, preparar/tirar e commit. Arquivo de segredo nunca é preparado. Sem push. |
+| **Docker** | Containers, imagens e compose; logs e iniciar/parar/reiniciar. Nunca `inspect` nem `exec` (mostram variáveis de ambiente). |
 
 ### 3.1 Áreas
 
 | Área | O que faz |
 |---|---|
-| **Master** (inicial) | Conversa com o coordenador. Ele cria tarefas e sub-masters, relata o andamento e consolida o resultado. Ao lado, a árvore master → sub-masters → tarefas, com link para cada conversa. |
+| **Boas-vindas** (inicial) | O que precisa de você, atalhos e arquivos recentes. |
+| **Master** | Conversa com o coordenador. Ele cria tarefas e sub-masters, relata o andamento e consolida o resultado. Ao lado, a árvore master → sub-masters → tarefas, com link para cada conversa. |
 | **Tarefas** | Quadro Kanban (Backlog, Pronta, Em execução, Precisa de você, Concluída, Falhou): criar, preparar, executar, cancelar, **desfazer alterações**, cópias isoladas e projetos com pastas. |
 | **Conversa** (direita) | Briefing do agente em seções, relatos de status e verificação da Forja. Uma resposta sua cobre todas as decisões e retoma a execução. Anexos e @menção de arquivos. Aba **Decisões** com as aprovações pendentes. |
 | **Quadro** | Mensagens tipadas entre master, operador, sistema e agentes, por prioridade. |
@@ -215,7 +238,7 @@ Barra de atividades à esquerda; o menu de cada área abre por cima do conteúdo
 
 ### 3.2 Oficina pixel art
 
-No painel inferior; só projeta o estado real e pode ser desligada. Um personagem por papel (planejador, executor, testador,
+No painel inferior (a visualização **Agentes** mostra o mesmo estado como escritório); só projeta o estado real e pode ser desligada. Um personagem por papel (planejador, executor, testador,
 revisor, estudante), animação pela ação atual, contorno pela complexidade, barra de orçamento, balão "aguardando você",
 **replay** da execução e descrição em `aria-live`.
 
@@ -342,6 +365,11 @@ precisa do `codex-acp`. Em Config > Consumo dá para desligar `codex_ativo` ou t
 #### 6.3.3 Segurança do Codex
 
 O Codex não tem as regras deny que a Forja aplica no Kiro. Por isso, em falha fechada:
+
+- a **própria sessão** recebe as regras do perfil do Kiro como instrução de desenvolvedor (`CODEX_CONFIG.developer_instructions`:
+  escopo, pastas, segredos e "não contorne") e um ambiente de shell mínimo (`shell_environment_policy`). Com o Codex real, um
+  pedido para ler arquivo fora da pasta terminou em recusa do próprio agente, sem chamada de ferramenta (ADR-025);
+- o MCP da Forja também vale para o Codex (mesma preferência do Kiro, `kiro_mcp_ativo`);
 
 - o processo recebe ambiente limpo (sem variáveis com cara de segredo e sem `APP_*`/`FORJA_*`; chave de API por variável não chega);
 - só trabalha em pastas **sem** arquivos com cara de segredo (`.env`, chaves, credenciais) ou na **cópia sem segredos**; se
