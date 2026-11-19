@@ -59,6 +59,7 @@ class OrganizadorMemoria:
         self.relogio = relogio or RelogioSistema()
         self.modo = "sugerir"  # desligada | sugerir (preferencia 'organizacao_memoria')
         self.resumir: Any | None = None  # EstudoServico.solicitar_resumo: o Kiro escreve a nota-topico (9.12)
+        self.modularidade: Any | None = None  # Modularidade: aplica modulos, divisoes e tags do plano de organizacao (ADR-028)
         self._parar = threading.Event()
         self._thread: threading.Thread | None = None
         self._mu = threading.Lock()
@@ -268,6 +269,8 @@ class OrganizadorMemoria:
             if self.resumir is None:
                 raise ValidacaoDominio("Resumo por IA indisponível neste servidor.")
             return self.resumir(p, s["namespace"], dados.get("tag") or "tema", list(s["memorias"]))
+        if s["tipo"] in ("modularizar", "dividir", "tags") and self.modularidade is not None:  # plano de organizacao (ADR-028)
+            return self.modularidade.aplicar(p, s, ator)
         raise ValidacaoDominio(f"tipo de sugestao desconhecido: {s['tipo']}")
 
     # ------------------------------------------------------------------ segundo plano

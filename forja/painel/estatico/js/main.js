@@ -20,7 +20,9 @@ import * as ferramentas from "./views/ferramentas.js";
 import * as http from "./views/http.js";
 import * as integracoes from "./views/integracoes.js";
 import * as master from "./views/master.js";
+import { aprender, organizar } from "./views/conhecimento.js";
 import * as memoria from "./views/memoria.js";
+import * as revisaoVista from "./views/revisao.js";
 import * as quadro from "./views/quadro.js";
 import * as tarefas from "./views/tarefas.js";
 
@@ -36,7 +38,10 @@ const ATIVIDADES = [
   { id: "master", rotulo: "Master", curto: "Master", icone: "master", tipo: "vista", modulo: master },
   { id: "tarefas", rotulo: "Tarefas", curto: "Tarefas", icone: "tarefas", tipo: "vista", modulo: tarefas },
   { id: "quadro", rotulo: "Quadro de mensagens", curto: "Quadro", icone: "quadro", tipo: "vista", modulo: quadro },
-  { id: "memoria", rotulo: "Memória", curto: "Memória", icone: "memoria", tipo: "vista", modulo: memoria },
+  { id: "memoria", rotulo: "Memória", aba: "Grafo e notas", curto: "Memória", icone: "memoria", tipo: "vista", modulo: memoria },
+  { id: "aprender", rotulo: "Buscar e aprender", curto: "Aprender", icone: "lampada", tipo: "vista", modulo: aprender },
+  { id: "organizar", rotulo: "Organizar e deduplicar", aba: "Organizar", curto: "Organizar", icone: "memoria", tipo: "vista", modulo: organizar },
+  { id: "revisao", rotulo: "Revisão do segundo cérebro", aba: "Revisão", curto: "Revisão", icone: "tarefas", tipo: "vista", modulo: revisaoVista },
   { id: "ferramentas", rotulo: "Ferramentas", curto: "Ferram.", icone: "ferramentas", tipo: "vista", modulo: ferramentas },
   { id: "integracoes", rotulo: "Integrações", curto: "Integr.", icone: "integracoes", tipo: "vista", modulo: integracoes },
   { id: "custos", rotulo: "Custo", curto: "Custo", icone: "custos", tipo: "vista", modulo: custos },
@@ -44,8 +49,22 @@ const ATIVIDADES = [
   { id: "conta", rotulo: "Sua conta", curto: "Conta", icone: "conta", tipo: "acao", fazer: () => dialogoConta($("#usuario-atual").textContent) },
   { id: "config", rotulo: "Configurações", curto: "Config", icone: "config", tipo: "acao", fazer: () => config.abrirJanela(), atalho: "Ctrl+," },
 ];
+// Barra de atividades em GRUPOS (6 itens + conta e configuracoes): cada grupo abre o ultimo membro usado e mostra os membros
+// como abas no topo (barra lateral para Arquivos e Codigo; aba do editor para os demais). As rotas #/<membro> continuam valendo.
+const GRUPOS = [
+  { id: "arquivos", rotulo: "Arquivos: explorador e busca", curto: "Arquivos", icone: "explorador", tipo: "painel", membros: ["explorador", "busca"] },
+  { id: "codigo", rotulo: "Código: Git e Docker", curto: "Código", icone: "git", tipo: "painel", membros: ["git", "docker"] },
+  { id: "dev", rotulo: "Desenvolvimento: requisições HTTP, comandos e receitas", curto: "Dev", icone: "http", tipo: "vista", membros: ["http", "comandos"] },
+  { id: "orquestracao", rotulo: "Orquestração: master, tarefas e quadro", curto: "Agentes", icone: "master", tipo: "vista", membros: ["master", "tarefas", "quadro"] },
+  { id: "conhecimento", rotulo: "Conhecimento: segundo cérebro, grafo, aprender, organizar e ferramentas", curto: "Saber", icone: "memoria", tipo: "vista",
+    membros: ["memoria", "aprender", "organizar", "revisao", "ferramentas"] },
+  { id: "conexoes", rotulo: "Conexões: integrações e custo", curto: "Conexões", icone: "integracoes", tipo: "vista", membros: ["integracoes", "custos"] },
+];
 const REAIS = ATIVIDADES.filter((a) => a.id);
 const atividade = (id) => REAIS.find((a) => a.id === id);
+const grupoDe = (id) => GRUPOS.find((g) => g.membros.includes(id));
+const ultimos = (() => { try { return JSON.parse(localStorage.getItem("forja_grupos") || "{}"); } catch { return {}; } })();
+const lembrarMembro = (id) => { const g = grupoDe(id); if (g) { ultimos[g.id] = id; localStorage.setItem("forja_grupos", JSON.stringify(ultimos)); } };
 let fonte = null;
 const vistos = new Set();
 
@@ -59,13 +78,23 @@ function ir(id, { abrirMenu = true } = {}) {
   }
   if (id === "agentes" || id === "chat") return definirModo(id);
   if (id === "inicio") { if (estado.modo !== "editor") definirModo("editor"); abrirInicio(); return; }
+  const grupo = GRUPOS.find((g) => g.id === id);
+  if (grupo) return ir(ultimos[grupo.id] || grupo.membros[0], { abrirMenu });
   const at = atividade(id);
   if (!at) return ir("inicio");
   if (estado.modo !== "editor") definirModo("editor");
+  lembrarMembro(id);
   if (at.tipo === "painel") return mostrarLateral(id);
   if (at.tipo === "acao") return at.fazer();
   abrirVista(id);
   if (typeof at.modulo.montarLateral === "function") mostrarLateral(id, { abrir: abrirMenu });
+}
+
+function clicarGrupo(g) {
+  const aba = abaAtiva();
+  const ativo = (painelAberto("lateral") && g.membros.includes(lateralAtual())) || (aba?.tipo === "vista" && g.membros.includes(aba.id));
+  if (ativo && estado.modo === "editor") return clicarAtividade(g.tipo === "painel" ? lateralAtual() : aba.id);
+  ir(ultimos[g.id] || g.membros[0]);
 }
 
 function clicarAtividade(id) {
@@ -85,9 +114,13 @@ function clicarAtividade(id) {
 
 function montarAtividades() {
   const nav = $("#atividades");
-  for (const a of ATIVIDADES) {
-    if (a.separador) { nav.append(el("hr", { className: "sep-ativ", "aria-hidden": "true" })); continue; }
-    if (a.espaco) { nav.append(el("span", { className: "espaco" })); continue; }
+  for (const g of GRUPOS) {
+    const atalhos = g.membros.map(atividade).filter((a) => a?.atalho).map((a) => `${a.rotulo.split(" (")[0]}: ${a.atalho}`);
+    nav.append(el("button", { type: "button", dataset: { id: g.id, membros: g.membros.join(" ") }, title: atalhos.length ? `${g.rotulo} (${atalhos.join("; ")})` : g.rotulo,
+      "aria-label": g.rotulo, onclick: () => clicarGrupo(g) }, icone(g.icone, 22), el("span", { textContent: g.curto })));
+  }
+  nav.append(el("span", { className: "espaco" }));
+  for (const a of ATIVIDADES.filter((x) => x.tipo === "acao")) {
     nav.append(el("button", { type: "button", dataset: { id: a.id }, title: a.atalho ? `${a.rotulo} (${a.atalho})` : a.rotulo, "aria-label": a.rotulo,
       onclick: () => clicarAtividade(a.id) }, icone(a.icone, 22), el("span", { textContent: a.curto })));
   }
@@ -294,7 +327,7 @@ async function iniciar() {
   setInterval(() => { $("#st-hora").textContent = new Date().toLocaleTimeString("pt-BR"); }, 1000);
 
   mostrarUsuario(await garantirAcesso()); // so segue depois de um login valido (ou se o servidor nao exige login)
-  const ativaSalva = iniciarBancada(REAIS);
+  const ativaSalva = iniciarBancada(REAIS, GRUPOS);
   definirPainel("lateral", painelLembrado("lateral", true), { lembrar: false });
   definirPainel("inferior", painelLembrado("inferior", false), { lembrar: false });
   direita.iniciar(); inferior.iniciar();

@@ -130,7 +130,10 @@ ESCRITA = (  # cabecalho para modos que alteram codigo (so com nivel de autonomi
 PROTOCOLO_ESTUDO = (
     "Voce e um agente de ESTUDO (somente leitura) da plataforma Forja: transforma uma pasta de codigo ou um topico em conhecimento "
     "organizado para o segundo cerebro. Nao modifique arquivos nem acesse segredos; nunca copie segredos ou dados pessoais.\n"
-    "Divida o assunto em SUBTOPICOS pequenos (uma ideia por nota, 3 a 12 linhas, objetivas e reutilizaveis). Responda com:\n"
+    "Divida o assunto em SUBTOPICOS modulares: uma ideia por nota, 60 a 350 palavras, titulo especifico ('Entidade: assunto'), "
+    "primeira linha = resumo. O que vale para a entidade inteira (sistema, biblioteca, conceito) fica numa nota so, e as outras "
+    "apenas citam [[Titulo]] em vez de repetir. Tags: entidade, tipo e assunto. Antes, busque no segundo cerebro (forja_buscar_memoria) "
+    "e nao recrie o que ja existe: cite-o com [[Titulo]]. Responda com:\n"
     "## Resposta (2 a 4 frases: o que foi estudado e como as notas se organizam)\n"
     "## Notas\n### Nota: <titulo curto e unico>\nTopico pai: <titulo de outra nota desta lista, ou vazio para o topico do estudo>\n"
     "Tags: <ate 5>\nFontes: <URLs ou caminhos relativos; obrigatorio em pesquisa web>\n<corpo da nota>\n"
@@ -252,6 +255,9 @@ DICA_MCP = (
     "'codigo.estrutura' (funcao, grafo, definicao, referencias, impacto); para conhecimento busque e depois navegue so no subtopico. Registre "
     "aprendizados reutilizaveis com forja_propor_nota. CONTEXTO: registre em 1 linha o que ja resolveu, decidiu ou entendeu com "
     "forja::forja_caderno_salvar e consulte com forja::forja_caderno_consultar em vez de reler arquivos ou repetir investigacao.\n"
+    "SEGUNDO CEREBRO: voce le TODAS as notas permitidas; antes de investigar um sistema ou biblioteca, busque e abra so o subtopico "
+    "util. Ao registrar: 1 assunto por nota, titulo especifico, 60-350 palavras; fato de um sistema/entidade vai na nota DA entidade "
+    "(as demais so citam [[Titulo]]); tags entidade/tipo/projeto; se ja existe, complemente. Caderno: 1 linha factual por item.\n"
 )
 
 

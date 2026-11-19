@@ -40,6 +40,9 @@ VISTAS = {
     "agentes": ".escritorio canvas.escritorio-cena",
     "http": ".http-grade .barra-url",
     "comandos": ".catalogo-grade .lista-catalogo",
+    "aprender": ".grade-conhecimento form",
+    "organizar": ".conhecimento-aba .metricas-saude",
+    "revisao": ".conhecimento-aba .revisao",
 }
 
 
@@ -436,8 +439,24 @@ def bancada(pagina, base: str, saida: Path, expect, passo) -> None:
     proj = pagina.request.post(base + "api/v1/projetos", data={"nome": nome}).json()
     pagina.request.put(base + f"api/v1/projetos/{proj['id']}/pastas", data={"expected_version": proj.get("versao", 1),
                                                                             "pastas": [{"caminho": str(pasta), "papel": "trabalho"}]})
+    # menu agrupado (ADR-028): 6 grupos + conta e configuracoes; membros viram abas
+    pagina.goto(base + "#/memoria")
+    pagina.reload()
+    expect(pagina.locator("#vista .grupo-abas [role=tab]").first).to_be_visible(timeout=8000)
+    passo("barra de atividades com no maximo 8 itens (6 grupos + conta e configuracoes)", pagina.locator("#atividades button").count() <= 8)
+    passo("Conhecimento junta grafo, aprender, organizar, revisao e ferramentas em abas",
+          pagina.locator("#vista .grupo-abas [role=tab]").count() == 5 and pagina.locator("#atividades button[data-id=conhecimento][aria-current=page]").count() == 1)
+    pagina.locator("#vista .grupo-abas [role=tab]", has_text="Organizar").click()
+    expect(pagina.locator(".metricas-saude .medidor")).to_be_visible(timeout=8000)
+    passo("organizar mostra a modularidade do grafo (nota 0-100, repeticao, orfas)", "modularidade" in pagina.locator(".medidor").inner_text())
+    pagina.screenshot(path=str(saida / "conhecimento-organizar.png"))
+    pagina.locator("#vista .grupo-abas [role=tab][aria-selected=true]").press("ArrowLeft")
+    expect(pagina.locator(".grade-conhecimento form")).to_be_visible(timeout=6000)
+    passo("setas trocam a aba do grupo (Buscar e aprender com o formulario de estudo)", pagina.locator(".aba-editor").filter(has_text="Buscar e aprender").count() == 1)
     pagina.goto(base + "#/explorador")
     pagina.reload()
+    expect(pagina.locator("#lateral .grupo-abas [role=tab]").first).to_be_visible(timeout=8000)
+    passo("grupo Arquivos mostra Explorador e Buscar como abas na barra lateral", pagina.locator("#lateral .grupo-abas [role=tab]").count() == 2)
     raiz = pagina.locator(".raiz-projeto", has_text=nome)
     raiz.locator(".no-arvore.pasta").first.click()
     expect(raiz.locator(".no-arvore.arquivo", has_text="notas.md")).to_be_visible(timeout=6000)
@@ -532,7 +551,9 @@ def bancada(pagina, base: str, saida: Path, expect, passo) -> None:
     # Git: preparar (segredo pergunta), commit e diff lado a lado
     for args in (["init", "-q", "-b", "main"], ["config", "user.name", "Teste"], ["config", "user.email", "teste@exemplo.invalid"]):
         subprocess.run(["git", *args], cwd=pasta, check=True, capture_output=True)  # noqa: S603, S607
-    pagina.locator("#atividades button[data-id=git]").click()
+    pagina.locator("#atividades button[data-id=codigo]").click()
+    if pagina.locator("#lateral .grupo-abas [role=tab]", has_text="Git").get_attribute("aria-selected") != "true":
+        pagina.locator("#lateral .grupo-abas [role=tab]", has_text="Git").click()
     pagina.locator("#lateral-corpo select[aria-label=Projeto]").select_option(label=nome)
     expect(pagina.locator(".scm .linha-git").first).to_be_visible(timeout=8000)
     passo("Git mostra as alteracoes, com o .env marcado como segredo", pagina.locator(".scm .linha-git.segredo").count() == 1)

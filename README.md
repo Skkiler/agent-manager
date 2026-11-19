@@ -233,6 +233,18 @@ Ctrl+/ mostra todos os atalhos; `@` na paleta (Ctrl+Shift+O) lista os símbolos 
 
 ### 3.1 Áreas
 
+A barra de atividades tem **6 grupos** (mais Conta e Configurações). Cada grupo mostra abas no topo e lembra a última usada;
+os endereços `#/<área>` continuam valendo.
+
+| Grupo | Abas |
+|---|---|
+| **Arquivos** (barra lateral) | Explorador, Busca |
+| **Código** (barra lateral) | Git, Docker |
+| **Dev** | HTTP, Comandos |
+| **Agentes** | Master, Tarefas, Quadro |
+| **Saber** | Grafo e notas, Buscar e aprender, Organizar, Revisão, Ferramentas |
+| **Conexões** | Integrações, Custo |
+
 | Área | O que faz |
 |---|---|
 | **Boas-vindas** (inicial) | O que precisa de você, atalhos e arquivos recentes. |
@@ -240,7 +252,10 @@ Ctrl+/ mostra todos os atalhos; `@` na paleta (Ctrl+Shift+O) lista os símbolos 
 | **Tarefas** | Quadro Kanban (Backlog, Pronta, Em execução, Precisa de você, Concluída, Falhou): criar, preparar, executar, cancelar, **desfazer alterações**, cópias isoladas e projetos com pastas. |
 | **Conversa** (direita) | Briefing do agente em seções, relatos de status e verificação da Forja. Uma resposta sua cobre todas as decisões e retoma a execução. Anexos e @menção de arquivos. Aba **Decisões** com as aprovações pendentes. |
 | **Quadro** | Mensagens tipadas entre master, operador, sistema e agentes, por prioridade. |
-| **Memória** | Grafo do segundo cérebro (estilo Obsidian), backlinks, **Revisão (N)**, **Estudar e alimentar**, **Avaliar a busca**. |
+| **Grafo e notas** | Grafo do segundo cérebro (estilo Obsidian), backlinks, **Avaliar a busca**. |
+| **Buscar e aprender** | Busca em todo o segundo cérebro e **Estudar e alimentar** (pasta ou tópico). |
+| **Organizar** | Saúde das notas (0–100), trechos repetidos entre notas e **Organizar com IA** (ver §10). |
+| **Revisão (N)** | Fila das sugestões de organização; nada muda sem você aceitar. |
 | **Ferramentas** | Catálogo das ferramentas determinísticas, com execução e custo em tokens. |
 | **Integrações** | Conectores externos, desligados até você configurar; escrita só como proposta aprovada. |
 | **Custo** | Créditos **estimados** por dia, parte, modelo e tarefa; alerta de desvio; sucesso do roteamento por nível. |
@@ -522,6 +537,15 @@ Preferência `status_resumos`:
   decisões e aprendizados por projeto.
 - **Organização automática** (local, sem IA): sugere unir duplicatas, marcar notas velhas, ligar soltas e criar tópicos. Aceitar um
   tópico pede ao Kiro (parte `estudo`) uma nota-tópico. Nada muda sem você aceitar em **Revisão (N)**.
+- **Acesso livre dos agentes** (ADR-028): pelo MCP (ligado por padrão), Kiro e Codex buscam em todos os namespaces que você pode
+  ler; o contexto inicial também (`contexto_memoria_ampla`), só com notas de casamento forte.
+- **Organizar e deduplicar** (Saber > Organizar): a saúde mostra notas longas/curtas, sem tags, órfãs, links quebrados e quanto
+  texto se repete entre notas. **Organizar com IA** manda ao agente só os trechos repetidos e uma lista curta das notas; o plano
+  volta como sugestões: criar um **módulo** com a informação comum e a **nota da entidade** (ex.: "Sistema Função"), tirar a
+  repetição das notas de origem com `Ver [[módulo]]`, ligar notas, dividir nota grande e acrescentar tags. Nota validada não é
+  editada, só ligada.
+- **Notas eficientes**: um assunto por nota, título específico, 60–350 palavras, tags de entidade/tipo/projeto, fatos da entidade
+  na nota da entidade. Os agentes recebem essas regras e `forja_propor_nota` devolve avisos de qualidade.
 
 ---
 
@@ -609,7 +633,7 @@ As que mais mudam o comportamento:
 | Categoria | Preferências |
 |---|---|
 | Agentes | autonomia, `copia_sem_segredos`, correção automática, `subagentes`, `controle_escopo` (pausar/avisar/desligado), `master_executar` (executar/propor), métodos, observações guia |
-| Eficiência | limites de ferramentas e tempo, contexto e orçamento, `contexto_limite_sessao`, `status_resumos` (desligado/deterministico/marcos), roteamento que aprende, `reaproveitar_processos`, MCP |
+| Eficiência | limites de ferramentas e tempo, contexto e orçamento, `contexto_limite_sessao`, `status_resumos` (desligado/deterministico/marcos), roteamento que aprende, `reaproveitar_processos`, MCP (`kiro_mcp_ativo`, ligado por padrão), `contexto_memoria_projeto`, `contexto_memoria_ampla` |
 | Consumo | modelos por parte, `codex_ativo`, `distribuicao_provedores` (painel Custo com créditos **medidos** pelo Kiro), `limite_creditos_dia` (teto diário: ao atingir, novas execuções não começam; 0 = sem teto) |
 | Segurança | pastas permitidas/proibidas, regras de controle, isolamento dos testes, `terminal_ativo`, `acesso_fora_pasta`, `codex_pastas_com_segredo` |
 | Editor | `autocompletar_codigo`, `autocompletar_automatico`, `autocompletar_fontes`, ramos desligados, `terminal_assistente`, `lsp_ativo`, servidores de linguagem (instalar), catálogo (pedir à IA) |
@@ -629,7 +653,7 @@ Documentação interativa em `http://127.0.0.1:8787/api/docs`. Todas sob `/api/v
 | Conversa e contexto | `GET/POST /tarefas/{id}/conversa`, `GET /tarefas/{id}/contexto`, `GET/POST /tarefas/{id}/caderno`, `GET /execucoes/{id}/status`, anexos |
 | Aprovações | `GET /aprovacoes`, `POST /aprovacoes/{id}/decidir`, `POST /aprovacoes/decidir-lote` |
 | Desfazer e isolamento | `GET /tarefas/{id}/restauracao`, `POST /restauracao/{id}/desfazer`, `GET/DELETE /isolamentos` |
-| Memória | `POST /memorias`, `GET /memorias/buscar`, `GET /memorias/navegar`, `GET /memorias/revisao`, `POST /memorias/organizar`, `POST /estudos` |
+| Memória | `POST /memorias`, `GET /memorias/buscar` (`todos=true`: todos os namespaces permitidos), `GET /memorias/navegar`, `GET /memorias/revisao`, `POST /memorias/organizar`, `GET /memorias/saude`, `POST /memorias/organizar-ia`, `POST /memorias/organizar-ia/importar`, `POST /memorias/avaliar`, `POST /estudos` |
 | Visões | `GET /kanban`, `GET /conhecimento/grafo`, `GET /oficina`, `GET /execucoes/{id}/replay`, `GET /custos`, `GET /roteamento/estatisticas` |
 | Bancada | `GET /area/arvore`, `GET/PUT /area/arquivo`, `GET /area/buscar`, `GET/POST /area/git`, `POST /area/terminal`, `GET/POST /area/docker`, `POST /area/http`, `GET /area/comandos`, `POST /area/comandos/analisar`, `POST /area/comandos/ia`, `GET /area/editor`, `GET /area/codigo/catalogo`, `POST /area/codigo/ia`, `GET /area/lsp`, `POST /area/lsp/instalar\|completar\|explicar\|definicao\|diagnosticos` (ação arriscada responde 428 até ser reenviada com `confirmado: true`) |
 | Reciclagem | `GET /reciclagem`, `GET /reciclagem/previa`, `POST /reciclagem`, `GET /tarefas/{id}/caderno?amplo=true&q=` |
@@ -652,7 +676,7 @@ forja/
   migrations/      Alembic (0001…0015)
 scripts/           instalar.ps1, iniciar_forja.ps1, backup, diagnóstico do Kiro, demo, inspeção do painel, benchmarks
 tests/             pytest (unidade, integração, agente ACP falso por subprocesso, API)
-docs/              STATUS_IMPLEMENTACAO.md e ADRs 0001…0027
+docs/              STATUS_IMPLEMENTACAO.md e ADRs 0001…0028
 ```
 
 Camadas não se misturam: rotas não têm SQL, a orquestração não conhece HTTP, adaptadores não têm regra de negócio.
@@ -663,7 +687,7 @@ Camadas não se misturam: rotas não têm SQL, a orquestração não conhece HTT
 
 ```powershell
 pip install -r requirements-dev.txt          # + requirements-ui.txt para o navegador real
-python -m pytest -q                          # 1280 testes (agente ACP falso por subprocesso; nada real é chamado)
+python -m pytest -q                          # 1290 testes (agente ACP falso por subprocesso; nada real é chamado)
 python -m ruff check forja tests scripts
 pre-commit install                           # gitleaks + ruff a cada commit
 

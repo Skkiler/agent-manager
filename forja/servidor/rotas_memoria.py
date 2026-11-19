@@ -50,6 +50,51 @@ def criar(d: MemoriaIn, s: Mem, p: Pr, evitar_duplicata: bool = False) -> dict[s
     return s.criar(p, d, ATOR)
 
 
+class OrganizarIaIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    namespaces: list[Annotated[str, Field(max_length=200)]] | None = Field(None, max_length=10)
+    foco: Annotated[str, Field(max_length=500)] = ""
+    executar: bool = True
+
+
+class ImportarPlanoIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tarefa_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")]
+
+
+class AvaliarNotaIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    titulo: Annotated[str, Field(max_length=200)] = ""
+    conteudo: Annotated[str, Field(max_length=100_000)] = ""
+    tags: list[Annotated[str, Field(max_length=50)]] = Field(default_factory=list, max_length=30)
+
+
+@rm.get("/memorias/saude")
+def saude(request: Request, p: Pr, namespace: Annotated[list[str] | None, Query(max_length=10)] = None,
+          min_notas: Annotated[int, Query(ge=2, le=20)] = 2, base: bool = False) -> dict[str, Any]:
+    """Modularidade do grafo (ADR-028): tamanho das notas, tags, orfas, links fantasmas e trechos repetidos entre notas."""
+    return request.app.state.modularidade.saude(p, namespace, min_notas, incluir_base=base)
+
+
+@rm.post("/memorias/organizar-ia")
+def organizar_ia(d: OrganizarIaIn, request: Request, p: Pr) -> dict[str, Any]:
+    """Pede a um agente o plano de 'organizar e deduplicar' (modulos, ligacoes, fusoes, divisoes, tags) -> fila de revisao."""
+    return request.app.state.modularidade.pedir_ia(p, d.namespaces, d.foco, d.executar)
+
+
+@rm.post("/memorias/organizar-ia/importar")
+def organizar_ia_importar(d: ImportarPlanoIn, request: Request, p: Pr) -> dict[str, Any]:
+    return request.app.state.modularidade.importar_plano(p, d.tarefa_id)
+
+
+@rm.post("/memorias/avaliar")
+def avaliar(d: AvaliarNotaIn) -> dict[str, Any]:
+    """Avisos de modularidade de uma nota antes de gravar (tamanho, ligacoes, tags, titulo)."""
+    from forja.orquestracao.modularidade import avaliar_nota
+
+    return {"avisos": avaliar_nota(d.titulo, d.conteudo, d.tags)}
+
+
 @rm.get("/memorias/navegar")
 def navegar_topico(request: Request, p: Pr, ref: Annotated[str, Query(min_length=1, max_length=200)],
                    conteudo: bool = False) -> dict[str, Any]:
@@ -98,8 +143,11 @@ def buscar(
     limite: Annotated[int, Query(ge=1, le=50)] = 10,
     apenas_validadas: bool = False,
     incluir_inativas: bool = False,
+    todos: bool = False,
 ) -> dict[str, Any]:
-    return s.buscar(p, q, namespace or ["publico"], tuple(fonte or ("memoria", "codigo")),
+    """todos=true: todos os namespaces que esta instancia permite (usado pelo MCP dos agentes: acesso livre ao segundo cerebro)."""
+    alvo = sorted(p.namespaces) if todos and not namespace else (namespace or ["publico"])
+    return s.buscar(p, q, alvo, tuple(fonte or ("memoria", "codigo")),
                     [x.value for x in tipo] if tipo else None, limite,
                     apenas_validadas, incluir_inativas)
 

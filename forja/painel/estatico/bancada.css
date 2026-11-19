@@ -418,3 +418,37 @@ dialog.janela, #dlg-geral { border-radius: var(--raio-g); }
 .cartao, .card, .msg, .aprov { transition: box-shadow var(--dur) var(--curva), border-color var(--dur) var(--curva); }
 .aba-editor .aba-rotulo .trunc { max-width: 150px; }
 #barra-status .st { gap: 4px; }
+
+/* ---------------------------------------------------------------- grupos da barra de atividades (ADR-028) */
+.grupo-abas { display: flex; gap: 0; border-bottom: 1px solid var(--borda); overflow-x: auto; scrollbar-width: none; flex: none;
+  position: sticky; top: calc(-1 * var(--e4)); z-index: calc(var(--z-fixo) + 1); background: var(--bg);
+  margin: calc(-1 * var(--e4)) calc(-1 * var(--e5)) var(--e3); padding: 0 var(--e5); }
+.grupo-corpo .titulo-vista { top: calc(35px - var(--e4)); }
+@media (max-width: 760px) { .grupo-abas { margin: calc(-1 * var(--e3)) calc(-1 * var(--e3)) var(--e3); padding: 0 var(--e3); top: calc(-1 * var(--e3)); } }
+.grupo-abas [role="tab"] { height: 34px; padding: 0 var(--e3); font-size: var(--fs-m); white-space: nowrap; }
+#lateral .grupo-abas { position: static; margin: 0 0 var(--e2); padding: 0 var(--e1); background: transparent; }
+#lateral .grupo-abas [role="tab"] { height: 30px; padding: 0 var(--e2); font-size: var(--fs-s); flex: 1; }
+.grupo-corpo { min-width: 0; }
+
+/* ---------------------------------------------------------------- area Conhecimento: aprender, organizar, revisao */
+.conhecimento-aba { max-width: 1180px; }
+.conhecimento-aba > h1 { margin: 0 0 var(--e1); }
+.conhecimento-aba > .subtitulo { margin: 0 0 var(--e4); max-width: 80ch; }
+.grade-conhecimento { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--e4); align-items: start; }
+.regras-nota { margin: var(--e1) 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: var(--fs-s); color: var(--texto); }
+.barra-organizar { flex-wrap: wrap; margin-bottom: var(--e3); }
+.metricas-saude { display: flex; flex-wrap: wrap; gap: var(--e3); align-items: stretch; margin: var(--e2) 0 var(--e4); }
+.metricas-saude .metrica { display: grid; align-content: center; gap: 2px; min-width: 120px; padding: var(--e2) var(--e3); border: 1px solid var(--borda);
+  border-radius: var(--raio); background: var(--cartao); }
+.metricas-saude .metrica strong { font-size: var(--fs-xl); }
+.medidor { display: grid; place-items: center; align-content: center; width: 104px; height: 104px; border-radius: 50%; border: 6px solid var(--borda);
+  background: var(--cartao); text-align: center; }
+.medidor strong { font-size: 30px; line-height: 1; } .medidor span { font-size: var(--fs-xs); color: var(--mudo); }
+.medidor-ok { border-color: var(--ok); } .medidor-aviso { border-color: var(--aviso); } .medidor-erro { border-color: var(--erro); }
+.lista-repeticoes { list-style: none; padding: 0; margin: var(--e2) 0 var(--e4); display: grid; gap: var(--e2); }
+.lista-repeticoes blockquote { margin: var(--e2) 0; padding: var(--e1) var(--e3); border-left: 3px solid var(--aviso); color: var(--texto);
+  background: color-mix(in srgb, var(--aviso) 7%, transparent); font-size: var(--fs-s); }
+.conhecimento-aba details.card { margin: var(--e2) 0; }
+.conhecimento-aba section.card { margin-top: var(--e4); }
+.conhecimento-aba section.card .linha { flex-wrap: wrap; margin-top: var(--e2); }
+.conhecimento-aba section.card input[type="text"] { flex: 1 1 260px; }

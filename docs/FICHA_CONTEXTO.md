@@ -112,13 +112,20 @@ Atualizada em 2026-11-18. Esta ficha substitui o histórico do chat anterior: le
   (Kiro lê sozinho o caminho citado; Codex lê e registra) e `codex_pastas_com_segredo`; visual (`movimento.css`, `js/movimento.js`:
   dicas, transições, troca de tema, avisos).
 
+- **Rodada 6 de 2026-11-19 (ADR-028)**: acesso livre dos agentes à memória (`/memorias/buscar?todos=true` no MCP, `kiro_mcp_ativo`
+  ligado por padrão, `contexto_memoria_ampla`); organizar e deduplicar (`orquestracao/modularidade.py`: `saude`, `repeticoes`,
+  `pedir_ia` no projeto `forja-conhecimento`, `importar_plano` -> fila de revisão, `aplicar` modularizar/dividir/tags; rotas
+  `/memorias/saude`, `/memorias/organizar-ia[/importar]`, `/memorias/avaliar`); regras de nota eficiente (`REGRAS_NOTA`,
+  `avaliar_nota`, 60–350 palavras) nos prompts do Kiro e no MCP; menu em 6 grupos (`GRUPOS` em `js/main.js`, abas por grupo em
+  `js/bancada.js`; `views/conhecimento.js` com Buscar e aprender e Organizar). Banco real auditado: 63 notas da base, nota 100.
+
 ## 5 Testes e verificações (último estado)
 
-- `python -m pytest -p no:cacheprovider -q` -> **1280 passed** (~4,6 min).
+- `python -m pytest -p no:cacheprovider -q` -> **1290 passed** (~4,6 min).
 - LSP real: Pyright, TypeScript, HTML e CSS instalados pela API e testados (`%TEMP%\forja_sonda\sonda_lsp.py`, `sonda_lsp_ui.py`).
 - Testes reais desta etapa com Kiro e Codex: scripts e resultados em `%TEMP%\forja_sonda\` (fora do Git, dados fictícios).
 - `python -m ruff check .` -> ok; `node --check` em todos os módulos JS -> ok.
-- Navegador real: `inspecionar_painel.py --interagir --a11y` -> 136 OK, 0 falhas (14 vistas, axe sem violação); `--login --a11y` -> 0 problemas.
+- Navegador real: `inspecionar_painel.py --interagir --a11y` -> 144 OK, 0 falhas (axe sem violação, inclui Aprender/Organizar/Revisão); `--login --a11y` -> 0 problemas.
 - Acessibilidade: árvore do Chromium + volta de Tab em 9 vistas limpa (NVDA não instalado; teste com leitor real pendente).
 - Codex real com o perfil nativo: sessão aceita, deny aplicado pelo sandbox, sem vazamento (`c_rapida`, `c_fora`, `c_env_proc`).
 - `benchmark_busca.py` global 0.94/0.87/0.89 (recall@5/MRR/nDCG@5).

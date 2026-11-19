@@ -445,6 +445,25 @@ Relatorio completo: `docs/RELATORIO_AVALIACAO_2026-11-18.md`. Somente avaliacao;
   automatica ("pasta citada no pedido", sem perguntar), 12,3 s, 0,0206 credito; Codex leu, 36,6 s, acesso registrado. Nenhum
   segredo vazou.
 - **Pendente:** C# com servidor real; teste com NVDA real.
+
+## Rodada 6: segundo cerebro modular, acesso livre dos agentes e menu agrupado (2026-11-19, ADR-028) — resultados reais
+- **Acesso dos agentes (lacuna achada e corrigida):** o MCP `forja_buscar_memoria` buscava so em `publico` e o MCP vinha
+  desligado. Agora `/memorias/buscar?todos=true` (todos os namespaces permitidos), `kiro_mcp_ativo` ligado por padrao e
+  `contexto_memoria_ampla` (padrao ligado) no contexto automatico, com o mesmo piso de relevancia.
+- **Organizar e deduplicar:** `orquestracao/modularidade.py` (saude 0-100, repeticoes entre notas, plano da IA -> fila de
+  revisao -> aplicar modulo + nota da entidade; nota validada so ganha ligacao). Rotas `GET /memorias/saude`,
+  `POST /memorias/organizar-ia`, `POST /memorias/organizar-ia/importar`, `POST /memorias/avaliar`.
+- **Auditoria do banco real** (somente leitura, agregados): 63 notas da base, 0 pessoais; media 69 palavras, mediana 65,
+  maximo 129; 0 repeticoes, 0 orfas; pontuacao 100. Faixa ideal recalibrada de 80-400 para 60-350 palavras.
+- **Testes executados:** `python -m pytest` -> **1290 passed** (novo: `tests/test_rodada6_modularidade.py`, 9: busca
+  `todos`, contexto amplo, avaliar nota (funcao e rota), saude e repeticoes, `remover_trecho` preserva Markdown, plano da IA
+  -> sugestoes idempotentes -> modulo tira a repeticao com nota validada intacta e tags aplicadas, dividir nota longa, pedido
+  de organizacao cria tarefa e importa o plano ao concluir); `ruff check .` ok; `node --check` nos 39 modulos JS ok.
+- **Painel em navegador real** (8799, dados ficticios): `inspecionar_painel.py --interagir --a11y` -> **144 OK, 0 falhas**,
+  axe sem violacao (inclui buscar e aprender, organizar e revisao), 0 px de estouro em tela estreita. Menu com 6 grupos e
+  abas por grupo conferido pelo script. Login (8798): 0 problemas.
+- **Nao feito nesta rodada:** sondagem com Kiro/Codex reais do acesso pelo MCP (so testes de unidade e API); C# com servidor
+  real; NVDA real.
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -458,13 +477,15 @@ Relatorio completo: `docs/RELATORIO_AVALIACAO_2026-11-18.md`. Somente avaliacao;
 - IDF do bm25 considera o corpus inteiro (sem vazar conteudo, mas com influencia numerica minima entre namespaces).
 - Heuristicas de PII/injection (regex) reduzem risco, **nao** o eliminam; resultados sao sempre tratados como dados nao confiaveis.
 - `confianca` e informada pelo usuario e **nao calibrada**; nao entra no ranking.
-- A memoria e injetada no prompt apenas para namespaces em `APP_CONTEXT_NAMESPACES` (padrao `publico`).
+- A memoria e injetada no prompt para `APP_CONTEXT_NAMESPACES` (padrao `publico`), o namespace do projeto e, com
+  `contexto_memoria_ampla` (padrao ligado, ADR-028), todos os namespaces permitidos; sempre com piso de relevancia.
 - Painel (JS): verificado em navegador real por script (Playwright) no CI; arvore de acessibilidade auditada (ADR-026); teste com leitor de tela real (NVDA) pendente.
 - gitleaks e CI ativos (ver Fase 9). Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1280 passed. Proximo: C# com servidor de linguagem real (precisa
-   do .NET SDK), teste com NVDA real e medir o ganho da reciclagem no contexto de tarefas reais.
+1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1290 passed. Proximo: sondar com Kiro/Codex reais o acesso
+   amplo pelo MCP, C# com servidor de linguagem real (precisa do .NET SDK), teste com NVDA real e medir o ganho da reciclagem
+   e da modularizacao no contexto de tarefas reais.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

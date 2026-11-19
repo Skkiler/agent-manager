@@ -4,7 +4,8 @@ import { api } from "../api.js";
 import { dataCurta, el, janela, limpar, tag, toast } from "../ui.js";
 
 const TIPOS = { duplicata: ["Duplicata", "aviso"], desatualizada: ["Desatualizada", "aviso"], ligacao: ["Ligação sugerida", ""],
-  topico: ["Tópico sugerido", "ok"] };
+  topico: ["Tópico sugerido", "ok"], modularizar: ["Nota-módulo (tirar repetição)", "ok"], dividir: ["Dividir nota longa", ""],
+  tags: ["Tags sugeridas", ""] };
 
 export async function contarRevisao() {
   try { return (await api("GET", "/memorias/revisao?limite=200")).total; } catch { return null; }
@@ -20,6 +21,14 @@ function cartaoSugestao(s, aoMudar) {
   let fica = null;
   const lista = el("ul", { className: "mudo" }, ...s.memorias.map((id) => el("li", { textContent: titulos[id] || id })));
   const extras = [];
+  if (s.tipo === "modularizar" && s.dados) {  // o que vira modulo e de onde sai: decidir sabendo o que muda
+    extras.push(el("details", { open: true }, el("summary", { textContent: `Nova nota: ${s.dados.titulo}${s.dados.entidade ? ` · ligada a "${s.dados.entidade}"` : ""}` }),
+      el("pre", { className: "saida", textContent: s.dados.conteudo }),
+      el("p", { className: "mudo", textContent: "Ao aplicar: o trecho repetido sai de cada nota da lista e ela passa a citar [[a nota-módulo]]. Notas validadas não são editadas, só ligadas." })));
+  }
+  if (s.tipo === "dividir" && s.dados?.partes) {
+    extras.push(el("ul", {}, ...s.dados.partes.map((x) => el("li", {}, el("strong", { textContent: x.titulo }), el("span", { className: "mudo", textContent: ` ${x.conteudo.slice(0, 120)}…` })))));
+  }
   if (s.tipo === "duplicata") {
     fica = el("select", { "aria-label": "Qual nota fica" }, ...s.memorias.map((id) => el("option", { value: id, textContent: titulos[id] || id,
       selected: id === s.dados?.vencedora_sugerida })));
@@ -33,7 +42,7 @@ function cartaoSugestao(s, aoMudar) {
     } catch (e) { toast(e.message, "erro"); }
   };
   const acao = { duplicata: "Unir", desatualizada: s.dados?.destino === "revogado" ? "Revogar" : "Marcar obsoleta", ligacao: "Ligar",
-    topico: "Resumir com o Kiro" }[s.tipo] || "Aceitar";
+    topico: "Resumir com o Kiro", modularizar: "Criar módulo e ligar", dividir: "Dividir", tags: "Aplicar tags" }[s.tipo] || "Aceitar";
   return el("article", { className: "card sugestao", "aria-label": `${rotulo}: ${s.motivo}` },
     el("div", { className: "linha" }, tag(rotulo, cls), el("span", { className: "mudo", textContent: dataCurta(s.criado_em) })),
     el("p", { textContent: s.motivo }), lista, ...extras,
@@ -60,6 +69,17 @@ function cartaoCandidata(m, aoMudar) {
 
 /** Janela da fila. `aoFechar` atualiza o contador da barra lateral. */
 export function abrirRevisao(aoFechar) {
+  janela("Revisão do segundo cérebro", corpoRevisao(), { classe: "janela-larga", aoFechar });
+}
+
+/** Aba "Revisão" da area Conhecimento (mesma fila, dentro da tela). */
+export function montar(raiz) {
+  limpar(raiz);
+  raiz.append(el("div", { className: "conhecimento-aba" }, el("h1", { textContent: "Revisão do segundo cérebro" }),
+    el("p", { className: "subtitulo", textContent: "Sugestões da organização (local e por IA) e notas candidatas. Nada muda sem você decidir." }), corpoRevisao()));
+}
+
+function corpoRevisao() {
   const status = el("p", { className: "mudo", role: "status", "aria-live": "polite", textContent: "Carregando…" });
   const sugestoes = el("section", { "aria-label": "Sugestões da organização automática" });
   const candidatas = el("section", { "aria-label": "Notas candidatas" });
@@ -70,7 +90,6 @@ export function abrirRevisao(aoFechar) {
       catch (e) { toast(e.message, "erro"); } finally { organizar.disabled = false; }
     } });
   const corpo = el("div", { className: "revisao" }, el("div", { className: "linha" }, organizar, status), sugestoes, candidatas);
-  janela("Revisão do segundo cérebro", corpo, { classe: "janela-larga", aoFechar });
   async function desenhar() {
     try {
       const f = await api("GET", "/memorias/revisao?limite=100");
@@ -83,4 +102,5 @@ export function abrirRevisao(aoFechar) {
     } catch (e) { status.textContent = `Erro: ${e.message}`; }
   }
   desenhar();
+  return corpo;
 }

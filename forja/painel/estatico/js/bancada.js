@@ -7,9 +7,9 @@ import { criarEditor } from "./editor.js";
 import { configEditor, lspLigado } from "./editorcfg.js";
 import { agrupar, definirPainel, emitir, estado, ouvir, painelAberto, selecionarTarefa, tamanhoAtual, tamanhoPadrao, tamanhoPainel } from "./estado.js";
 import { icone } from "./icones.js";
-import { $, dialogo, el, limpar, toast } from "./ui.js";
+import { $, abas as abasUi, dialogo, el, limpar, toast } from "./ui.js";
 
-const st = { atividades: [], abas: [], ativa: null, lateral: null, projetos: new Map() };
+const st = { atividades: [], grupos: [], abas: [], ativa: null, lateral: null, projetos: new Map() };
 const vista = () => $("#vista");
 const MAX_ABAS = 20;
 
@@ -109,6 +109,16 @@ async function montarAba(a) {
   $("#principal").setAttribute("aria-label", a.titulo);
   if (a.tipo === "vista") {
     const at = st.atividades.find((x) => x.id === a.id);
+    const g = grupoDe(a.id);
+    if (g?.tipo === "vista") {
+      const focoNasAbas = Boolean(v.querySelector(".grupo-abas")?.contains(document.activeElement));
+      const corpo = el("div", { className: "grupo-corpo", dataset: { membro: a.id } });
+      const cab = abasGrupo(g, a.id);
+      v.replaceChildren(cab, corpo);
+      at?.modulo.montar(corpo);
+      if (focoNasAbas) cab.querySelector('[aria-selected="true"]')?.focus();
+      return;
+    }
     at?.modulo.montar(v);
     return;
   }
@@ -260,7 +270,27 @@ export function abrirInicio() { return adicionar({ chave: "inicio", tipo: "inici
 export function abrirVista(id) {
   const at = st.atividades.find((x) => x.id === id);
   if (!at) return null;
+  const g = grupoDe(id);
+  if (g?.tipo === "vista") {  // membros de um grupo dividem UMA aba do editor; as abas do grupo trocam o conteudo
+    const chave = `vista:${g.id}`, ex = abaPor(chave);
+    if (ex) {
+      if (ex.id !== id) { Object.assign(ex, { id, titulo: at.rotulo, icone: at.icone }); vista().dataset.chave = ""; }
+      ativar(chave);
+      return ex;
+    }
+    return adicionar({ chave, tipo: "vista", id, grupo: g.id, titulo: at.rotulo, icone: at.icone });
+  }
   return adicionar({ chave: `vista:${id}`, tipo: "vista", id, titulo: at.rotulo, icone: at.icone });
+}
+
+const grupoDe = (id) => st.grupos.find((g) => g.membros.includes(id));
+
+/** Abas dos membros de um grupo (padrao ARIA de tabs; setas trocam). Clique navega pela rota normal (emitir "ir"). */
+function abasGrupo(g, atual) {
+  const nav = el("div", { className: "grupo-abas", role: "tablist", "aria-label": g.rotulo });
+  const defs = g.membros.map((m) => { const a = st.atividades.find((x) => x.id === m); return { id: `g-${m}`, rotulo: a?.aba || a?.rotulo || m }; });
+  abasUi(nav, defs, `g-${atual}`, (id) => emitir("ir", id.slice(2)));
+  return nav;
 }
 
 export function abrirArquivo({ projeto: p, raiz = 0, rel, nome, linha = null }) {
@@ -352,7 +382,8 @@ export function mostrarLateral(id, { abrir = true } = {}) {
   st.lateral = id;
   // conteudo novo a cada troca: um desenho assincrono antigo (ex.: o Explorador ainda carregando) cai num no solto, sem apagar este
   const alvo = el("div", { className: "lateral-conteudo" }), botoes = el("span", { className: "linha" });
-  corpo.replaceChildren(alvo); acoes.replaceChildren(botoes);
+  const g = grupoDe(id);
+  corpo.replaceChildren(...(g?.tipo === "painel" ? [abasGrupo(g, id)] : []), alvo); acoes.replaceChildren(botoes);
   $("#lateral-titulo").textContent = at.rotulo;
   montar(alvo, botoes);
   marcarAtividade();
@@ -363,8 +394,12 @@ export const lateralAtual = () => st.lateral;
 export function marcarAtividade() {
   const aba = abaAtiva();
   for (const b of document.querySelectorAll("#atividades button[data-id]")) {
-    const id = b.dataset.id;
-    const atual = estado.modo === "editor" && ((painelAberto("lateral") && st.lateral === id) || (aba?.tipo === "vista" && aba.id === id));
+    // botao de grupo: Arquivos/Codigo acendem pela barra lateral; os demais, pela aba aberta no editor
+    const g = st.grupos.find((x) => x.id === b.dataset.id);
+    const lateral = painelAberto("lateral");
+    const atual = estado.modo === "editor" && (g
+      ? (g.tipo === "painel" ? lateral && g.membros.includes(st.lateral) : aba?.tipo === "vista" && g.membros.includes(aba.id))
+      : (lateral && st.lateral === b.dataset.id) || (aba?.tipo === "vista" && aba.id === b.dataset.id));
     b.setAttribute("aria-current", atual ? "page" : "false");
   }
 }
@@ -401,8 +436,9 @@ function divisoria(nome, orientacao) {
 }
 
 // ------------------------------------------------------------------ inicio
-export function iniciarBancada(atividades) {
+export function iniciarBancada(atividades, grupos = []) {
   st.atividades = atividades;
+  st.grupos = grupos;
   for (const n of ["lateral", "direita", "inferior"]) { tamanhoPainel(n, undefined, { salvar: false }); divisoria(n, n === "inferior" ? "horizontal" : "vertical"); }
   $("#alternar-lateral").append(icone("painel_lateral", 16));
   $("#alternar-inferior").append(icone("painel_inferior", 16));
@@ -411,6 +447,13 @@ export function iniciarBancada(atividades) {
   $("#st-git").addEventListener("click", () => emitir("atividade", "git"));
   addEventListener("beforeunload", (ev) => { if (temAlteracoes()) ev.preventDefault(); });
   const salvo = lerAbas();
-  for (const a of salvo.abas || []) if (a.tipo === "arquivo" || (a.tipo === "vista" && atividades.some((x) => x.id === a.id)) || a.tipo === "inicio") st.abas.push({ ...a });
-  return salvo.ativa;
+  let ativa = salvo.ativa;
+  for (const a of salvo.abas || []) {
+    if (!(a.tipo === "arquivo" || (a.tipo === "vista" && atividades.some((x) => x.id === a.id)) || a.tipo === "inicio")) continue;
+    const g = a.tipo === "vista" ? grupoDe(a.id) : null;
+    const aba = g?.tipo === "vista" ? { ...a, chave: `vista:${g.id}`, grupo: g.id } : { ...a };  // abas antigas por membro viram a do grupo
+    if (ativa === a.chave) ativa = aba.chave;
+    if (!st.abas.some((x) => x.chave === aba.chave)) st.abas.push(aba);
+  }
+  return ativa;
 }

@@ -147,6 +147,12 @@ function criarNota(tituloInicial = "") {
 
 /** Solicitacao de alimentacao e estudo: pasta (permitida) ou topico (pesquisa). As notas nascem candidatas e ligadas por topico. */
 function abrirEstudo() {
+  let d = null;
+  d = dialogo("Estudar e alimentar o segundo cérebro", formularioEstudo(() => d?.fechar()));
+}
+
+/** Formulario "buscar e aprender" (pasta ou topico): na janela da barra lateral e na aba da area Conhecimento. */
+export function formularioEstudo(aoSair = null) {
   const tipo = el("select", { "aria-label": "Tipo de estudo" }, el("option", { value: "topico", textContent: "Pesquisar um tópico" }),
     el("option", { value: "pasta", textContent: "Analisar uma pasta de código" }));
   const alvo = el("input", { required: true, maxLength: 500, "aria-label": "Tópico ou caminho da pasta", placeholder: "Ex.: boas práticas de filas com prioridade" });
@@ -165,8 +171,7 @@ function abrirEstudo() {
     el("label", {}, exec, " executar agora (consome créditos; senão fica preparada no quadro)"),
     el("p", { className: "aviso", textContent: "O agente de estudo usa o modelo rápido e só lê. As notas entram como candidatas, divididas em subtópicos ligados; você revisa antes de valerem como fato." }),
     el("div", { className: "linha" }, el("button", { type: "submit", className: "primario", textContent: "Solicitar estudo" }),
-      el("button", { type: "button", textContent: "Cancelar", onclick: () => d.fechar() })), saida);
-  const d = dialogo("Estudar e alimentar o segundo cérebro", f);
+      aoSair ? el("button", { type: "button", textContent: "Cancelar", onclick: () => aoSair() }) : null), saida);
   f.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     try {
@@ -174,10 +179,11 @@ function abrirEstudo() {
         pesquisar_web: web.checked, executar: exec.checked });
       limpar(saida);
       saida.append(el("p", { textContent: exec.checked ? "Estudo iniciado. As notas aparecem no grafo ao terminar." : "Estudo preparado (não executado)." }),
-        el("button", { type: "button", textContent: "Abrir no quadro", onclick: () => { d.fechar(); selecionarTarefa(r.tarefa.id); emitir("ir", "tarefas"); } }));
+        el("button", { type: "button", textContent: "Abrir no quadro", onclick: () => { aoSair?.(); selecionarTarefa(r.tarefa.id); emitir("ir", "tarefas"); } }));
     } catch (e) { toast(e.message, "erro"); }
   });
-  alvo.focus();
+  requestAnimationFrame(() => alvo.focus({ preventScroll: true }));
+  return f;
 }
 
 export function montarLateral(lat) {

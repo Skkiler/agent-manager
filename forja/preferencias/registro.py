@@ -333,8 +333,9 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
     Preferencia(
         "kiro_mcp_ativo", "eficiencia", "avancado", "Dar ao Kiro as ferramentas da Forja (MCP)", "bool",
         "Anexa à sessão do Kiro um servidor MCP local (sem rede) com 5 ferramentas: listar/executar as ferramentas da Forja, buscar na memória "
-        "e usar o quadro. Cada uso ainda passa pelas suas aprovações por ação. O MCP só fala com a Forja em loopback e nunca recebe segredos.",
-        False, se_ligar="O agente usa ferramentas baratas e deterministicas em vez de ler arquivos inteiros, e publica no quadro sozinho.",
+        "e usar o quadro. Cada uso ainda passa pelas suas aprovações por ação. O MCP só fala com a Forja em loopback e nunca recebe segredos. "
+        "Ligado, o Kiro e o Codex têm acesso livre ao segundo cérebro (todas as notas, grafo e caderno permitidos nesta instância).",
+        True, se_ligar="O agente usa ferramentas baratas e deterministicas em vez de ler arquivos inteiros, e publica no quadro sozinho.",
         se_desligar="O agente trabalha só com as ferramentas nativas do Kiro; nada da Forja é oferecido a ele.", risco="medio"),
     # ------------------------------------------------------------------ consumo
     Preferencia(
@@ -521,6 +522,12 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         "reciclagem_agora", "manutencao", "avancado", "Reciclar agora", "reciclagem",
         "Mostra o que a próxima rodada faria com cada sessão antiga (nota nova, completar uma nota existente ou só arquivar) e "
         "recicla na hora, sem esperar a rodada automática.", None, persistida=False),
+    Preferencia(
+        "contexto_memoria_ampla", "eficiencia", "avancado", "Contexto com todo o segundo cérebro", "bool",
+        "O contexto inicial de cada tarefa procura em TODAS as notas permitidas nesta instância (estudos, aprendizados, outros "
+        "projetos), não só nas públicas. Só entra o que passar no filtro de relevância e couber no orçamento de contexto.", True,
+        se_ligar="O agente aproveita o que outros estudos e projetos já ensinaram.",
+        se_desligar="Só as notas públicas e as do próprio projeto."),
     Preferencia(
         "contexto_memoria_projeto", "eficiencia", "avancado", "Contexto com o histórico do projeto", "bool",
         "O contexto inicial de cada tarefa também procura nas notas do PRÓPRIO projeto (registros de tarefas e sessões recicladas). "

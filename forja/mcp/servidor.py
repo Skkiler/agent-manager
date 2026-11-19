@@ -112,7 +112,8 @@ def _buscar_memoria(c: ClienteForja, a: dict[str, Any]) -> Any:
     pagina = a.get("pagina", 1)
     if isinstance(pagina, bool) or not isinstance(pagina, int) or not 1 <= pagina <= 5:
         raise ErroFerramenta("`pagina` deve ser um inteiro de 1 a 5.")
-    r = c.chamar("GET", "/memorias/buscar", params={"q": q[:300], "limite": min(50, limite * pagina + 1)})
+    # acesso livre ao segundo cerebro: todos os namespaces que a instancia permite (publico, pessoal, projetos, estudos...)
+    r = c.chamar("GET", "/memorias/buscar", params={"q": q[:300], "limite": min(50, limite * pagina + 1), "todos": True})
     return compactar_busca(r, limite, pagina)
 
 
@@ -163,7 +164,14 @@ def _propor_nota(c: ClienteForja, a: dict[str, Any]) -> Any:
     if m.get("duplicata"):  # ja existe: nao cria de novo (retrabalho); o agente pode navegar nela
         return {"id": m.get("id"), "titulo": m.get("titulo"), "estado": m.get("estado"),
                 "aviso": "ja existe uma nota parecida; nada foi criado. Use forja_navegar_memoria para ler e complemente so se faltar algo"}
-    return {"id": m.get("id"), "estado": m.get("estado"), "aviso": "nota candidata: so vale como fato apos revisao do usuario"}
+    saida = {"id": m.get("id"), "estado": m.get("estado"), "aviso": "nota candidata: so vale como fato apos revisao do usuario"}
+    try:  # retorno de qualidade (modularidade): o agente aprende o formato eficiente na pratica
+        avisos = c.chamar("POST", "/memorias/avaliar", json_={"titulo": titulo[:200], "conteudo": corpo[:6000], "tags": ["agente", *tags]}).get("avisos")
+        if avisos:
+            saida["qualidade"] = avisos
+    except Exception:  # noqa: BLE001, S110 - avaliacao e conselho; nunca derruba o registro
+        pass
+    return saida
 
 
 def _quadro_publicar(c: ClienteForja, a: dict[str, Any]) -> Any:
@@ -241,7 +249,7 @@ FERRAMENTAS: dict[str, tuple[str, dict[str, Any], Callable[[ClienteForja, dict[s
         "Abre um topico do segundo cerebro (titulo ou id): resumo, pai, subtopicos e relacionados. conteudo=true traz o corpo.",
         _esquema({"topico": {"type": "string"}, "conteudo": {"type": "boolean"}}, ["topico"]), _navegar_memoria),
     "forja_propor_nota": (
-        "Registra um aprendizado reutilizavel (decisao, armadilha, procedimento) como nota CANDIDATA para o usuario revisar.",
+        "Registra UM aprendizado (1 assunto, 60-350 palavras, titulo especifico, tags entidade/tipo/projeto, [[links]]). Busque antes.",
         _esquema({"titulo": {"type": "string"}, "conteudo": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}},
                  ["titulo", "conteudo"]), _propor_nota),
     "forja_quadro_publicar": (

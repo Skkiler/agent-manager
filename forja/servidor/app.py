@@ -55,6 +55,7 @@ from forja.orquestracao.grafo_servico import GrafoServico
 from forja.orquestracao.integracao_servico import IntegracaoServico
 from forja.orquestracao.isolamento import Isolamento
 from forja.orquestracao.memoria_servico import ServicoMemoria
+from forja.orquestracao.modularidade import Modularidade
 from forja.orquestracao.oficina import OficinaServico
 from forja.orquestracao.organizacao import OrganizadorMemoria
 from forja.orquestracao.projetos_servico import ProjetosServico
@@ -243,11 +244,25 @@ def _conhecimento_e_editor(app: FastAPI, cfg: Configuracoes, servico: Servico) -
     prefs.registrar_aplicador("reciclagem_compactar", lambda v: setattr(app.state.reciclagem, "compactar", str(v)))
     ctx = servico.construtor_contexto
     if ctx is not None:
-        def _ns_projeto(tarefa: dict) -> list[str]:
-            ns = app.state.conhecimento.namespace_da_tarefa(tarefa)
-            return [ns] if ns and principal.pode(ns) else []
+        escolha = {"projeto": True, "ampla": True}
 
-        prefs.registrar_aplicador("contexto_memoria_projeto", lambda v: setattr(ctx, "namespaces_da_tarefa", _ns_projeto if v else None))
+        def _ns_extra(tarefa: dict) -> list[str]:
+            ns = app.state.conhecimento.namespace_da_tarefa(tarefa) if escolha["projeto"] else None
+            extra = [ns] if ns and principal.pode(ns) else []
+            if escolha["ampla"]:  # acesso livre (ADR-028): todos os namespaces permitidos, filtrados por relevancia e orcamento
+                extra += [n for n in sorted(cfg.memoria_namespaces) if n not in extra]
+            return extra
+
+        def _definir(chave: str, v: object) -> None:
+            escolha[chave] = bool(v)
+            ctx.namespaces_da_tarefa = _ns_extra if any(escolha.values()) else None
+
+        prefs.registrar_aplicador("contexto_memoria_projeto", lambda v: _definir("projeto", v))
+        prefs.registrar_aplicador("contexto_memoria_ampla", lambda v: _definir("ampla", v))
+    # modularidade do segundo cerebro (ADR-028): saude, repeticoes e "organizar e deduplicar" com IA -> fila de revisao
+    app.state.modularidade = Modularidade(repo, app.state.memoria, app.state.grafo, servico, principal=principal)
+    app.state.organizador.modularidade = app.state.modularidade
+    servico.ao_finalizar.append(app.state.modularidade.ao_finalizar)
     # editor do painel: catalogo de codigo (padrao + usuario/IA) e LSP (sob demanda, ambiente do usuario sem APP_*/FORJA_*)
     app.state.codigo = CodigoServico(CatalogoCodigo(cfg.dados_dir), servico)
     app.state.area.gerente_lsp = GerenteLsp(cfg.dados_dir, ambiente_usuario)
