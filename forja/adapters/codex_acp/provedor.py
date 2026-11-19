@@ -26,6 +26,7 @@ from forja.dominio.contratos import ResultadoAgente
 from forja.ferramentas.verificacao import ambiente_limpo
 from forja.seguranca.acoes import descrever_acao
 from forja.seguranca.sensiveis import (  # noqa: F401 - reexportados (compatibilidade)
+    GLOBS,
     MAX_ARQUIVOS_VARREDURA,
     segredos_nas_pastas,
 )
@@ -60,19 +61,36 @@ ENV_EXCLUIR = ["*TOKEN*", "*SECRET*", "*PASSWORD*", "*PASSWD*", "*SENHA*", "*API
                "*CREDENTIAL*", "*COOKIE*", "*SESSION*", "*AUTH*", "FORJA_*", "APP_*"]
 
 
+PASTAS_PESSOAIS_NEGADAS = (".ssh", ".aws", ".gnupg", ".kube", ".docker")
+
+
+def perfil_permissoes() -> dict[str, Any]:
+    """Perfil de permissao NATIVO do Codex (sandbox do proprio Codex): o modo ':workspace' + DENY para os mesmos globs de segredo do
+    perfil do Kiro e para as pastas de credenciais da pasta pessoal. Sondado no codex-acp 2.7.0/Windows (ADR-026): aceito e
+    aplicado de verdade (um arquivo inocente listado como deny deixou de ser lido). Rejeitados na sonda: ':root' deny (sessao
+    recusada com 'Internal error') e '~' deny (session/new nao respondeu). Leitura FORA da pasta continua possivel no modo de
+    escrita: a vigia da Forja cobre esse caso."""
+    return {"extends": ":workspace", "filesystem": {
+        "glob_scan_max_depth": 4, **{f"~/{d}": "deny" for d in PASTAS_PESSOAIS_NEGADAS},
+        ":workspace_roots": {g: "deny" for g in GLOBS}}}
+
+
 def configuracao_sessao() -> dict[str, Any]:
-    """Configuracao da sessao do Codex no nivel do perfil do Kiro: regras como instrucao de desenvolvedor e ambiente minimo."""
+    """Configuracao da sessao do Codex no nivel do perfil do Kiro: regras como instrucao de desenvolvedor, ambiente minimo e
+    perfil de permissao nativo com DENY de segredos."""
     return {
         "developer_instructions": ("Voce trabalha para a Forja, um orquestrador local. " + perfil_kiro.ESCOPO + "\n" + REGRA_PASTAS
                                    + "Se uma regra acima impedir o pedido, NAO tente contornar: explique em '## Decisões para você'."),
         "shell_environment_policy": {"inherit": "core", "exclude": ENV_EXCLUIR},
+        "default_permissions": "forja",
+        "permissions": {"forja": perfil_permissoes()},
     }
 
 
 def _leitura_proibida(upd: dict[str, Any], raizes: list[Path]) -> str | None:
     """Vigia em tempo real: chamada do Codex que cita segredo ou caminho FORA das pastas do projeto. O sandbox 'read-only' do Codex
-    le o disco quase inteiro sem pedir nada (achado real + doc da OpenAI), e os perfis de permissao do Codex nao funcionaram pelo
-    adaptador (sessao recusada com 'Internal error' no codex-acp 2.7.0/Windows). A Forja cancela o turno ao ver a chamada."""
+    le o disco quase inteiro sem pedir nada (achado real + doc da OpenAI), e o perfil de permissao nativo nega segredos mas nao
+    consegue negar a raiz (':root' deny derruba a sessao no codex-acp 2.7.0/Windows). A Forja cancela o turno ao ver a chamada."""
     if upd.get("sessionUpdate") != "tool_call":
         return None
     item = descrever_acao(upd, raizes[0] if raizes else None, raizes[1:], [])
@@ -106,8 +124,9 @@ class ProvedorCodexAcp(ProvedorKiroAcp):
           pedido para ler arquivo fora da pasta -> o proprio Codex recusou, sem nenhuma chamada de ferramenta (a vigia nem precisou
           agir). E o 'se policiar' pedido pelo usuario;
         - shell_environment_policy: comandos do Codex herdam so o ambiente basico e nunca variaveis com cara de segredo.
-        Rejeitados no teste: approval_policy (aposentado pela OpenAI; quebra a sessao), [permissions] (sessao recusada) e hooks
-        PreToolUse (a confianca foi gravada, mas o gancho nao rodou pelo adaptador)."""
+        - permissions/default_permissions: perfil proprio que estende ':workspace' com DENY de segredos (ver perfil_permissoes).
+        Rejeitados no teste: approval_policy (aposentado pela OpenAI; quebra a sessao), perfis com ':root' deny (sessao recusada)
+        e hooks PreToolUse (a confianca foi gravada, mas o gancho nao rodou pelo adaptador)."""
         return {**ambiente_limpo(), "CODEX_CONFIG": json.dumps(configuracao_sessao(), ensure_ascii=True)}
 
     def _aguardar_mcp(self, nomes: list[str], estado: dict[str, Any], tokens: list[int], ctl: ControleExecucao) -> tuple[bool, str]:
@@ -138,8 +157,8 @@ class ProvedorCodexAcp(ProvedorKiroAcp):
                 ctl.evento("codex.bloqueado_segredos", {"arquivos": len(achados), "varredura_completa": completa})
                 return self._res("bloqueada", "O Codex nao roda em pastas com arquivos de segredo.", t0, pendencias=[
                     f"codex_bloqueado_segredos: {len(achados)} arquivo(s) com cara de segredo nas pastas do projeto "
-                    f"(ex.: {', '.join(achados[:3]) or 'varredura incompleta'}). O Codex nao tem as regras de bloqueio que a Forja "
-                    "aplica no Kiro.", "Use o Kiro para esta tarefa ou tire os segredos das pastas do projeto."])
+                    f"(ex.: {', '.join(achados[:3]) or 'varredura incompleta'}). O perfil nativo do Codex nega esses "
+                    "arquivos, mas nao cobre caminhos fora da pasta como as regras do Kiro; por precaucao a Forja nao o usa aqui.", "Use o Kiro para esta tarefa ou tire os segredos das pastas do projeto."])
         # tarefa que nao escreve (analise, estudo...) ou sem pasta de trabalho: somente leitura na sessao inteira
         cliente.so_leitura_forja = tarefa.get("modo") not in MODOS_ESCRITA or not trabalho  # type: ignore[attr-defined]
         modo = self._modo_codex(cliente, sid, self._parte_inicial(tarefa))

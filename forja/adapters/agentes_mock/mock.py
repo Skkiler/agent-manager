@@ -98,14 +98,14 @@ class AgenteMock:
                 {
                     "numero": 2,
                     "pergunta": "Publicar a API agora?",
-                    "recomendacao": "nao, apos revisao",
+                    "recomendacao": "não, após revisão",
                     "alternativas": [],
                 },
             ]
             r = self._res("bloqueada", "Aguardando 2 decisao(oes) do desenvolvedor (simulado).", t0)
             r.pendencias.append("aguardando_decisoes_do_usuario")
             r.mensagens += [
-                MensagemSaida(tipo="entendimento", conteudo="Voce quer definir a autenticacao da API (simulado)."),
+                MensagemSaida(tipo="entendimento", conteudo="Você quer definir a autenticação da API (simulado)."),
                 MensagemSaida(
                     tipo="decisoes",
                     conteudo="1. Usar token Bearer ou cookie?\n2. Publicar a API agora?",
@@ -113,7 +113,7 @@ class AgenteMock:
                 ),
             ]
             return r
-        r = self._res("concluida", "Conversa concluida apos as respostas (simulado).", t0)
+        r = self._res("concluida", "Conversa concluída após as respostas (simulado).", t0)
         r.mensagens.append(
             MensagemSaida(
                 tipo="resposta",

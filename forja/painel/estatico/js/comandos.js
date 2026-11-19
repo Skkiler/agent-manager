@@ -1,7 +1,7 @@
 // Paleta (estilo VS Code): Ctrl+P abre arquivos dos projetos e abas abertas, ">" lista comandos, ":" vai para uma linha.
 // Padrao ARIA de combobox + listbox (setas, Enter, Esc). Resultados sao DADOS (textContent).
 import { api } from "./api.js";
-import { abaAtiva, abas, abrirArquivo, ativar } from "./bancada.js";
+import { abaAtiva, abas, abrirArquivo, ativar, simbolosDaAba } from "./bancada.js";
 import { el, limpar } from "./ui.js";
 
 let comandos = [];
@@ -56,6 +56,16 @@ async function atualizar() {
     dica.textContent = "Comandos da Forja. Apague o > para buscar arquivos.";
     return desenhar();
   }
+  if (q.startsWith("@")) {
+    const a = abaAtiva();
+    dica.textContent = a?.editor ? "Símbolos do arquivo aberto (funções, classes, regras CSS…)." : "Abra um arquivo de código para ver os símbolos.";
+    const termo = q.slice(1).trim();
+    const lista = await simbolosDaAba();
+    if (minha !== geracao) return;
+    itens = lista.filter((s) => pontuar(s.nome, termo) > 0).sort((x, y) => pontuar(y.nome, termo) - pontuar(x.nome, termo) || x.linha - y.linha).slice(0, 80)
+      .map((s) => ({ rotulo: s.nome, detalhe: `${s.tipo} · linha ${s.linha}`, fazer: () => a?.editor?.irPara(s.linha) }));
+    return desenhar();
+  }
   if (q.startsWith(":")) {
     const linha = Number.parseInt(q.slice(1), 10);
     const a = abaAtiva();
@@ -63,7 +73,7 @@ async function atualizar() {
     dica.textContent = a?.editor ? "Digite o número da linha e Enter." : "Abra um arquivo para ir a uma linha.";
     return desenhar();
   }
-  dica.textContent = "Arquivos dos projetos. > comandos · : ir para linha";
+  dica.textContent = "Arquivos dos projetos. > comandos · @ símbolos · : ir para linha";
   const termo = q.trim();
   const abertas = abas().filter((a) => pontuar(a.titulo, termo) > 0).map((a) => ({ rotulo: a.titulo, detalhe: a.rel ? `aberto · ${a.rel}` : "aberto", fazer: () => ativar(a.chave) }));
   itens = abertas; desenhar(); // abas abertas filtradas na hora: Enter logo depois de digitar ja usa a lista certa

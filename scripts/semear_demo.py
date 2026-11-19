@@ -36,12 +36,12 @@ def main() -> int:
     base = f"http://127.0.0.1:{a.porta}"  # sempre loopback: o script nunca semeia servidores remotos
     c = lambda m, p, b=None: chamar(base, a.token, m, p, b)  # noqa: E731
 
-    proj = c("POST", "/projetos", {"nome": f"demo-{int(time.time())}", "descricao": "dados sinteticos"})
+    proj = c("POST", "/projetos", {"nome": f"demo-{int(time.time())}", "descricao": "dados sintéticos"})
 
     def tarefa(titulo: str, prio: int, cenario: str | None, preparar: bool = True, executar: bool = False) -> dict:
         o = c("POST", "/objetivos", {"projeto_id": proj["id"], "titulo": titulo, "prioridade": prio})
         entrada = {"mock_cenario": cenario, "mock_passos": 2} if cenario else {}
-        t = c("POST", "/tarefas", {"objetivo_id": o["id"], "titulo": titulo, "criterios_aceite": ["entregar resumo verificavel"], "entrada": entrada})
+        t = c("POST", "/tarefas", {"objetivo_id": o["id"], "titulo": titulo, "criterios_aceite": ["entregar resumo verificável"], "entrada": entrada})
         if preparar:
             k = c("POST", f"/tarefas/{t['id']}/transicao", {"para": "classificada", "expected_version": t["versao_estado"]})
             c("POST", f"/tarefas/{t['id']}/transicao", {"para": "preparada", "expected_version": k["versao_estado"]})
@@ -50,37 +50,37 @@ def main() -> int:
             c("POST", f"/execucoes/{ex['id']}/iniciar")
         return t
 
-    tarefa("Definir autenticacao da API", 1, "conversa", executar=True)  # fica bloqueada aguardando decisoes
+    tarefa("Definir autenticação da API", 1, "conversa", executar=True)  # fica bloqueada aguardando decisoes
     tarefa("Escrever guia de uso", 2, "sucesso", executar=True)
-    tarefa("Planejar migracao do banco", 2, None)
-    tarefa("Revisar politica de logs", 3, None, preparar=False)
-    tarefa("Mapear integracoes externas", 4, "falha", executar=True)
-    tarefa("Preparar demonstracao", 3, "sucesso")
+    tarefa("Planejar migração do banco", 2, None)
+    tarefa("Revisar política de logs", 3, None, preparar=False)
+    tarefa("Mapear integrações externas", 4, "falha", executar=True)
+    tarefa("Preparar demonstração", 3, "sucesso")
     escrita = demo_desfazer(c, a.pasta_trabalho)
 
     # duplicata quase identica: a organizacao automatica do segundo cerebro vai sugerir unir (fila de revisao)
     for sufixo in ("", " Revisado."):
         c("POST", "/memorias", {"tipo": "procedimental", "titulo": "Checklist de deploy", "namespace": "pessoal", "tags": ["deploy", "operacao"],
-                                "conteudo": "Rodar testes, migrar o banco, publicar a imagem e conferir a saude do servico." + sufixo})
+                                "conteudo": "Rodar testes, migrar o banco, publicar a imagem e conferir a saúde do serviço." + sufixo})
 
     def nota(titulo: str, conteudo: str, ns: str = "publico", tags: list[str] | None = None) -> dict:
         return c("POST", "/memorias", {"tipo": "procedimental", "titulo": titulo, "conteudo": conteudo, "namespace": ns, "tags": tags or []})
 
-    nota("Autenticacao Bearer", "# Autenticacao\nUsar **Bearer** com [[Tokens JWT]]. Ver [[Rotacao de chaves]] e [[Politica de sessao]].", tags=["seguranca"])
-    nota("Tokens JWT", "Assinar com chave rotativa. Relacionado a [[Autenticacao Bearer]] e [[Rotacao de chaves]].", tags=["seguranca"])
-    nota("Rotacao de chaves", "- Rotacionar a cada 90 dias\n- Registrar em [[Politica de logs]]")
-    nota("Politica de logs", "Logs sem PII. Ver [[Autenticacao Bearer]].", tags=["operacao"])
-    nota("Guia de migracao", "Passos para migrar o banco com [[Alembic]] e testar o downgrade.", tags=["banco"])
-    nota("Alembic", "Ferramenta de migracoes. Usada no [[Guia de migracao]].", tags=["banco"])
-    nota("Nota isolada", "Sem ligacoes.")
-    nota("Ideias pessoais", "Rascunho com [[Guia de migracao]]", ns="pessoal")
+    nota("Autenticação Bearer", "# Autenticação\nUsar **Bearer** com [[Tokens JWT]]. Ver [[Rotação de chaves]] e [[Política de sessão]].", tags=["seguranca"])
+    nota("Tokens JWT", "Assinar com chave rotativa. Relacionado a [[Autenticação Bearer]] e [[Rotação de chaves]].", tags=["seguranca"])
+    nota("Rotação de chaves", "- Rotacionar a cada 90 dias\n- Registrar em [[Política de logs]]")
+    nota("Política de logs", "Logs sem PII. Ver [[Autenticação Bearer]].", tags=["operacao"])
+    nota("Guia de migração", "Passos para migrar o banco com [[Alembic]] e testar o downgrade.", tags=["banco"])
+    nota("Alembic", "Ferramenta de migrações. Usada no [[Guia de migração]].", tags=["banco"])
+    nota("Nota isolada", "Sem ligações.")
+    nota("Ideias pessoais", "Rascunho com [[Guia de migração]]", ns="pessoal")
 
     msgs = [
-        ("agente:analista", "master", "resultado", 3, "Analise de autenticacao concluida", "Recomendo Bearer; detalhes no artefato.", ["tarefa:T-demo"]),
-        ("agente:revisor", "master", "pergunta", 1, "Posso apagar o diretorio build?", "Preciso de decisao antes de continuar.", []),
-        ("master", "agente:analista", "comando", 2, "Priorizar a migracao do banco", "Foco nesta semana.", []),
-        ("sistema", "todos", "evento", 4, "Manutencao programada do indice", "", []),
-        ("operador", "master", "apontamento", 2, "Revisar custo dos modelos", "Comparar execucao x revisao.", []),
+        ("agente:analista", "master", "resultado", 3, "Análise de autenticação concluída", "Recomendo Bearer; detalhes no artefato.", ["tarefa:T-demo"]),
+        ("agente:revisor", "master", "pergunta", 1, "Posso apagar o diretório build?", "Preciso de decisão antes de continuar.", []),
+        ("master", "agente:analista", "comando", 2, "Priorizar a migração do banco", "Foco nesta semana.", []),
+        ("sistema", "todos", "evento", 4, "Manutenção programada do índice", "", []),
+        ("operador", "master", "apontamento", 2, "Revisar custo dos modelos", "Comparar execução x revisão.", []),
     ]
     for o, d, tp, pr, assunto, texto, refs in msgs:
         c("POST", "/quadro", {"origem": o, "destino": d, "tipo": tp, "prioridade": pr, "assunto": assunto, "payload": {"texto": texto} if texto else {}, "referencias": refs})
@@ -93,7 +93,7 @@ def main() -> int:
         c("PUT", "/integracoes/trello/configuracao", {"expected_version": trello["versao"], "configuracao": {
             "ativo": True, "variavel_usuario": "FORJA_INT_DEMO_TRELLO_KEY", "variavel_token": "FORJA_INT_DEMO_TRELLO_TOKEN",
             "itens_permitidos": ["5f2b1c3d4e5f60718293a4b5"], "permitir_escrita": True}})
-        for nome in ("Revisar PR da migracao", "Atualizar documentacao do MCP"):
+        for nome in ("Revisar PR da migração", "Atualizar documentação do MCP"):
             c("POST", "/acoes-externas", {"integracao": "trello", "acao": "criar_cartao", "parametros": {"lista": "6a7b8c9d0e1f20314253a4b5", "nome": nome}})
         extra = ", 2 acoes externas pendentes (Trello ficticio)"
     print(f"semeado: {6 + escrita} tarefas, 10 notas, 5 mensagens no quadro e configuracao de modelos{extra}")
@@ -105,8 +105,8 @@ def demo_desfazer(c, pasta: str) -> int:  # noqa: ANN001
     A pasta precisa existir no MESMO computador (ou conteiner) do servidor; se nao for aceita, o resto da demo segue."""
     alvo = Path(pasta) if pasta else Path(tempfile.mkdtemp(prefix="forja-demo-proj-"))
     alvo.mkdir(parents=True, exist_ok=True)
-    (alvo / "README.md").write_text("# Projeto de demonstracao (sintetico)\n", encoding="utf-8")
-    proj = c("POST", "/projetos", {"nome": f"demo-pasta-{int(time.time())}", "descricao": "pasta sintetica para desfazer"})
+    (alvo / "README.md").write_text("# Projeto de demonstração (sintético)\n", encoding="utf-8")
+    proj = c("POST", "/projetos", {"nome": f"demo-pasta-{int(time.time())}", "descricao": "pasta sintética para desfazer"})
     try:
         c("PUT", f"/projetos/{proj['id']}/pastas", {"expected_version": proj.get("versao", 1), "pastas": [{"caminho": str(alvo), "papel": "trabalho"}]})
     except SystemExit as e:

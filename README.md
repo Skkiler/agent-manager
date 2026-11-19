@@ -210,15 +210,25 @@ Ctrl+Shift+V prévia, Ctrl+Alt+W fecha a aba, Ctrl+, Configurações. Tudo naveg
 
 ### 3.0 Bancada: editor, terminal, Git e Docker
 
+A bancada é **sua**: nada é bloqueado para você. Ações arriscadas (push, descartar alterações, `git clean`, `docker rm`, comando
+perigoso no terminal) pedem confirmação com o motivo. Os bloqueios de segurança valem só para os agentes de IA externos
+(Kiro e Codex), que continuam sem ver segredos (ADR-026).
+
 | Recurso | Como funciona |
 |---|---|
-| **Explorador** | Árvore das pastas de cada projeto. Arquivos de segredo (`.env`, chaves) não aparecem e não abrem. Pasta de consulta: somente leitura. |
-| **Editor** | Realce de sintaxe (Python, JS/TS, JSON, CSS, HTML, Markdown, SQL, shell/PowerShell, YAML/TOML, Dockerfile, diff), números de linha, busca/substituição, indentação, correção ortográfica do navegador e prévia de Markdown/HTML (HTML isolado, sem scripts). Ctrl+S grava pela API; se o arquivo mudou no disco, nada é sobrescrito. Mantém o fim de linha (CRLF/LF) do arquivo. |
+| **Explorador** | Árvore das pastas de cada projeto. Arquivos de segredo (`.env`, chaves) aparecem com cadeado e abrem com uma faixa de aviso; o conteúdo fica só na sua tela e nunca vai para log nem para agente. Pasta de consulta: somente leitura. |
+| **Editor** | Realce de sintaxe (Python, JS/TS, JSON, CSS, HTML, Markdown, SQL, shell/PowerShell, YAML/TOML, Dockerfile, diff), números de linha, busca/substituição, indentação, correção ortográfica do navegador e prévia de Markdown/HTML (HTML isolado, sem scripts). Autocompletar local (palavras do arquivo, palavras-chave e trechos; setas e Tab), F12 ou Ctrl+clique vai para a definição. Ctrl+S grava pela API; se o arquivo mudou no disco, nada é sobrescrito. Mantém o fim de linha (CRLF/LF) do arquivo. Sem LSP. |
+| **Diff lado a lado** | Clique num arquivo do painel Git: compara a versão do Git (último commit ou preparada) com a pasta, com as linhas alinhadas. |
 | **Problemas** | JSON (sintaxe) e Python (compilação + `ruff`, se instalado) ao abrir, editar e salvar; marcas na calha e lista no painel inferior. |
-| **Busca** | Texto ou expressão regular em todas as pastas do projeto, sem olhar segredos. |
-| **Terminal** | Um comando por vez na pasta de trabalho (sem shell interativo), ambiente limpo, até 2 min e saída redigida. Comando que lê segredo é recusado. Desligável em Configurações > Segurança (`terminal_ativo`). |
-| **Git** | Status (preparadas/alterações), diff, histórico, preparar/tirar e commit. Arquivo de segredo nunca é preparado. Sem push. |
-| **Docker** | Containers, imagens e compose; logs e iniciar/parar/reiniciar. Nunca `inspect` nem `exec` (mostram variáveis de ambiente). |
+| **Busca** | Texto ou expressão regular em todas as pastas do projeto. Pula segredos por padrão; marque "incluir segredos" para buscar neles. |
+| **Terminal** | Um comando por vez na pasta do projeto do arquivo ativo (sem shell interativo), com o seu ambiente (menos `APP_*`/`FORJA_*`), até 2 min. Assistente embutido: explica cada parte do comando, aponta erro de tipo (ex.: texto onde vai um número), avisa comando perigoso e sugere como completar (setas e Tab). Histórico com seta para cima. Desligável em Configurações > Segurança (`terminal_ativo`). |
+| **Receitas** | Passo a passo com variáveis (ex.: "vincular a remoto": add, commit, remote add, branch main e push), para Git, Docker, Python, Node e HTTP. Cada passo vai para o terminal para você conferir e rodar. |
+| **Comandos** | Catálogo de 70 comandos com sintaxe, opções, exemplos e risco. Você pode cadastrar os seus ou pedir para uma IA documentar um comando novo; a entrada da IA só entra depois que você importa e chega marcada como "não revisada". |
+| **Git** | Status, branches, remotos, stash, à frente/atrás, diff, histórico, preparar/tirar, commit, descartar e qualquer subcomando (push com confirmação). Dicas para erros comuns. |
+| **Docker** | Containers, imagens, volumes, redes e compose; logs, iniciar/parar/reiniciar/remover, `inspect`, `exec` e qualquer subcomando (com aviso quando arriscado). Modo interativo (`-it`, `attach`) não é suportado: não há TTY. |
+| **HTTP** | Cliente estilo Postman: método, parâmetros, cabeçalhos, corpo, autenticação, variáveis `{{nome}}`, coleções, histórico e "copiar como curl". A requisição sai do servidor local. |
+
+Ctrl+/ mostra todos os atalhos; `@` na paleta (Ctrl+Shift+O) lista os símbolos do arquivo.
 
 ### 3.1 Áreas
 
@@ -366,6 +376,10 @@ precisa do `codex-acp`. Em Config > Consumo dá para desligar `codex_ativo` ou t
 
 O Codex não tem as regras deny que a Forja aplica no Kiro. Por isso, em falha fechada:
 
+- **perfil de permissão nativo** (ADR-026): a sessão usa um perfil próprio que estende `:workspace` e nega, no sandbox do Codex,
+  todos os padrões de segredo da Forja e `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube` e `~/.docker`. Testado com o Codex real: o
+  sandbox aplica a negação. Ele não consegue negar a raiz do disco (`:root` deny derruba a sessão), então leitura fora da pasta
+  continua a cargo da vigia abaixo;
 - a **própria sessão** recebe as regras do perfil do Kiro como instrução de desenvolvedor (`CODEX_CONFIG.developer_instructions`:
   escopo, pastas, segredos e "não contorne") e um ambiente de shell mínimo (`shell_environment_policy`). Com o Codex real, um
   pedido para ler arquivo fora da pasta terminou em recusa do próprio agente, sem chamada de ferramenta (ADR-025);
@@ -425,7 +439,11 @@ sem citar o nome. Camadas, todas ativas por padrão:
    dependências. No fim, a Forja devolve só o que mudou e só onde você não mexeu; conflito não sobrescreve nada; segredos nunca voltam.
 3. **Varredura ampla pergunta** numa pasta com segredo (busca/cópia recursiva), em qualquer nível e mesmo com regra "aprovar".
 4. **Ambiente limpo** no Kiro e no Codex: nenhuma variável `APP_*`, `FORJA_*` ou com cara de segredo chega ao agente.
-5. Lista **única** de padrões de segredo (`forja/seguranca/sensiveis.py`) para o perfil DENY, o mediador, as ferramentas e a cópia.
+5. Lista **única** de padrões de segredo (`forja/seguranca/sensiveis.py`) para o perfil DENY, o mediador, as ferramentas, a cópia
+   e o perfil de permissão do Codex.
+
+Essas camadas protegem contra os agentes. Você, no painel, abre e edita segredos normalmente; o conteúdo não vai para log nem
+para agente ([3.0](#30-bancada-editor-terminal-git-e-docker)).
 
 ### 7.4 Verificação determinística
 
@@ -582,8 +600,8 @@ As que mais mudam o comportamento:
 |---|---|
 | Agentes | autonomia, `copia_sem_segredos`, correção automática, `subagentes`, `controle_escopo` (pausar/avisar/desligado), `master_executar` (executar/propor), métodos, observações guia |
 | Eficiência | limites de ferramentas e tempo, contexto e orçamento, `contexto_limite_sessao`, `status_resumos` (desligado/deterministico/marcos), roteamento que aprende, `reaproveitar_processos`, MCP |
-| Consumo | modelos por parte, `codex_ativo`, `distribuicao_provedores` (painel Custo com créditos **medidos** pelo Kiro) |
-| Segurança | pastas permitidas/proibidas, regras de controle, isolamento dos testes |
+| Consumo | modelos por parte, `codex_ativo`, `distribuicao_provedores` (painel Custo com créditos **medidos** pelo Kiro), `limite_creditos_dia` (teto diário: ao atingir, novas execuções não começam; 0 = sem teto) |
+| Segurança | pastas permitidas/proibidas, regras de controle, isolamento dos testes, `terminal_ativo` |
 | Manutenção | desfazer, pastas isoladas, retomada após queda, organização da memória, pacotes, telemetria |
 
 ---
@@ -602,6 +620,7 @@ Documentação interativa em `http://127.0.0.1:8787/api/docs`. Todas sob `/api/v
 | Desfazer e isolamento | `GET /tarefas/{id}/restauracao`, `POST /restauracao/{id}/desfazer`, `GET/DELETE /isolamentos` |
 | Memória | `POST /memorias`, `GET /memorias/buscar`, `GET /memorias/navegar`, `GET /memorias/revisao`, `POST /memorias/organizar`, `POST /estudos` |
 | Visões | `GET /kanban`, `GET /conhecimento/grafo`, `GET /oficina`, `GET /execucoes/{id}/replay`, `GET /custos`, `GET /roteamento/estatisticas` |
+| Bancada | `GET /area/arvore`, `GET/PUT /area/arquivo`, `GET /area/buscar`, `GET/POST /area/git`, `POST /area/terminal`, `GET/POST /area/docker`, `POST /area/http`, `GET /area/comandos`, `POST /area/comandos/analisar`, `POST /area/comandos/ia` (ação arriscada responde 428 até ser reenviada com `confirmado: true`) |
 | Sistema | `GET /saude` (pública), `/recursos`, `/kiro/status`, `/provedores`, `/preferencias`, `/configuracao`, `/ferramentas`, `/integracoes`, `/quadro`, `GET /eventos/stream` |
 
 ---
@@ -621,7 +640,7 @@ forja/
   migrations/      Alembic (0001…0014)
 scripts/           instalar.ps1, iniciar_forja.ps1, backup, diagnóstico do Kiro, demo, inspeção do painel, benchmarks
 tests/             pytest (unidade, integração, agente ACP falso por subprocesso, API)
-docs/              STATUS_IMPLEMENTACAO.md e ADRs 0001…0023
+docs/              STATUS_IMPLEMENTACAO.md e ADRs 0001…0026
 ```
 
 Camadas não se misturam: rotas não têm SQL, a orquestração não conhece HTTP, adaptadores não têm regra de negócio.
@@ -632,7 +651,7 @@ Camadas não se misturam: rotas não têm SQL, a orquestração não conhece HTT
 
 ```powershell
 pip install -r requirements-dev.txt          # + requirements-ui.txt para o navegador real
-python -m pytest -q                          # 1186 testes (agente ACP falso por subprocesso; nada real é chamado)
+python -m pytest -q                          # 1262 testes (agente ACP falso por subprocesso; nada real é chamado)
 python -m ruff check forja tests scripts
 pre-commit install                           # gitleaks + ruff a cada commit
 
@@ -653,8 +672,10 @@ O CI (GitHub Actions) roda gitleaks, ruff, a suíte, o painel em Chromium com ac
 ## 18 LIMITES CONHECIDOS
 
 - O Codex real (`codex-acp` 2.7.0) foi conferido com dados sintéticos (segurança, correção, roteamento); o uso contínuo ainda
-  não foi medido e os créditos do Codex não são lidos. Perfis de permissão do Codex foram recusados pelo adaptador nesta versão
-  (a Forja usa a vigia em tempo real). O MCP da Forja (memória, caderno) ainda não é passado ao Codex.
+  não foi medido e os créditos do Codex não são lidos. O perfil de permissão nativo do Codex nega segredos, mas não a leitura
+  fora da pasta no modo de escrita (a Forja cobre com a vigia em tempo real).
+- O editor tem autocompletar local e "ir para a definição", sem LSP. A acessibilidade foi auditada pela árvore de acessibilidade
+  do navegador e por teclado; ainda falta um teste com leitor de tela real (NVDA).
 - Workflows do Kiro IDE e `/compact` não são expostos pelo ACP; a Forja orquestra e gerencia o contexto por conta própria.
 - A hospedagem contínua é por sessão do Windows: a Forja fica no ar enquanto você estiver conectado.
 - Pastas isoladas exigem Git; sem Git, tarefas na mesma pasta rodam uma por vez.

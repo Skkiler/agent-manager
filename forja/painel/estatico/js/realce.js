@@ -34,6 +34,12 @@ REGRAS.docker = [[/#.*/y, "com"], [/"(\\.|[^"\\])*"?/y, "str"], [/\$\{?\w+\}?/y,
 
 export const MAX_REALCE = 200_000;
 
+/** Palavras-chave da linguagem (para o autocompletar do editor). */
+export function palavrasChave(linguagem) {
+  const ling = linguagem === "typescript" ? "javascript" : linguagem;
+  return PALAVRAS[ling] ? PALAVRAS[ling].split(" ") : [];
+}
+
 /** Tokens [tipo|null, texto] do texto todo. Linguagem sem regras: um token so. */
 export function tokens(texto, linguagem) {
   const regras = REGRAS[linguagem];

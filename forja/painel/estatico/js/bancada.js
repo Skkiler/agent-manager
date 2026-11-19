@@ -2,10 +2,11 @@
 // divisorias arrastaveis (mouse e teclado), trilha de navegacao e barra de status do arquivo aberto.
 // Arquivos passam SEMPRE pela API da area de trabalho (/area/*): pastas do projeto, sem segredos, consulta somente leitura.
 import { api, consulta } from "./api.js";
+import { criarDiff } from "./diff.js";
 import { criarEditor } from "./editor.js";
 import { agrupar, definirPainel, emitir, estado, ouvir, painelAberto, selecionarTarefa, tamanhoAtual, tamanhoPadrao, tamanhoPainel } from "./estado.js";
 import { icone } from "./icones.js";
-import { $, el, limpar, toast } from "./ui.js";
+import { $, dialogo, el, limpar, toast } from "./ui.js";
 
 const st = { atividades: [], abas: [], ativa: null, lateral: null, projetos: new Map() };
 const vista = () => $("#vista");
@@ -13,7 +14,7 @@ const MAX_ABAS = 20;
 
 // ------------------------------------------------------------------ persistencia das abas (so referencias; o conteudo vem do disco)
 function salvarAbas() {
-  const leves = st.abas.filter((a) => a.tipo !== "texto").map(({ chave, tipo, id, projeto, raiz, rel, nome, titulo }) => ({ chave, tipo, id, projeto, raiz, rel, nome, titulo }));
+  const leves = st.abas.filter((a) => a.tipo !== "texto" && a.tipo !== "diff").map(({ chave, tipo, id, projeto, raiz, rel, nome, titulo }) => ({ chave, tipo, id, projeto, raiz, rel, nome, titulo }));
   localStorage.setItem("forja_abas", JSON.stringify({ abas: leves, ativa: st.ativa }));
 }
 function lerAbas() { try { return JSON.parse(localStorage.getItem("forja_abas") || "{}"); } catch { return {}; } }
@@ -33,6 +34,7 @@ ouvir("projetos-mudaram", () => st.projetos.clear());
 
 // ------------------------------------------------------------------ faixa de abas
 const abaPor = (chave) => st.abas.find((a) => a.chave === chave);
+const extensao = (a) => (a.tipo === "arquivo" ? ((a.nome || "").toLowerCase().match(/\.([a-z0-9]+)$/) || [, a.nome?.startsWith(".env") ? "env" : "txt"])[1] : a.tipo);
 
 function desenharAbas() {
   const ul = $("#editor-abas");
@@ -43,7 +45,8 @@ function desenharAbas() {
     const li = el("li", { className: `aba-editor${ativa ? " ativa" : ""}${sujo ? " suja" : ""}`, dataset: { chave: a.chave } },
       el("button", { type: "button", className: "aba-rotulo", "aria-current": ativa ? "page" : "false", title: a.rel ? `${a.rel}${a.somente_leitura ? " (somente leitura)" : ""}` : a.titulo,
         onclick: () => ativar(a.chave), onauxclick: (ev) => { if (ev.button === 1) fechar(a.chave); } },
-      icone(a.tipo === "arquivo" || a.tipo === "texto" ? "arquivo" : a.icone || "inicio", 14), el("span", { className: "trunc", textContent: a.titulo })),
+      el("span", { className: `ico-aba ext-${extensao(a)}`, "aria-hidden": "true" }, icone(a.tipo === "diff" ? "git" : a.tipo === "arquivo" || a.tipo === "texto" ? (a.segredo ? "cadeado" : "arquivo") : a.icone || "inicio", 14)),
+      el("span", { className: "trunc", textContent: a.titulo })),
       el("button", { type: "button", className: "aba-fechar", "aria-label": `Fechar ${a.titulo}${sujo ? " (não salvo)" : ""}`, title: "Fechar (Ctrl+W)",
         textContent: sujo ? "●" : "✕", onclick: () => fechar(a.chave) }));
     ul.append(li);
@@ -109,6 +112,20 @@ async function montarAba(a) {
     return;
   }
   if (a.tipo === "inicio") { limpar(v); v.append(boasVindas()); return; }
+  if (a.tipo === "diff") {
+    limpar(v); v.append(el("p", { className: "mudo carregando", textContent: `Comparando ${a.rel}…` }));
+    try {
+      const consultaDiff = { projeto: a.projeto, raiz: a.raiz, rel: a.rel };
+      const [antes, depois] = await Promise.all([
+        api("GET", `/area/git/versao?${consulta({ ...consultaDiff, versao: a.versao || "HEAD" })}`),
+        a.versaoDireita ? api("GET", `/area/git/versao?${consulta({ ...consultaDiff, versao: a.versaoDireita })}`)
+          : api("GET", `/area/arquivo?${consulta(consultaDiff)}`).catch(() => ({ conteudo: "" }))]);
+      const rotulos = [`${a.versao === "index" ? "Preparado (index)" : a.versao || "HEAD"}${antes.existe ? "" : " (novo)"}`, a.versaoDireita === "index" ? "Preparado (index)" : "Pasta de trabalho"];
+      const d = criarDiff(antes.conteudo, depois.conteudo, { rotulos, titulo: a.rel });
+      limpar(v); v.append(d.no); d.proxima();
+    } catch (e) { limpar(v); v.append(el("div", { className: "aviso", role: "alert", textContent: `Não foi possível comparar: ${e.message}` })); }
+    return;
+  }
   if (a.tipo === "texto") {
     a.editor ||= criarEditor({ texto: a.texto, linguagem: a.linguagem, somenteLeitura: true, rotulo: a.titulo, aoCursor: cursor });
     limpar(v); v.append(a.editor.no); return;
@@ -117,9 +134,9 @@ async function montarAba(a) {
     limpar(v); v.append(el("p", { className: "mudo carregando", textContent: `Abrindo ${a.rel}…` }));
     try {
       const [r, p] = await Promise.all([api("GET", `/area/arquivo?${consulta({ projeto: a.projeto, raiz: a.raiz, rel: a.rel })}`), projeto(a.projeto)]);
-      a.sha = r.sha; a.crlf = r.fim_de_linha === "crlf"; a.somente_leitura = r.somente_leitura; a.projetoNome = p?.nome; a.pastaNome = (p?.pastas?.[a.raiz]?.caminho || "").split(/[\\/]/).pop();
+      a.sha = r.sha; a.crlf = r.fim_de_linha === "crlf"; a.somente_leitura = r.somente_leitura; a.segredo = r.segredo; a.projetoNome = p?.nome; a.pastaNome = (p?.pastas?.[a.raiz]?.caminho || "").split(/[\\/]/).pop();
       a.editor = criarEditor({ texto: r.conteudo, linguagem: r.linguagem, somenteLeitura: r.somente_leitura, rotulo: `Editor: ${a.rel}`,
-        aoSalvar: (texto) => salvarArquivo(a, texto), aoMudar: () => desenharAbas(), aoCursor: cursor,
+        aoSalvar: (texto) => salvarArquivo(a, texto), aoMudar: () => desenharAbas(), aoCursor: cursor, aoDefinicao: (nome) => irDefinicao(a, nome),
         aoAlterarTexto: agrupar(() => verificarProblemas(a, a.editor.valor()), 1200) });
       lembrarRecente(a);
       verificarProblemas(a);
@@ -130,11 +147,33 @@ async function montarAba(a) {
     if (st.ativa !== a.chave) return;
     trilha(a); status(a);
   }
-  limpar(v); v.append(a.editor.no);
+  limpar(v);
+  if (a.segredo) v.append(el("div", { className: "faixa-segredo", role: "note" }, icone("cadeado", 14),
+    el("span", { textContent: "Arquivo de segredo: aparece só para você. A Forja nunca o envia ao Kiro/Codex nem o registra em log." })));
+  v.append(a.editor.no);
   if (a.linha) { a.editor.irPara(a.linha); a.linha = null; } else a.editor.focar();
 }
 
 function cursor(l, c) { $("#st-cursor").textContent = `Ln ${l}, Col ${c}`; }
+
+async function irDefinicao(a, nome) {
+  try {
+    const r = await api("GET", `/area/definicao?${consulta({ projeto: a.projeto, raiz: a.raiz, nome })}`);
+    const defs = r.definicoes || [];
+    if (!defs.length) return toast(`Definição de "${nome}" não encontrada (Python, JS e TS são indexados).`);
+    if (defs.length === 1) return abrirArquivo({ projeto: a.projeto, raiz: a.raiz, rel: defs[0].caminho, linha: defs[0].linha });
+    const d = dialogo(`Definições de ${nome}`, el("ul", { className: "lista-definicoes" }, ...defs.map((x) => el("li", {},
+      el("button", { type: "button", className: "bloco", onclick: () => { d.fechar(); abrirArquivo({ projeto: a.projeto, raiz: a.raiz, rel: x.caminho, linha: x.linha }); } },
+        el("span", { className: "trunc", textContent: `${x.nome} (${x.tipo})` }), el("span", { className: "mudo", textContent: `${x.caminho}:${x.linha}` }))))));
+  } catch (e) { toast(e.message, "erro"); }
+}
+
+/** Simbolos do arquivo da aba ativa (para a paleta: @). */
+export async function simbolosDaAba() {
+  const a = abaAtiva();
+  if (a?.tipo !== "arquivo") return [];
+  try { return (await api("GET", `/area/simbolos?${consulta({ projeto: a.projeto, raiz: a.raiz, rel: a.rel })}`)).simbolos; } catch { return []; }
+}
 
 async function salvarArquivo(a, texto) {
   try {
@@ -203,7 +242,15 @@ export function abrirArquivo({ projeto: p, raiz = 0, rel, nome, linha = null }) 
   return adicionar({ chave, tipo: "arquivo", projeto: p, raiz, rel, nome: nome || rel.split("/").pop(), titulo: nome || rel.split("/").pop(), linha });
 }
 
-/** Texto somente leitura numa aba (diff do Git, logs do Docker). */
+/** Revisao lado a lado: versao do Git (HEAD, index ou commit) x pasta de trabalho (ou x outra versao). */
+export function abrirDiff({ projeto: p, raiz = 0, rel, versao = "HEAD", versaoDireita = "" }) {
+  const chave = `diff:${p}:${raiz}:${rel}:${versao}:${versaoDireita}`;
+  const ex = abaPor(chave);
+  if (ex) { ativar(chave); montarAba(ex); return ex; }
+  return adicionar({ chave, tipo: "diff", projeto: p, raiz, rel, versao, versaoDireita, titulo: `${rel.split("/").pop()} ↔ ${versao === "index" ? "index" : versao}` });
+}
+
+/** Texto somente leitura numa aba (logs do Docker, saida de comandos). */
 export function abrirTexto(titulo, texto, linguagem = "texto") {
   const chave = `txt:${titulo}`;
   const ex = abaPor(chave);
@@ -242,10 +289,29 @@ function boasVindas() {
           atalho("Abrir o chat", "Ctrl+Alt+I", () => definirPainel("direita", true)),
           atalho("Abrir o terminal", "Ctrl+`", () => emitir("inferior", "terminal")),
           atalho("Configurações", "Ctrl+,", () => emitir("ir", "config")))),
+      el("section", { "aria-labelledby": "bv-dica" }, el("h2", { id: "bv-dica", textContent: "Dica" }), dicaDoDia()),
       el("section", { "aria-labelledby": "bv-recentes" }, el("h2", { id: "bv-recentes", textContent: "Recentes" }),
         rec.length ? el("ul", { className: "bv-lista" }, ...rec.map((r) => el("li", {}, el("button", { type: "button", className: "link", title: r.rel,
           onclick: () => abrirArquivo(r), textContent: r.nome }), el("span", { className: "mudo trunc", textContent: r.rel }))))
           : el("p", { className: "mudo", textContent: "Abra um arquivo pelo Explorador (barra à esquerda) ou com Ctrl+P." }))));
+}
+
+const DICAS = [
+  ["No terminal, comece a digitar: o assistente explica cada parte, mostra a sintaxe e completa com Tab.", "Abrir o terminal", () => emitir("inferior", "terminal")],
+  ["Receitas guiam processos inteiros (ex.: vincular a pasta ao GitHub e enviar) com variáveis que você preenche.", "Ver receitas", () => emitir("receitas", "")],
+  ["Clique num arquivo alterado no Git para revisar as diferenças lado a lado antes do commit.", "Abrir o Git", () => emitir("atividade", "git")],
+  ["Teste APIs sem sair da Forja em Requisições HTTP: coleções, variáveis {{nome}} e \"copiar como curl\".", "Abrir Requisições", () => emitir("ir", "http")],
+  ["F12 (ou Ctrl+clique) leva à definição de uma função; Ctrl+Shift+O lista os símbolos do arquivo.", "Ver atalhos", () => emitir("paleta", ">atalhos")],
+  ["Defina um teto diário de créditos em Configurações > Consumo: a Forja para de iniciar execuções quando ele é atingido.", "Configurações", () => emitir("ir", "config")],
+  ["No modo Agentes, cada execução real aparece como um personagem: clique para abrir a conversa.", "Ver agentes", () => emitir("ir", "agentes")],
+];
+function dicaDoDia() {
+  let i = new Date().getDate() % DICAS.length;
+  const texto = el("p"), botao = el("button", { type: "button", className: "link" });
+  const mostrar = () => { const [t, rotulo, acao] = DICAS[i]; texto.textContent = t; botao.textContent = `${rotulo} →`; botao.onclick = acao; };
+  mostrar();
+  return el("div", { className: "dica-dia" }, icone("lampada", 18), el("div", {}, texto, el("div", { className: "linha" }, botao,
+    el("button", { type: "button", className: "pequeno", textContent: "Próxima dica", onclick: () => { i = (i + 1) % DICAS.length; mostrar(); } }))));
 }
 
 // ------------------------------------------------------------------ barra lateral

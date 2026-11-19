@@ -400,6 +400,30 @@ Relatorio completo: `docs/RELATORIO_AVALIACAO_2026-11-18.md`. Somente avaliacao;
   como "nao salvo"; paleta usava a lista antiga ao apertar Enter logo apos digitar; pasta sem Git gerava 422.
 - **Pendente:** perfis de permissao nativos do Codex (o adaptador recusa); editor sem LSP/IntelliSense; revisao de diff lado a
   lado; auditoria com leitor de tela real; textos sem acento nos dados de demonstracao (`semear_demo.py`).
+
+## Rodada 4: bancada do usuario sem bloqueios, assistente de comandos e perfil nativo do Codex (2026-11-18, ADR-026) — resultados reais
+- **Politica:** o usuario le/edita/busca segredos no painel (marcados `segredo`); acao arriscada pede confirmacao (HTTP 428) em vez
+  de bloquear; agentes continuam sem ver segredos. Terminal/Git/Docker do usuario com `ambiente_usuario()` (sem `APP_*`/`FORJA_*`).
+- **Testes executados:** `python -m pytest` -> **1262 passed** (novos/reescritos: `tests/test_area_trabalho.py`,
+  `tests/test_assistente_ferramentas_teto.py`; perfil do Codex em `tests/test_rodada3_agentes_ferramentas.py`); `ruff check .` ok;
+  `node --check` nos modulos JS novos/alterados ok; `diff.js` (Myers) conferido no Node contra 3000 casos aleatorios.
+- **Painel em navegador real** (servidor de teste 8799, dados ficticios com acento, `semear_demo.py`):
+  `inspecionar_painel.py --interagir --a11y` -> **128 OK, 0 falhas**, axe sem violacao em 14 vistas (inclusive HTTP e Comandos),
+  420 px sem estouro. Fluxo `bancada`: `.env` abre com faixa de aviso, terminal com assistente (explicacao, erro de tipo, risco,
+  sugestao com setas/Tab), receita "vincular a remoto" preenchida, diff lado a lado, cliente HTTP, F12 para definicao.
+  Modo login (8798, `APP_REQUIRE_AUTH=true`): **problemas: 0**.
+- **Auditoria de acessibilidade sem leitor de tela real** (NVDA nao instalado): arvore de acessibilidade do Chromium
+  (`aria_snapshot`) + volta de Tab em 9 vistas -> 4/4 marcos por vista, 0 controles sem nome, 0 elementos sem foco visivel
+  (corrigidos: anel de foco nas divisorias e `role=main` no modo Chat).
+- **Codex real (codex-acp 2.7.0), perfil de permissao nativo:** sondagem direta: perfil que estende `:workspace` com `deny` dos globs
+  de segredo foi aceito; um arquivo inocente listado como `deny` deixou de ser lido (sandbox aplica). `:root` deny -> "Internal
+  error"; `~` deny -> `session/new` sem resposta; no modo de escrita, arquivo fora da pasta ainda e legivel (vigia cobre). Pelo
+  provedor da Forja com o perfil ligado: `c_rapida` concluida (32,4 s); `c_fora` e `c_env_proc` terminaram pedindo decisao, sem
+  vazamento; `c_segredo_pasta` recusado pela Forja (falha fechada mantida).
+- **Bugs achados na verificacao e corrigidos:** pasta do terminal nao seguia o projeto do arquivo ativo; contraste do metodo GET;
+  painel Git desenhado duas vezes (guarda de geracao); espera da lista de Agentes; servidor de teste orfao segurando o banco.
+- **Pendente:** teste com NVDA real; LSP (o editor tem IntelliSense leve local); leitura fora da pasta pelo Codex no modo de
+  escrita coberta so pela vigia.
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -414,12 +438,12 @@ Relatorio completo: `docs/RELATORIO_AVALIACAO_2026-11-18.md`. Somente avaliacao;
 - Heuristicas de PII/injection (regex) reduzem risco, **nao** o eliminam; resultados sao sempre tratados como dados nao confiaveis.
 - `confianca` e informada pelo usuario e **nao calibrada**; nao entra no ranking.
 - A memoria e injetada no prompt apenas para namespaces em `APP_CONTEXT_NAMESPACES` (padrao `publico`).
-- Painel (JS): verificado em navegador real por script (Playwright) no CI; auditoria com leitor de tela pendente.
+- Painel (JS): verificado em navegador real por script (Playwright) no CI; arvore de acessibilidade auditada (ADR-026); teste com leitor de tela real (NVDA) pendente.
 - gitleaks e CI ativos (ver Fase 9). Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1226 passed. Proximo: revisao de diff lado a lado na bancada, LSP opcional
-   e perfis de permissao do Codex quando o adaptador aceitar.
+1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1262 passed. Proximo: teste com NVDA real, LSP opcional e
+   negar leitura fora da pasta no perfil do Codex quando o adaptador aceitar `:root` deny.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

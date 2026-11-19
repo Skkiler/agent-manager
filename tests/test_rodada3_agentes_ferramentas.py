@@ -24,6 +24,7 @@ from forja.ferramentas.outline import outline_arquivo
 from forja.orquestracao.coordenacao import CoordenacaoServico
 from forja.orquestracao.roteamento import classificar
 from forja.seguranca.acoes import _ferramenta_forja
+from forja.seguranca.sensiveis import GLOBS
 from tests.test_acp import _ctl, _tarefa, cmd
 
 
@@ -34,7 +35,15 @@ def test_configuracao_do_codex_leva_regras_e_ambiente_minimo():
     assert perfil_kiro.ESCOPO in instr and REGRA_PASTAS in instr and "NAO tente contornar" in instr
     assert c["shell_environment_policy"] == {"inherit": "core", "exclude": ENV_EXCLUIR}
     assert {"FORJA_*", "APP_*", "*TOKEN*", "*SECRET*"} <= set(ENV_EXCLUIR)
-    assert "approval_policy" not in c and "permissions" not in c  # recusados pelo codex-acp 2.7.0 (ADR-025)
+    assert "approval_policy" not in c  # recusado pelo codex-acp 2.7.0 (ADR-025)
+    # perfil de permissao nativo (ADR-026): estende ':workspace', nega todos os globs de segredo e as pastas de credenciais
+    assert c["default_permissions"] == "forja"
+    perfil = c["permissions"]["forja"]
+    assert perfil["extends"] == ":workspace"
+    fs = perfil["filesystem"]
+    assert fs[":workspace_roots"] == {g: "deny" for g in GLOBS} and "**/.env" in fs[":workspace_roots"]
+    assert fs["~/.ssh"] == "deny" and fs["~/.aws"] == "deny"
+    assert ":root" not in fs and "~" not in fs  # ':root' deny derruba a sessao; '~' deny trava o session/new (sondado)
 
 
 def test_processo_do_codex_recebe_config_e_ambiente_limpo(monkeypatch, tmp_path):

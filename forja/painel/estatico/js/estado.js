@@ -56,6 +56,10 @@ export function definirModo(modo) {
   estado.modo = m;
   localStorage.setItem("forja_modo", m);
   document.getElementById("area").dataset.modo = m;
+  // no modo chat o editor some: a conversa vira o marco principal (leitores de tela pulam direto para ela)
+  const dir = document.getElementById("direita");
+  if (m === "chat") { dir.setAttribute("role", "main"); dir.setAttribute("aria-label", "Chat de agentes"); }
+  else { dir.removeAttribute("role"); dir.setAttribute("aria-label", "Conversa e decisões"); }
   for (const b of document.querySelectorAll("#modos button")) b.setAttribute("aria-pressed", String(b.dataset.modo === m));
   emitir("modo", m);
 }

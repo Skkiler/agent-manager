@@ -3,6 +3,7 @@
 import { api, lerToken } from "./api.js";
 import * as area from "./area.js";
 import { abaAtiva, abas, abrirInicio, abrirVista, ativar, fechar, iniciarBancada, lateralAtual, marcarAtividade, mostrarLateral, reexibir } from "./bancada.js";
+import "./receitas.js"; // ouvintes: abrir receitas a partir do Git, Docker, terminal e erros
 import { abrirPaleta, iniciarPaleta, registrarComandos } from "./comandos.js";
 import * as direita from "./direita.js";
 import * as escritorio from "./escritorio.js";
@@ -10,10 +11,12 @@ import { agrupar, alternarPainel, definirModo, definirNivel, definirPainel, emit
 import { icone } from "./icones.js";
 import * as inferior from "./inferior.js";
 import { dialogoConta, garantirAcesso } from "./login.js";
-import { $, el, iniciarTexto } from "./ui.js";
+import { $, dialogo, el, iniciarTexto } from "./ui.js";
+import * as comandosVista from "./views/comandos.js";
 import * as config from "./views/config.js";
 import * as custos from "./views/custos.js";
 import * as ferramentas from "./views/ferramentas.js";
+import * as http from "./views/http.js";
 import * as integracoes from "./views/integracoes.js";
 import * as master from "./views/master.js";
 import * as memoria from "./views/memoria.js";
@@ -26,6 +29,8 @@ const ATIVIDADES = [
   { id: "busca", rotulo: "Buscar nos arquivos", curto: "Buscar", icone: "busca", tipo: "painel", montarLateral: area.montarBusca, atalho: "Ctrl+Shift+F" },
   { id: "git", rotulo: "Controle de código (Git)", curto: "Git", icone: "git", tipo: "painel", montarLateral: area.montarGit, atalho: "Ctrl+Shift+G" },
   { id: "docker", rotulo: "Docker", curto: "Docker", icone: "docker", tipo: "painel", montarLateral: area.montarDocker },
+  { id: "http", rotulo: "Requisições HTTP", curto: "HTTP", icone: "http", tipo: "vista", modulo: http },
+  { id: "comandos", rotulo: "Comandos e receitas", curto: "Comandos", icone: "comandos", tipo: "vista", modulo: comandosVista },
   { separador: true },
   { id: "master", rotulo: "Master", curto: "Master", icone: "master", tipo: "vista", modulo: master },
   { id: "tarefas", rotulo: "Tarefas", curto: "Tarefas", icone: "tarefas", tipo: "vista", modulo: tarefas },
@@ -123,8 +128,27 @@ function comandos() {
     c("Abas: próxima aba", () => proximaAba(1), "Ctrl+Alt+→"),
     c("Abas: aba anterior", () => proximaAba(-1), "Ctrl+Alt+←"),
     c("Abrir boas-vindas", () => ir("inicio")),
+    c("Mostrar atalhos de teclado", mostrarAtalhos, "Ctrl+/"),
+    c("Receitas: processos passo a passo", () => emitir("receitas", "")),
+    c("Arquivo: ir para símbolo…", () => abrirPaleta("@"), "Ctrl+Shift+O"),
+    c("Arquivo: autocompletar", () => abaAtiva()?.editor && document.querySelector("#vista .fonte")?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", ctrlKey: true, bubbles: true })), "Ctrl+Espaço"),
+    c("Arquivo: ir para a definição", () => document.querySelector("#vista .fonte")?.dispatchEvent(new KeyboardEvent("keydown", { key: "F12", bubbles: true })), "F12"),
     c("Detalhe: alternar Simples/Avançado", () => { const n = $("#nivel"); n.value = n.value === "simples" ? "avancado" : "simples"; n.dispatchEvent(new Event("change")); }),
   ];
+}
+
+const ATALHOS = [["Geral", [["Ctrl+P", "Abrir arquivo"], ["Ctrl+Shift+P / F1", "Todos os comandos"], ["Ctrl+Shift+O", "Ir para símbolo do arquivo"], ["Ctrl+G", "Ir para a linha"],
+  ["Ctrl+,", "Configurações"], ["Ctrl+/", "Esta lista"]]],
+["Visualização", [["Ctrl+Alt+1 / 2 / 3", "Editor / Chat / Agentes"], ["Ctrl+B", "Barra lateral"], ["Ctrl+J", "Painel inferior"], ["Ctrl+Alt+B", "Conversa (barra do agente)"],
+  ["Ctrl+Alt+I", "Abrir o chat"], ["Ctrl+`", "Terminal"], ["Ctrl+Shift+E / F / G", "Explorador / Busca / Git"]]],
+["Editor", [["Ctrl+S", "Salvar"], ["Ctrl+F / Ctrl+H", "Buscar / substituir"], ["Ctrl+Espaço", "Sugestões"], ["F12 ou Ctrl+clique", "Ir para a definição"],
+  ["Ctrl+Shift+V", "Prévia (Markdown/HTML)"], ["Tab / Shift+Tab", "Indentar"], ["Esc e Tab", "Sair do editor pelo teclado"], ["Ctrl+Alt+W", "Fechar aba"]]],
+["Terminal", [["Tab", "Completar a sugestão"], ["↑ / ↓", "Sugestões (quando abertas) ou histórico"], ["Enter", "Executar"], ["Esc", "Fechar sugestões"]]],
+["Diferenças", [["Alt+↑ / Alt+↓", "Alteração anterior / próxima"]]]];
+
+function mostrarAtalhos() {
+  dialogo("Atalhos de teclado", el("div", { className: "atalhos-grade" }, ...ATALHOS.map(([grupo, itens]) => el("section", {}, el("h3", { textContent: grupo }),
+    el("dl", {}, ...itens.flatMap(([k, d]) => [el("dt", {}, el("kbd", { textContent: k })), el("dd", { textContent: d })]))))));
 }
 
 function novoPedido() {
@@ -172,6 +196,8 @@ function atalhos() {
     else if (k === "s" && !ev.shiftKey) { ev.preventDefault(); abaAtiva()?.editor?.salvar(); } // fora do editor tambem salva a aba ativa
     else if (k === "b" && ev.shiftKey) { ev.preventDefault(); alternarPainel("direita"); }
     else if (k === "p" && ev.shiftKey) { ev.preventDefault(); abrirPaleta(">"); }
+    else if (k === "o" && ev.shiftKey) { ev.preventDefault(); abrirPaleta("@"); }
+    else if (ev.key === "/" && !ev.shiftKey) { ev.preventDefault(); mostrarAtalhos(); }
     else if (k === "p") { ev.preventDefault(); abrirPaleta(""); }
     else if (k === "g" && !ev.shiftKey) { ev.preventDefault(); abrirPaleta(":"); }
     else if (k === "e" && ev.shiftKey) { ev.preventDefault(); ir("explorador"); }

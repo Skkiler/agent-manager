@@ -90,21 +90,34 @@ Atualizada em 2026-11-18. Esta ficha substitui o histórico do chat anterior: le
   com divisórias, editor próprio (`js/editor.js` + `js/realce.js`), Explorador/Busca/Git/Docker (`js/area.js`), terminal e
   problemas (`js/inferior.js`), paleta (`js/comandos.js`), escritório (`js/escritorio.js`), API `/api/v1/area/*`
   (`orquestracao/area_trabalho.py`, `servidor/rotas_area.py`) e logomarca vetorizada (`icone.svg`, `logo.svg`).
+- **Rodada 4 de 2026-11-18 (ADR-026)**: política "bloqueio só para agentes; usuário recebe aviso". O usuário lê/edita/busca
+  segredos no painel (marcados `segredo`); ação arriscada responde 428 (`ConfirmacaoNecessaria`) e o painel reenvia com
+  `confirmado: true` (`js/confirmar.js`). Terminal/Git/Docker do usuário com `ambiente_usuario()` (sem `APP_*`/`FORJA_*`), Git e
+  Docker completos. **Assistente de comandos** determinístico (`forja/assistente/`: `catalogo.json` com 70 comandos, 14 perigos e
+  14 receitas; `comandos.py`; `servico.py` com documentação por IA via tarefa no projeto `forja-comandos`; comandos do usuário em
+  `<dados_dir>/comandos_usuario.json`). Painel: terminal com assistente (`js/inferior.js`, `js/completar.js`), receitas
+  (`js/receitas.js`), telas Comandos e HTTP (`js/views/comandos.js`, `js/views/http.js`), diff lado a lado (`js/diff.js`, Myers),
+  autocompletar local e F12 no editor, Ctrl+/ atalhos, `@` símbolos. Teto diário de créditos (`limite_creditos_dia`), ferramentas
+  `deps.listar`, `json.consultar`, `tabela.resumir`, `links.verificar` (37 no total). **Perfil de permissão nativo do Codex**
+  (`perfil_permissoes()` em `codex_acp/provedor.py`: estende `:workspace` + deny dos globs de segredo). Dados de demo com acentos.
 
 ## 5 Testes e verificações (último estado)
 
-- `python -m pytest -p no:cacheprovider -q` -> **1226 passed** (~3,5 min).
+- `python -m pytest -p no:cacheprovider -q` -> **1262 passed** (~3,7 min).
 - Testes reais desta etapa com Kiro e Codex: scripts e resultados em `%TEMP%\forja_sonda\` (fora do Git, dados fictícios).
 - `python -m ruff check .` -> ok; `node --check` em todos os módulos JS -> ok.
-- Navegador real: `inspecionar_painel.py --interagir --a11y` -> 0 problemas (12 vistas, fluxo do master e da bancada); `--login --a11y` -> 12 OK.
+- Navegador real: `inspecionar_painel.py --interagir --a11y` -> 128 OK, 0 falhas (14 vistas, axe sem violação); `--login --a11y` -> 0 problemas.
+- Acessibilidade: árvore do Chromium + volta de Tab em 9 vistas limpa (NVDA não instalado; teste com leitor real pendente).
+- Codex real com o perfil nativo: sessão aceita, deny aplicado pelo sandbox, sem vazamento (`c_rapida`, `c_fora`, `c_env_proc`).
 - `benchmark_busca.py` global 0.94/0.87/0.89 (recall@5/MRR/nDCG@5).
 - CI do commit `f705048`: verde.
 
 ## 6 O que falta
 
-1. Bancada: revisão de diff lado a lado, LSP/IntelliSense opcional, auditoria com leitor de tela real.
-2. Codex: perfis de permissão nativos quando o `codex-acp` aceitar; ler o uso/créditos do Codex; medir o roteador `inteligente`.
-3. Dados de demonstração (`semear_demo.py`) ainda sem acentos.
+1. Bancada: LSP opcional; teste com leitor de tela real (NVDA).
+2. Codex: negar leitura fora da pasta no perfil quando o `codex-acp` aceitar `:root` deny; ler o uso/créditos do Codex; medir o
+   roteador `inteligente`.
+3. Catálogo de comandos: ampliar com o uso real (a documentação por IA entra só após importação do usuário).
 4. Medir com o Kiro real: taxa de pausas por escopo (falso positivo) e economia da renovação de sessão.
 5. Lacunas antigas (ver STATUS): auditoria com leitor de tela, embeddings só se superarem o baseline (4.9), pool de processos ACP.
 
@@ -118,4 +131,5 @@ Atualizada em 2026-11-18. Esta ficha substitui o histórico do chat anterior: le
 - Inspeção do painel: servidor de teste com `APP_DATA_DIR` temporário, `APP_REQUIRE_AUTH=false`, `APP_PORT=8799`,
   `APP_KIRO_ACP_ENABLED=false`, `APP_RATE_LIMIT_PER_MINUTE=3000`, Trello fictício; depois `semear_demo.py --porta 8799`.
   Tela de login: servidor com login na 8798, sem conta. Nunca usar a 8787 (é a instância real).
+- `control_pwsh_process stop` pode deixar o `python -m forja` filho rodando: conferir a porta com `Get-NetTCPConnection` e parar o PID.
 - Reiniciar a instância real depois de mudar código: `scripts\iniciar_forja.ps1 -Parar` e `-InstalarNaInicializacao`.

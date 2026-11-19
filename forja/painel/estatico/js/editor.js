@@ -1,6 +1,7 @@
 // Editor de codigo leve (sem build, sem bibliotecas externas): textarea nativa (desfazer, selecao, IME e leitor de tela do
 // navegador) + camada de realce alinhada + calha com numeros de linha e marcas de problema. Busca/substituicao, previa de
 // Markdown/HTML (iframe sandbox, sem scripts), corretor ortografico do navegador e Ctrl+S. O conteudo e DADO (so DOM/texto).
+import { criarCompletador } from "./completar.js";
 import { icone } from "./icones.js";
 import { renderizar as renderizarMarkdown } from "./markdown.js";
 import { realcar } from "./realce.js";
@@ -57,7 +58,8 @@ export function criarEditor(op) {
   const calha = el("div", { className: "calha", "aria-hidden": "true" }, numeros, marcasCalha);
   const camada = el("div", { className: "codigo" }, realce, area);
   const ajuda = el("span", { id: `${id}-ajuda`, className: "sr-only", textContent:
-    "Tab indenta. Pressione Esc e depois Tab para sair do editor. Ctrl+S salva, Ctrl+F busca, Ctrl+H substitui." });
+    "Tab indenta. Pressione Esc e depois Tab para sair do editor. Ctrl+S salva, Ctrl+F busca, Ctrl+H substitui, Ctrl+Espaço sugere, "
+    + "F12 vai para a definição." });
   const previa = el("div", { className: "previa", hidden: true, tabIndex: 0, "aria-label": "Prévia" });
 
   // ---- barra de busca
@@ -86,6 +88,37 @@ export function criarEditor(op) {
     botaoOrto, botaoPrevia, botaoSalvar);
 
   const corpo = el("div", { className: "editor-corpo" }, calha, camada);
+  // ---- autocompletar (palavras do arquivo, palavras-chave e trechos) e ir para a definicao (F12 / Ctrl+clique)
+  let larguraCaractere = 0;
+  const medirCaractere = () => {
+    if (larguraCaractere) return larguraCaractere;
+    const c = document.createElement("canvas").getContext("2d");
+    c.font = getComputedStyle(area).font;
+    larguraCaractere = c.measureText("0000000000").width / 10 || 7.8;
+    return larguraCaractere;
+  };
+  const comp = criarCompletador(area, {
+    linguagem: () => linguagem,
+    coordenadas: () => {
+      const [l, c] = linhaColuna(area.value, area.selectionStart);
+      return { x: calha.offsetWidth + 16 + (c - 1) * medirCaractere() - area.scrollLeft, y: 8 + l * ALTURA_LINHA - area.scrollTop + 2 };
+    },
+    inserir: (texto, apagar, cursorRel) => {
+      const ini = area.selectionStart - apagar;
+      area.setSelectionRange(ini, area.selectionStart);
+      inserir(area, texto);
+      area.setSelectionRange(ini + cursorRel, ini + cursorRel);
+    },
+  });
+  corpo.append(comp.no);
+  const palavraNoCursor = () => {
+    const v = area.value, p = area.selectionStart;
+    let i = p, f = p;
+    while (i > 0 && /[\w$]/.test(v[i - 1])) i -= 1;
+    while (f < v.length && /[\w$]/.test(v[f])) f += 1;
+    return v.slice(i, f);
+  };
+  const irDefinicao = () => { const w = palavraNoCursor(); if (w && op.aoDefinicao) op.aoDefinicao(w); };
   const divisao = el("div", { className: "editor-divisao" }, corpo, previa);
   const no = el("div", { className: "editor", dataset: { linguagem } }, barra, barraBusca, divisao, ajuda);
 
@@ -212,7 +245,9 @@ export function criarEditor(op) {
 
   // ---- teclado
   area.addEventListener("keydown", (ev) => {
+    if (comp.tecla(ev)) return;
     const ctrl = ev.ctrlKey || ev.metaKey;
+    if (ev.key === "F12") { ev.preventDefault(); irDefinicao(); return; }
     const k = ev.key.toLowerCase();
     if (ctrl && k === "s") { ev.preventDefault(); ev.stopPropagation(); salvar(); return; }
     if (ctrl && k === "f") { ev.preventDefault(); ev.stopPropagation(); abrirBusca(false); return; }
@@ -244,7 +279,9 @@ export function criarEditor(op) {
     }
   });
   const cursor = () => { const [l, c] = linhaColuna(area.value, area.selectionStart); op.aoCursor?.(l, c); };
-  area.addEventListener("input", () => { agendar(); atualizarSujo(); if (!barraBusca.hidden) calcularMarcas(); op.aoAlterarTexto?.(area.value); });
+  area.addEventListener("input", (ev) => { agendar(); atualizarSujo(); if (!barraBusca.hidden) calcularMarcas(); op.aoAlterarTexto?.(area.value); if (!op.somenteLeitura) comp.aoDigitar(ev); });
+  area.addEventListener("blur", () => setTimeout(() => comp.fechar(), 120));
+  area.addEventListener("click", (ev) => { comp.fechar(); if (ev.ctrlKey || ev.metaKey) irDefinicao(); });
   area.addEventListener("scroll", sincronizarRolagem, { passive: true });
   for (const t of ["keyup", "click", "focus"]) area.addEventListener(t, cursor);
 
@@ -265,5 +302,6 @@ export function criarEditor(op) {
     },
     marcarProblemas: (lista) => { problemas = (lista || []).filter((p) => p.linha); desenharProblemas(); },
     linguagem: () => linguagem,
+    palavraNoCursor,
   };
 }

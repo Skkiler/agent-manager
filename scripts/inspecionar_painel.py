@@ -38,6 +38,8 @@ VISTAS = {
     "explorador": "#lateral-corpo .arvore",
     "chat": ".chat-grade .chat-fios",
     "agentes": ".escritorio canvas.escritorio-cena",
+    "http": ".http-grade .barra-url",
+    "comandos": ".catalogo-grade .lista-catalogo",
 }
 
 
@@ -398,17 +400,20 @@ def fluxo_master(pagina, base: str, saida: Path, expect, passo) -> None:
 
 
 def bancada(pagina, base: str, saida: Path, expect, passo) -> None:
-    """Bancada estilo VS Code: explorador sem segredos, editor (realce, salvar, conflito), problemas, previa de Markdown, paleta,
-    terminal (recusa segredo), divisoria pelo teclado e as visualizacoes Chat e Agentes. Pasta temporaria com dados ficticios."""
+    """Bancada estilo VS Code: explorador (segredo visivel e marcado), editor (realce, autocompletar, salvar, conflito), problemas,
+    previa, paleta, terminal com assistente (explica, completa, aponta erro e pergunta no perigoso), Git (preparar, commit, diff
+    lado a lado), Requisicoes HTTP, Comandos/receitas, atalhos e as visualizacoes Chat e Agentes. Pasta temporaria ficticia."""
+    import subprocess
+
     pasta = Path(tempfile.mkdtemp(prefix="forja-bancada-"))
     (pasta / "src").mkdir()
     (pasta / "src" / "app.py").write_text("def soma(a, b):\n    return a + b\n", encoding="utf-8")
-    (pasta / "notas.md").write_text("# Notas da bancada\n\nTexto **ficticio**.\n", encoding="utf-8")
+    (pasta / "notas.md").write_text("# Notas da bancada\n\nTexto **fictício**.\n", encoding="utf-8")
     (pasta / "ruim.json").write_text('{"a": 1,,}\n', encoding="utf-8")
     (pasta / ".env").write_text("SEGREDO=ficticio\n", encoding="utf-8")
+    (pasta / "lixo").mkdir()
     nome = f"Bancada {pasta.name}"
-    r = pagina.request.post(base + "api/v1/projetos", data={"nome": nome})
-    proj = r.json()
+    proj = pagina.request.post(base + "api/v1/projetos", data={"nome": nome}).json()
     pagina.request.put(base + f"api/v1/projetos/{proj['id']}/pastas", data={"expected_version": proj.get("versao", 1),
                                                                             "pastas": [{"caminho": str(pasta), "papel": "trabalho"}]})
     pagina.goto(base + "#/explorador")
@@ -416,7 +421,10 @@ def bancada(pagina, base: str, saida: Path, expect, passo) -> None:
     raiz = pagina.locator(".raiz-projeto", has_text=nome)
     raiz.locator(".no-arvore.pasta").first.click()
     expect(raiz.locator(".no-arvore.arquivo", has_text="notas.md")).to_be_visible(timeout=6000)
-    passo("explorador lista as pastas do projeto e esconde .env", ".env" not in raiz.inner_text())
+    passo("explorador mostra o .env ao usuario, marcado como segredo", raiz.locator(".no-arvore.segredo", has_text=".env").count() == 1)
+    raiz.locator(".no-arvore.segredo", has_text=".env").click()
+    expect(pagina.locator(".faixa-segredo")).to_be_visible(timeout=6000)
+    passo("abrir .env avisa que nao vai para os agentes nem para o log", "nunca o envia" in pagina.locator(".faixa-segredo").inner_text())
     raiz.locator(".no-arvore.pasta", has_text="src").click()
     raiz.locator(".no-arvore.arquivo", has_text="app.py").click()
     pagina.wait_for_selector(".editor .fonte", timeout=8000)
@@ -424,7 +432,12 @@ def bancada(pagina, base: str, saida: Path, expect, passo) -> None:
           pagina.locator(".editor .realce .tk-kw").count() >= 1 and "2" in pagina.locator(".editor .numeros").inner_text())
     pagina.locator(".editor .fonte").click()
     pagina.keyboard.press("Control+End")
-    pagina.keyboard.type("# editado pela bancada")
+    pagina.keyboard.type("\nx = so")
+    pagina.keyboard.press("Control+Space")
+    expect(pagina.locator(".editor .completar li", has_text="soma").first).to_be_visible(timeout=4000)
+    pagina.keyboard.press("Enter")
+    passo("autocompletar sugere palavras do arquivo e completa com Enter", "x = soma" in pagina.locator(".editor .fonte").input_value())
+    pagina.keyboard.type("  # editado pela bancada")
     passo("aba mostra alteracao nao salva", pagina.locator(".aba-editor.suja").count() == 1)
     pagina.keyboard.press("Control+s")
     expect(pagina.locator(".aba-editor.suja")).to_have_count(0, timeout=6000)
@@ -450,21 +463,96 @@ def bancada(pagina, base: str, saida: Path, expect, passo) -> None:
     pagina.keyboard.press("Enter")
     expect(pagina.locator(".aba-editor.ativa")).to_contain_text("app.py", timeout=4000)
     passo("Ctrl+P (abrir arquivo) encontra e abre o arquivo", True)
+
+    # terminal com assistente
     pagina.keyboard.press("Control+Shift+P")
     pagina.locator("#paleta-busca").fill(">abrir terminal")
     pagina.keyboard.press("Enter")
     entrada = pagina.locator(".terminal-entrada")
     expect(entrada).to_be_visible(timeout=6000)
+    entrada.fill("git log -n abc")
+    expect(pagina.locator(".terminal-assist")).to_contain_text("inteiro", timeout=4000)
+    passo("assistente aponta erro de tipo (opcao que espera inteiro)", "git log" in pagina.locator(".terminal-assist .assinatura").inner_text())
+    entrada.fill("")
+    entrada.type("git pu")
+    expect(pagina.locator("#terminal-sugestoes li").first).to_be_visible(timeout=4000)
+    entrada.press("Tab")
+    passo("Tab completa o subcomando sugerido (como no Excel)", entrada.input_value() in ("git pull ", "git push "))
     entrada.fill("echo forja-ok")
     entrada.press("Enter")
     expect(pagina.locator(".terminal-saida")).to_contain_text("forja-ok", timeout=30000)
-    passo("paleta de comandos abre o terminal e o terminal roda um comando", True)
+    passo("terminal roda um comando", True)
     entrada.fill("cat .env")
     entrada.press("Enter")
-    expect(pagina.locator(".terminal-saida")).to_contain_text("recusado", timeout=10000)
-    passo("terminal recusa comando que le segredo", "SEGREDO=ficticio" not in pagina.locator(".terminal-saida").inner_text())
+    expect(pagina.locator(".terminal-saida")).to_contain_text("SEGREDO=ficticio", timeout=15000)
+    passo("terminal mostra o .env ao usuario com aviso (nunca vai para os agentes)", "só para você" in pagina.locator(".terminal-saida").inner_text())
+    entrada.fill("Remove-Item -Recurse lixo")
+    entrada.press("Enter")
+    expect(pagina.locator("#dlg-geral")).to_contain_text("risco alto", timeout=8000)
+    pagina.locator("#dlg-geral").get_by_role("button", name="Cancelar").click()
+    expect(pagina.locator(".terminal-saida")).to_contain_text("Cancelado", timeout=6000)
+    passo("comando perigoso pergunta antes; cancelar nao executa nada", (pasta / "lixo").exists())
     pagina.screenshot(path=str(saida / "bancada-terminal.png"))
     pagina.keyboard.press("Control+j")
+
+    # Git: preparar (segredo pergunta), commit e diff lado a lado
+    for args in (["init", "-q", "-b", "main"], ["config", "user.name", "Teste"], ["config", "user.email", "teste@exemplo.invalid"]):
+        subprocess.run(["git", *args], cwd=pasta, check=True, capture_output=True)  # noqa: S603, S607
+    pagina.locator("#atividades button[data-id=git]").click()
+    pagina.locator("#lateral-corpo select[aria-label=Projeto]").select_option(label=nome)
+    expect(pagina.locator(".scm .linha-git").first).to_be_visible(timeout=8000)
+    passo("Git mostra as alteracoes, com o .env marcado como segredo", pagina.locator(".scm .linha-git.segredo").count() == 1)
+    pagina.get_by_role("button", name="Preparar tudo").click()
+    expect(pagina.locator("#dlg-geral")).to_contain_text(".env", timeout=8000)
+    pagina.locator("#dlg-geral").get_by_role("button", name="Cancelar").click()
+    passo("preparar tudo com .env pergunta antes (aviso, nao bloqueio)", pagina.locator(".scm-secao h3", has_text="Preparadas").count() == 0)
+    pagina.get_by_role("button", name="Preparar src/app.py").click()
+    expect(pagina.locator(".scm-secao h3", has_text="Preparadas (1)")).to_be_visible(timeout=8000)
+    pagina.get_by_label("Mensagem do commit").fill("primeiro commit da bancada")
+    pagina.get_by_role("button", name="✓ Commit").click()
+    expect(pagina.locator(".scm-secao h3", has_text="Preparadas")).to_have_count(0, timeout=8000)
+    log = subprocess.run(["git", "log", "--oneline"], cwd=pasta, capture_output=True, text=True, check=False).stdout  # noqa: S603, S607
+    passo("commit pela tela grava no repositorio", "primeiro commit da bancada" in log)
+    (pasta / "src" / "app.py").write_text("x = 'mudou fora'\ny = 2\n", encoding="utf-8")
+    pagina.get_by_role("button", name="Atualizar").first.click()
+    pagina.locator(".scm .linha-git", has_text="app.py").locator("button.bloco").click()
+    expect(pagina.locator(".tabela-diff")).to_be_visible(timeout=8000)
+    passo("clicar no arquivo alterado abre as diferencas lado a lado", pagina.locator(".tabela-diff tr.d-add, .tabela-diff tr.d-mudou").count() >= 1)
+    pagina.screenshot(path=str(saida / "bancada-diff.png"))
+
+    # Requisicoes HTTP (estilo Postman) contra a propria Forja
+    pagina.goto(base + "#/http")
+    pagina.reload()
+    pagina.locator(".url-http").fill(base + "api/v1/saude")
+    pagina.locator(".barra-url button.primario").click()
+    expect(pagina.locator(".status-http.grande")).to_contain_text("200", timeout=10000)
+    passo("Requisicoes HTTP envia e mostra status, tempo e corpo", '"status"' in pagina.locator(".corpo-resposta").inner_text())
+    pagina.screenshot(path=str(saida / "bancada-http.png"))
+
+    # Comandos e receitas
+    pagina.goto(base + "#/comandos")
+    pagina.reload()
+    pagina.get_by_label("Buscar comando ou receita").fill("push")
+    pagina.locator(".lista-catalogo button", has_text="git push").first.click()
+    expect(pagina.locator(".detalhe-comando .tabela-opcoes")).to_be_visible(timeout=6000)
+    passo("catalogo explica o comando (sintaxe, opcoes e riscos)", "--force" in pagina.locator(".detalhe-comando").inner_text())
+    pagina.locator(".segmentado button", has_text="Receitas").click()
+    pagina.get_by_label("Buscar comando ou receita").fill("remoto")
+    pagina.locator(".lista-catalogo button", has_text="Vincular").first.click()
+    pagina.get_by_role("button", name="Abrir e executar").click()
+    expect(pagina.locator(".janela-receita .passos-receita li")).to_have_count(6, timeout=6000)
+    pagina.locator(".janela-receita").get_by_label("URL do repositório remoto").fill("https://exemplo.invalid/projeto.git")
+    passo("receita mostra os passos com as variaveis preenchidas", "https://exemplo.invalid/projeto.git" in pagina.locator(".janela-receita").inner_text())
+    pagina.screenshot(path=str(saida / "bancada-receita.png"))
+    pagina.keyboard.press("Escape")
+    pagina.keyboard.press("Control+/")
+    expect(pagina.locator("#dlg-geral")).to_contain_text("Atalhos de teclado", timeout=4000)
+    passo("Ctrl+/ mostra os atalhos de teclado", True)
+    pagina.keyboard.press("Escape")
+
+    # divisoria, Chat e Agentes
+    pagina.goto(base + "#/explorador")
+    pagina.reload()
     abrir_menu(pagina)
     antes = pagina.locator("#lateral").bounding_box()["width"]
     pagina.locator(".divisor-lateral").focus()
@@ -482,6 +570,7 @@ def bancada(pagina, base: str, saida: Path, expect, passo) -> None:
     pagina.screenshot(path=str(saida / "bancada-chat.png"))
     pagina.locator('#modos button[data-modo="agentes"]').click()
     expect(pagina.locator("canvas.escritorio-cena")).to_be_visible(timeout=6000)
+    expect(pagina.locator(".escritorio-lista li").first).to_be_visible(timeout=8000)  # a lista chega junto com GET /oficina
     passo("modo Agentes mostra o escritorio em pixel art com lista acessivel", pagina.locator(".escritorio-lista li").count() >= 1)
     pagina.wait_for_timeout(600)
     pagina.screenshot(path=str(saida / "bancada-agentes.png"))
@@ -516,7 +605,7 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.wait_for_timeout(400)  # transicao da grade
     passo("botao da barra de titulo recolhe a barra lateral e o conteudo ocupa o espaco",
           pagina.locator("#lateral").is_hidden() and pagina.locator("#principal").bounding_box()["x"] <= 60)
-    pagina.locator(".cartao", has_text="Definir autenticacao").click()
+    pagina.locator(".cartao", has_text="Definir autenticação").click()
     pagina.wait_for_selector("#direita .msg", timeout=8000)
     passo("selecionar tarefa abre a conversa com o briefing do agente", pagina.locator("#direita .decisao").count() >= 1)
     largura_msg = pagina.locator("#direita .msg").first.bounding_box()["width"]
@@ -568,7 +657,7 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     expect(pagina.locator("#direita")).to_be_hidden(timeout=3000)
     passo("botao de fechar recolhe a conversa", True)
 
-    pagina.locator(".cartao", has_text="Planejar migracao").drag_to(pagina.locator('.coluna[data-id="concluida"]'))
+    pagina.locator(".cartao", has_text="Planejar migração").drag_to(pagina.locator('.coluna[data-id="concluida"]'))
     pagina.wait_for_selector(".toast.erro", timeout=4000)
     passo("arrastar para coluna invalida e recusado com aviso", "nao permitido" in pagina.locator(".toast.erro").first.inner_text())
 
@@ -601,13 +690,13 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.goto(base + "#/memoria")
     pagina.reload()
     pagina.wait_for_selector(".grafo-caixa svg .no")
-    pagina.locator(".lista-notas button", has_text="Autenticacao Bearer").click()
+    pagina.locator(".lista-notas button", has_text="Autenticação Bearer").click()
     pagina.wait_for_selector(".nota > .linha h1", timeout=6000)
     passo("abrir nota mostra titulo, wikilinks e backlinks", pagina.locator(".nota .wikilink").count() >= 2 and "backlinks" in pagina.locator(".nota").inner_text().lower())
     passo("wikilink sem nota aparece como quebrado", pagina.locator(".nota .wikilink.quebrado").count() >= 1)
     pagina.locator(".nota .wikilink:not(.quebrado)").first.click()
-    expect(pagina.locator(".nota > .linha h1")).not_to_have_text("Autenticacao Bearer", timeout=6000)
-    passo("clicar em wikilink navega para a outra nota", pagina.locator(".nota > .linha h1").inner_text() != "Autenticacao Bearer")
+    expect(pagina.locator(".nota > .linha h1")).not_to_have_text("Autenticação Bearer", timeout=6000)
+    passo("clicar em wikilink navega para a outra nota", pagina.locator(".nota > .linha h1").inner_text() != "Autenticação Bearer")
     pagina.get_by_role("button", name="Editar").click()
     campo = pagina.get_by_label("Conteudo em Markdown")
     campo.fill(campo.input_value() + "\nLinha editada pelo teste com [[Nota isolada]].")
@@ -635,7 +724,7 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     passo("busca filtra o grafo", pagina.locator(".grafo-caixa .no").count() <= 3)
     pagina.locator(".lista-notas button", has_text="Alembic").click()
     pagina.wait_for_selector(".ligacoes", timeout=6000)
-    pagina.get_by_label("Ligar esta nota a").select_option(label="Guia de migracao")
+    pagina.get_by_label("Ligar esta nota a").select_option(label="Guia de migração")
     pagina.get_by_role("button", name="Ligar…").click()
     pagina.get_by_label("Tipo da ligacao").select_option("DOCUMENTADO_EM")
     pagina.get_by_label("Nota da ligacao").fill("o guia explica o uso")
@@ -734,10 +823,10 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.goto(base + "#/memoria")
     pagina.reload()
     pagina.get_by_role("button", name="Avaliar a busca").click()
-    pagina.get_by_label("Pergunta real").fill("como funciona a autenticacao bearer")
+    pagina.get_by_label("Pergunta real").fill("como funciona a autenticação bearer")
     pagina.get_by_role("button", name="Ver resultados").click()
     pagina.wait_for_selector("text=Marque TODOS", timeout=6000)
-    pagina.locator('input[aria-label^="Relevante: Autenticacao Bearer"]').check()
+    pagina.locator('input[aria-label^="Relevante: Autenticação Bearer"]').check()
     pagina.get_by_role("button", name="Salvar rotulos desta pergunta").click()
     expect(pagina.get_by_text("Busca atual:")).to_be_visible(timeout=6000)
     passo("rotular uma pergunta real mostra recall/MRR da busca", "MRR" in pagina.locator(".rotulagem").inner_text())
@@ -754,7 +843,7 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.get_by_role("button", name="Executar").click()
     pagina.wait_for_selector("pre.saida", timeout=6000)
     passo("executar ferramenta mostra resumo e custo", pagina.locator(".tag", has_text="reducao").count() >= 1)
-    passo("nenhum erro de console/CSP durante as interacoes", not [e for e in erros if "404" not in e and "422" not in e
+    passo("nenhum erro de console/CSP durante as interacoes", not [e for e in erros if "404" not in e and "422" not in e and "428" not in e
                                                                   and not ("409" in e and ("/area/arquivo" in e or "Failed to load resource" in e))])  # conflito provocado no teste
     for e in erros[:5]:
         print("   ", e[:200])
