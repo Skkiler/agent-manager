@@ -157,8 +157,12 @@ def _propor_nota(c: ClienteForja, a: dict[str, Any]) -> Any:
     if not titulo or not corpo:
         raise ErroFerramenta("Informe `titulo` e `conteudo`.")
     tags = [str(t)[:50] for t in (a.get("tags") or []) if str(t).strip()][:8]
-    m = c.chamar("POST", "/memorias", json_={"tipo": "semantica", "titulo": titulo[:200], "resumo": corpo[:300], "conteudo": corpo[:6000],
-                                             "namespace": NS_AGENTE, "tags": ["agente", *tags], "fonte": {"tipo": "execucao"}})
+    m = c.chamar("POST", "/memorias", params={"evitar_duplicata": True},
+                 json_={"tipo": "semantica", "titulo": titulo[:200], "resumo": corpo[:300], "conteudo": corpo[:6000],
+                        "namespace": NS_AGENTE, "tags": ["agente", *tags], "fonte": {"tipo": "execucao"}})
+    if m.get("duplicata"):  # ja existe: nao cria de novo (retrabalho); o agente pode navegar nela
+        return {"id": m.get("id"), "titulo": m.get("titulo"), "estado": m.get("estado"),
+                "aviso": "ja existe uma nota parecida; nada foi criado. Use forja_navegar_memoria para ler e complemente so se faltar algo"}
     return {"id": m.get("id"), "estado": m.get("estado"), "aviso": "nota candidata: so vale como fato apos revisao do usuario"}
 
 
@@ -205,9 +209,17 @@ def _caderno_salvar(c: ClienteForja, a: dict[str, Any]) -> Any:
 
 
 def _caderno_consultar(c: ClienteForja, a: dict[str, Any]) -> Any:
-    params = {k: a[k] for k in ("q", "tipo") if a.get(k)}
+    params: dict[str, Any] = {k: a[k] for k in ("q", "tipo") if a.get(k)}
+    if a.get("q") and a.get("amplo", True):  # tambem o que sessoes anteriores do projeto deixaram no segundo cerebro (ADR-027)
+        params["amplo"] = True
     itens = c.chamar("GET", f"/tarefas/{_tarefa_atual()}/caderno", params=params)
-    return [{"tipo": i["tipo"], "texto": i["texto"], "ref": i.get("ref") or None} for i in itens[:30]]
+    saida = []
+    for i in itens[:30]:
+        x = {"tipo": i["tipo"], "texto": i["texto"], "ref": i.get("ref") or None}
+        if i.get("origem") in ("memoria", "grafo"):
+            x["origem"] = "segundo cerebro (sessao anterior)" if i["origem"] == "memoria" else "nota ligada no grafo"
+        saida.append(x)
+    return saida
 
 
 def _esquema(props: dict[str, Any], obrigatorios: list[str]) -> dict[str, Any]:
@@ -246,8 +258,9 @@ FERRAMENTAS: dict[str, tuple[str, dict[str, Any], Callable[[ClienteForja, dict[s
         _esquema({"tipo": {"enum": list(TIPOS_CADERNO)}, "texto": {"type": "string", "maxLength": 600}, "ref": {"type": "string", "maxLength": 200}},
                  ["tipo", "texto"]), _caderno_salvar),
     "forja_caderno_consultar": (
-        "Consulta o caderno desta tarefa (o que ja foi resolvido/decidido, inclusive em sessoes anteriores). Filtro opcional.",
-        _esquema({"q": {"type": "string", "maxLength": 100}, "tipo": {"enum": list(TIPOS_CADERNO)}}, []), _caderno_consultar),
+        "Consulta o caderno desta tarefa. Com q, traz tambem o que outras sessoes do mesmo projeto deixaram no segundo cerebro.",
+        _esquema({"q": {"type": "string", "maxLength": 100}, "tipo": {"enum": list(TIPOS_CADERNO)}, "amplo": {"type": "boolean"}}, []),
+        _caderno_consultar),
 }
 
 

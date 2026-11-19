@@ -3,6 +3,7 @@
 import { api } from "../api.js";
 import { definirNivel, emitir, estado, selecionarTarefa } from "../estado.js";
 import { el, janela, limpar, recolhivel, tag, toast } from "../ui.js";
+import { cartaoCatalogoCodigo, cartaoLsp, cartaoReciclagem } from "./config_editor.js";
 
 const ESCOPOS = [["arquitetura", "Arquitetura"], ["busca_e_memoria", "Busca e memoria"], ["ferramentas", "Ferramentas"],
   ["interface", "Interface"], ["seguranca", "Seguranca"], ["custo_e_modelos", "Custo e modelos"]];
@@ -38,9 +39,14 @@ sistemaClaro.addEventListener?.("change", () => pintar());
 function pintar(extra = {}) {
   const v = { ...visual, ...extra };
   const raiz = document.documentElement;
-  if (v.tema === "claro" || v.tema === "escuro") raiz.dataset.tema = v.tema; else delete raiz.dataset.tema;
   const claro = v.tema === "claro" || (v.tema !== "escuro" && sistemaClaro.matches);
-  raiz.dataset.paleta = claro ? v.paleta_clara : v.paleta_escura;
+  const paleta = claro ? v.paleta_clara : v.paleta_escura;
+  if (raiz.dataset.paleta && raiz.dataset.paleta !== paleta) {  // troca de tema animada (cores cruzam em 300 ms; movimento.css)
+    raiz.classList.add("tema-transicao");
+    clearTimeout(pintar.t); pintar.t = setTimeout(() => raiz.classList.remove("tema-transicao"), 420);
+  }
+  if (v.tema === "claro" || v.tema === "escuro") raiz.dataset.tema = v.tema; else delete raiz.dataset.tema;
+  raiz.dataset.paleta = paleta;
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", getComputedStyle(raiz).getPropertyValue("--ativ").trim() || "#181818");
 }
 const previa = () => pintar(Object.fromEntries(Object.entries(ctx.rascunho).filter(([k]) => k in visual)));
@@ -53,6 +59,7 @@ export function aplicarPreferencias(prefs) {
   pintar();
   if (v.nivel_detalhe) { definirNivel(v.nivel_detalhe); const s = document.getElementById("nivel"); if (s) s.value = v.nivel_detalhe; }
   if (typeof v.oficina_pixel === "boolean") { estado.oficina = v.oficina_pixel; localStorage.setItem("forja_oficina", v.oficina_pixel ? "on" : "off"); emitir("oficina", v.oficina_pixel); }
+  dispatchEvent(new CustomEvent("forja:preferencias"));  // editor e terminal releem as preferencias (editorcfg.js)
 }
 
 export async function carregarPreferencias() {
@@ -162,6 +169,16 @@ function controle(p) {
     return { no: c, aplicar: (x) => { c.value = (x || []).join("\n"); } };
   }
   if (p.tipo === "regras") return editorRegras(p, v, definir);
+  if (p.tipo === "escolhas") {  // caixas marcaveis (opcoes do registro)
+    let marcados = new Set(v || []);
+    const caixas = p.opcoes.map(([val, r]) => {
+      const c = el("input", { type: "checkbox", value: val, checked: marcados.has(val),
+        onchange: () => { if (c.checked) marcados.add(val); else marcados.delete(val); definir(p.opcoes.map(([x]) => x).filter((x) => marcados.has(x))); } });
+      return el("label", { className: "escolha" }, c, el("span", { textContent: r }));
+    });
+    const no = el("div", { className: `escolhas${caixas.length > 8 ? " escolhas-grade" : ""}`, role: "group", "aria-label": rotulo }, ...caixas);
+    return { no, aplicar: (x) => { marcados = new Set(x || []); caixas.forEach((l) => { const c = l.querySelector("input"); c.checked = marcados.has(c.value); }); } };
+  }
   if (p.tipo === "pacotes") {
     let marcados = new Set(v || []);
     const caixas = p.detalhes.map((d) => {
@@ -256,6 +273,7 @@ function padraoTexto(p) {
   if (p.tipo === "texto") return "vazio";
   if (p.tipo === "regras") return "nenhuma regra";
   if (p.tipo === "pacotes") return "nenhum pacote";
+  if (p.tipo === "escolhas") return (p.padrao || []).length ? p.opcoes.filter(([v]) => p.padrao.includes(v)).map(([, r]) => r).join(", ") : "nenhum";
   if (p.tipo === "selecao") return (p.opcoes.find(([v]) => v === p.padrao) || [null, p.padrao])[1];
   return `${p.padrao} ${p.unidade}`.trim();
 }
@@ -360,7 +378,8 @@ function cartaoRevisao(p) {
     el("label", {}, exec, " executar agora (consome creditos)"), el("div", { className: "linha" }, pedir), saida);
 }
 
-const ESPECIAIS = { info: cartaoInfo, perfil: cartaoPerfil, modelos: cartaoModelos, revisao: cartaoRevisao };
+const ESPECIAIS = { info: cartaoInfo, perfil: cartaoPerfil, modelos: cartaoModelos, revisao: cartaoRevisao, lsp: cartaoLsp,
+  catalogo_codigo: cartaoCatalogoCodigo, reciclagem: cartaoReciclagem };
 const montarItem = (p) => (ESPECIAIS[p.tipo] ?? cartao)(p);
 
 // ---------------------------------------------------------------- tela

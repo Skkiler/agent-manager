@@ -77,6 +77,7 @@ class AreaTrabalho:
         self.assistente = assistente or Assistente()
         self.terminal_ativo = True  # preferencia 'terminal_ativo'
         self.terminal_tempo_s = 120.0
+        self.gerente_lsp: Any | None = None  # adapters.lsp.GerenteLsp (ligado pelo app)
 
     # ------------------------------------------------------------------ resolucao
     def _pasta(self, projeto_id: str, raiz: int) -> tuple[dict[str, str], Path]:
@@ -204,6 +205,38 @@ class AreaTrabalho:
                               "mensagem": str(e.msg)})
             itens += self._ruff(base, alvo, texto)
         return {"rel": rel, "linguagem": lng, "problemas": itens[:200]}
+
+    # ------------------------------------------------------------------ servidor de linguagem (LSP)
+    def lsp(self, acao: str, projeto_id: str, raiz: int, rel: str, texto: str, linha: int = 0, coluna: int = 0,
+            gatilho: str = "") -> dict[str, Any]:
+        """Completar, explicar (hover + assinatura), definicao, diagnosticos ou fechar, pelo servidor de linguagem do arquivo.
+        A raiz do servidor e a pasta do projeto; o texto vem do editor (pode estar sem salvar)."""
+        if self.gerente_lsp is None:
+            raise ValidacaoDominio("servidores de linguagem indisponíveis neste servidor")
+        from forja.adapters.lsp.cliente import ErroLsp
+
+        _pasta, base, alvo = self._arquivo(projeto_id, raiz, rel)
+        lng = linguagem_de(alvo.name)
+        g = self.gerente_lsp
+        try:
+            if acao == "completar":
+                return g.completar(base, alvo, lng, texto, linha, coluna, gatilho[:1])
+            if acao == "explicar":
+                return g.explicar(base, alvo, lng, texto, linha, coluna)
+            if acao == "definicao":
+                return {"definicoes": g.definicao(base, alvo, lng, texto, linha, coluna)}
+            if acao == "diagnosticos":
+                return {"rel": rel, "problemas": [{"linha": d["linha"], "coluna": d["coluna"], "gravidade": d["severidade"],
+                                                   "codigo": d["codigo"] or d["fonte"], "mensagem": d["mensagem"], "fonte": d["fonte"]}
+                                                  for d in g.diagnosticos(base, alvo, lng, texto)]}
+            if acao == "fechar":
+                g.fechar(base, alvo, lng)
+                return {"ok": True}
+        except TimeoutError as e:
+            return {"indisponivel": True, "motivo": f"o servidor de linguagem demorou ({e}); tente de novo em instantes"}
+        except ErroLsp as e:
+            return {"indisponivel": True, "motivo": str(e)[:300]}
+        raise ValidacaoDominio("ação de LSP desconhecida")
 
     @staticmethod
     def _ruff(base: Path, alvo: Path, texto: str) -> list[dict[str, Any]]:

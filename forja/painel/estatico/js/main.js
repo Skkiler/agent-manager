@@ -10,6 +10,7 @@ import * as escritorio from "./escritorio.js";
 import { agrupar, alternarPainel, definirModo, definirNivel, definirPainel, emitir, estado, ouvir, painelAberto, painelLembrado } from "./estado.js";
 import { icone } from "./icones.js";
 import * as inferior from "./inferior.js";
+import { iniciarDicas, iniciarTransicoes } from "./movimento.js";
 import { dialogoConta, garantirAcesso } from "./login.js";
 import { $, dialogo, el, iniciarTexto } from "./ui.js";
 import * as comandosVista from "./views/comandos.js";
@@ -263,7 +264,7 @@ function aoMudarModo(m) {
 }
 
 async function iniciar() {
-  montarAtividades(); atalhos(); iniciarTexto(); iniciarPaleta();
+  montarAtividades(); atalhos(); iniciarTexto(); iniciarPaleta(); iniciarDicas(); iniciarTransicoes();
   registrarComandos(comandos());
   ouvir("janela-fechada", () => { marcarAtividade(); const a = abaAtiva(); history.replaceState(null, "", a?.tipo === "vista" ? `#/${a.id}` : estado.modo === "editor" ? "#/editor" : `#/${estado.modo}`); });
   const nivel = $("#nivel");

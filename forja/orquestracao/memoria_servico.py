@@ -231,6 +231,24 @@ class ServicoMemoria:
         self._avisar_semantica()
         return {**m, "conflito_com": conflitos}
 
+    def parecida(self, p: Principal, namespace: str, titulo: str, texto: str, limiar_titulo: float = 0.6,
+                 limiar_texto: float = 0.6) -> dict[str, Any] | None:
+        """Nota ATIVA do namespace que ja cobre o assunto (titulo ou texto muito parecidos, Jaccard de termos). Evita que agentes
+        e a reciclagem criem a mesma nota de novo (ADR-027)."""
+        from forja.orquestracao.organizacao import jaccard, termos
+
+        p.exigir(namespace)
+        tit, txt = termos(titulo), termos(f"{titulo} {texto[:4000]}")
+        melhor, alvo = 0.0, None
+        with self.repo.leitura() as t:
+            for m in t.listar(T.Memoria, namespace=namespace, limite=3000):
+                if m["estado"] in {e.value for e in INATIVOS}:
+                    continue
+                s = max(jaccard(tit, termos(m["titulo"])) / limiar_titulo, jaccard(txt, termos(f"{m['titulo']} {m['conteudo'][:4000]}")) / limiar_texto)
+                if s > melhor:
+                    melhor, alvo = s, m
+        return self.obter(p, alvo["id"]) if alvo is not None and melhor >= 1.0 else None
+
     def obter(self, p: Principal, memoria_id: str) -> dict[str, Any]:
         with self.repo.leitura() as t:
             m = self._carregar(t, p, memoria_id)
@@ -281,6 +299,8 @@ class ServicoMemoria:
             }
             if d.tags is not None:
                 campos["tags"] = d.tags
+            if d.refs is not None:
+                campos["refs"] = d.refs
             if mudou:  # editar conteudo derruba a validacao: precisa reconquistar evidencia (historico preservado)
                 campos.update(
                     estado=EM.CANDIDATO.value, validado_por=None, validade_inicio=None, necessita_revalidacao=False

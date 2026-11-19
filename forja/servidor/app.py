@@ -21,11 +21,13 @@ from forja.adapters.kiro_acp import perfil_kiro
 from forja.adapters.kiro_acp.modelos import CatalogoModelos
 from forja.adapters.kiro_acp.pool import PoolAcp
 from forja.adapters.kiro_acp.provedor import ProvedorKiroAcp, montar_comando, resolver_cli
+from forja.adapters.lsp.gerente import GerenteLsp
 from forja.adapters.sqlite import tabelas as T
 from forja.adapters.sqlite.banco import criar_engines, migrar
 from forja.adapters.sqlite.repositorio import RepositorioSqlite
 from forja.agentes.base import ProvedorAgente
 from forja.agentes.roteador import ProvedoresRoteados
+from forja.assistente.codigo import CatalogoCodigo, CodigoServico
 from forja.assistente.comandos import Assistente
 from forja.assistente.servico import AssistenteServico
 from forja.config import Configuracoes, obter_configuracoes
@@ -41,7 +43,7 @@ from forja.observabilidade.logs import configurar_logging, correlation_id_var
 from forja.observabilidade.telemetria import Telemetria
 from forja.orquestracao.acoes_externas import AcoesExternasServico
 from forja.orquestracao.aprendizado_rotas import AprendizadoRotas
-from forja.orquestracao.area_trabalho import AreaTrabalho
+from forja.orquestracao.area_trabalho import AreaTrabalho, ambiente_usuario
 from forja.orquestracao.caderno import Caderno
 from forja.orquestracao.configuracao_servico import ConfiguracaoServico
 from forja.orquestracao.contas_servico import ContasServico
@@ -58,6 +60,7 @@ from forja.orquestracao.organizacao import OrganizadorMemoria
 from forja.orquestracao.projetos_servico import ProjetosServico
 from forja.orquestracao.propostas import PropostasMemoria
 from forja.orquestracao.quadro_servico import QuadroServico
+from forja.orquestracao.reciclagem import ConhecimentoTarefa, ReciclagemServico
 from forja.orquestracao.restauracao import PontosRestauracao
 from forja.orquestracao.revisao import RevisaoServico
 from forja.orquestracao.servico import Servico
@@ -229,6 +232,33 @@ def _melhorias_orquestrador(app: FastAPI, cfg: Configuracoes, servico: Servico) 
     prefs.registrar_aplicador("pacotes_conhecimento", lambda v: _pacotes_conhecimento(repo, v))
 
 
+def _conhecimento_e_editor(app: FastAPI, cfg: Configuracoes, servico: Servico) -> None:
+    """ADR-027: reciclagem de sessoes antigas e ponte caderno <-> segundo cerebro <-> grafo; catalogo de autocompletar de codigo
+    e servidores de linguagem do editor; acesso dos agentes fora das pastas do projeto."""
+    prefs, repo = app.state.prefs, servico.repo
+    principal = Principal("conhecimento", cfg.memoria_namespaces)
+    app.state.reciclagem = ReciclagemServico(repo, app.state.memoria, app.state.grafo, principal, topico_de=app.state.estudos.topico_projeto)
+    app.state.conhecimento = ConhecimentoTarefa(repo, app.state.caderno, app.state.memoria, app.state.grafo, principal)
+    prefs.registrar_aplicador("reciclagem_dias", lambda v: setattr(app.state.reciclagem, "dias", int(v)))
+    prefs.registrar_aplicador("reciclagem_compactar", lambda v: setattr(app.state.reciclagem, "compactar", str(v)))
+    ctx = servico.construtor_contexto
+    if ctx is not None:
+        def _ns_projeto(tarefa: dict) -> list[str]:
+            ns = app.state.conhecimento.namespace_da_tarefa(tarefa)
+            return [ns] if ns and principal.pode(ns) else []
+
+        prefs.registrar_aplicador("contexto_memoria_projeto", lambda v: setattr(ctx, "namespaces_da_tarefa", _ns_projeto if v else None))
+    # editor do painel: catalogo de codigo (padrao + usuario/IA) e LSP (sob demanda, ambiente do usuario sem APP_*/FORJA_*)
+    app.state.codigo = CodigoServico(CatalogoCodigo(cfg.dados_dir), servico)
+    app.state.area.gerente_lsp = GerenteLsp(cfg.dados_dir, ambiente_usuario)
+    prefs.registrar_aplicador("lsp_ativo", lambda v: setattr(app.state.area.gerente_lsp, "ativo", bool(v)))
+    prefs.registrar_aplicador("lsp_max_servidores", lambda v: setattr(app.state.area.gerente_lsp, "max_servidores", int(v)))
+    for ag in agentes_reais(servico.provedor):
+        prefs.registrar_aplicador("acesso_fora_pasta", lambda v, ag=ag: setattr(ag, "fora_da_pasta", str(v)))
+        if hasattr(ag, "pastas_com_segredo"):
+            prefs.registrar_aplicador("codex_pastas_com_segredo", lambda v, ag=ag: setattr(ag, "pastas_com_segredo", str(v)))
+
+
 def _ficha(repo: RepositorioSqlite, caderno: Caderno, tarefa: dict) -> str:
     """Ficha de estado da tarefa (caderno + o que a execucao aberta ja fez), para trocar de sessao sem perder o fio."""
     with repo.leitura() as t:
@@ -252,6 +282,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
         app.state.servico.recuperar()
         app.state.acoes_externas.recuperar()
         app.state.organizador.iniciar()  # organizacao do segundo cerebro em segundo plano (so sugere; preferencia)
+        app.state.reciclagem.iniciar()  # sessoes antigas -> segundo cerebro (preferencia reciclagem_dias; 0 = desligada)
         kiro_real = kiro_de(app.state.servico.provedor)
         if kiro_real is not None and kiro_real.comando and app.state.pool_acp.ativo:  # 1a tarefa sem os ~2 s de abrir o processo
             kiro_real.workspace.mkdir(parents=True, exist_ok=True)
@@ -263,8 +294,10 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
         finally:
             app.state.encerrando.set()
             app.state.organizador.parar()
+            app.state.reciclagem.parar()
             app.state.servico.encerrar()
             app.state.pool_acp.encerrar_todos()
+            app.state.area.gerente_lsp.encerrar_todos()
 
     app = FastAPI(title="Forja", version=__import__("forja").__version__, lifespan=lifespan,
                   docs_url="/api/docs", openapi_url="/api/openapi.json")
@@ -334,6 +367,7 @@ def criar_app(cfg: Configuracoes | None = None, provedor: ProvedorAgente | None 
     provedor_servico.ao_finalizar.append(app.state.estudos.ao_finalizar)
     app.state.prefs.registrar_aplicador("registrar_aprendizados", lambda v: setattr(app.state.estudos, "registrar_aprendizados", bool(v)))
     _melhorias_orquestrador(app, cfg, provedor_servico)
+    _conhecimento_e_editor(app, cfg, provedor_servico)
     app.state.prefs.aplicar_todos()  # aplica as preferencias salvas aos componentes ja criados
     app.state.encerrando = threading.Event()
     app.state.hosts = {"127.0.0.1", "localhost", "::1", f"127.0.0.1:{cfg.app_port}", f"localhost:{cfg.app_port}"}

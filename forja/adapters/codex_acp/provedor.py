@@ -25,6 +25,7 @@ from forja.agentes.base import ControleExecucao
 from forja.dominio.contratos import ResultadoAgente
 from forja.ferramentas.verificacao import ambiente_limpo
 from forja.seguranca.acoes import descrever_acao
+from forja.seguranca.pastas import dentro_de_citado
 from forja.seguranca.sensiveis import (  # noqa: F401 - reexportados (compatibilidade)
     GLOBS,
     MAX_ARQUIVOS_VARREDURA,
@@ -39,8 +40,8 @@ PARTES_LEITURA = {"planejamento", "revisao", "estudo", "coordenacao", "status"}
 MODOS_ESCRITA = {"alteracao_codigo", "documentacao", "verificacao"}  # modos de tarefa que podem escrever na pasta de trabalho
 # Esforco de raciocinio por parte (codex-acp: opcao 'reasoning_effort'). Sem isto tudo rodava no padrao da conta ('high'):
 # 72 s numa correcao trivial que o Kiro fez em 27 s. Rapido/status/coordenacao nao precisam de raciocinio longo.
-REGRA_PASTAS = ("PASTAS (regra absoluta): trabalhe SO dentro das pastas do projeto citadas neste pedido. Nao leia, liste nem busque "
-                "nada fora delas (pasta pessoal, outros projetos, configuracoes do sistema): a Forja cancela o turno se voce tentar.\n"
+# Orientacao forte (sem proibir o que o usuario pediu): o detalhe por preferencia vai em cada pedido (perfil_kiro.regra_fora).
+REGRA_PASTAS = (perfil_kiro._FORA_BASE + "Nunca a pasta pessoal inteira, outros projetos ou configuracoes do sistema por conta propria.\n"
                 "TESTES: a Forja roda os testes e o lint do projeto ao final e devolve o resultado; nao gaste tempo tentando rodar "
                 "python/testes no seu sandbox (nesta maquina eles costumam nao estar disponiveis la).\n")
 ESFORCO_PADRAO = {"rapida": "low", "status": "low", "coordenacao": "low", "execucao": "medium", "estudo": "medium",
@@ -87,16 +88,17 @@ def configuracao_sessao() -> dict[str, Any]:
     }
 
 
-def _leitura_proibida(upd: dict[str, Any], raizes: list[Path]) -> str | None:
-    """Vigia em tempo real: chamada do Codex que cita segredo ou caminho FORA das pastas do projeto. O sandbox 'read-only' do Codex
-    le o disco quase inteiro sem pedir nada (achado real + doc da OpenAI), e o perfil de permissao nativo nega segredos mas nao
-    consegue negar a raiz (':root' deny derruba a sessao no codex-acp 2.7.0/Windows). A Forja cancela o turno ao ver a chamada."""
+def _leitura_proibida(upd: dict[str, Any], raizes: list[Path], politica: str = "bloquear") -> str | None:
+    """Vigia em tempo real. Segredo: SEMPRE cancela o turno (o sandbox do Codex le sem pedir; o perfil nativo nega os globs, a
+    vigia cobre o resto). Fora das pastas do projeto: so cancela com a preferencia 'acesso_fora_pasta = bloquear'. Nas demais o
+    Codex pode ler (ele nao consegue pedir permissao antes, ao contrario do Kiro): a instrucao manda propor antes, e a Forja
+    registra cada acesso fora para o usuario ver."""
     if upd.get("sessionUpdate") != "tool_call":
         return None
     item = descrever_acao(upd, raizes[0] if raizes else None, raizes[1:], [])
     if item["sensivel"]:
         return f"codex_segredo_bloqueado: a chamada '{item['tecnico'][:80]}' envolve arquivo ou variavel de segredo"
-    if raizes and item["fora_do_workspace"]:
+    if raizes and item["fora_do_workspace"] and politica == "bloquear":
         return f"codex_fora_da_pasta_bloqueado: a chamada '{item['tecnico'][:80]}' acessa um caminho fora das pastas do projeto"
     return None
 
@@ -109,6 +111,7 @@ class ProvedorCodexAcp(ProvedorKiroAcp):
         self.modelo_padrao = modelo
         self.usar_mcp = False  # MCP da Forja: mesma preferencia do Kiro (kiro_mcp_ativo); testado com o codex-acp 2.7.0
         self.esforco_de = None  # o mapa de esforco do Kiro nao vale aqui (valores e modelos diferentes); ver ESFORCO_PADRAO
+        self.pastas_com_segredo = "bloquear"  # preferencia 'codex_pastas_com_segredo': bloquear | perfil_nativo (ADR-027)
 
     def executar(self, tarefa: dict[str, Any], checkpoint: dict[str, Any], ctl: ControleExecucao) -> ResultadoAgente:
         if self.comando is None:
@@ -153,7 +156,11 @@ class ProvedorCodexAcp(ProvedorKiroAcp):
         pastas = [*trabalho, *consulta]
         if pastas:
             achados, completa = tarefa.get("_segredos_pastas") or segredos_nas_pastas(pastas)
-            if achados or not completa:
+            if (achados or not completa) and self.pastas_com_segredo == "perfil_nativo":
+                # preferencia do usuario: confiar no perfil nativo (deny dos globs de segredo, testado) + vigia (cancela o turno se
+                # a chamada citar segredo). Mais liberdade em projeto de baixa sensibilidade; registrado para auditoria.
+                ctl.evento("codex.segredos_no_projeto", {"arquivos": len(achados), "varredura_completa": completa, "protecao": "perfil_nativo"})
+            elif achados or not completa:
                 ctl.evento("codex.bloqueado_segredos", {"arquivos": len(achados), "varredura_completa": completa})
                 return self._res("bloqueada", "O Codex nao roda em pastas com arquivos de segredo.", t0, pendencias=[
                     f"codex_bloqueado_segredos: {len(achados)} arquivo(s) com cara de segredo nas pastas do projeto "
@@ -195,11 +202,20 @@ class ProvedorCodexAcp(ProvedorKiroAcp):
     def _alternativas(self, tarefa: dict[str, Any], parte: str | None = None) -> list[str]:
         return []
 
-    def _vigiar(self, upd: dict[str, Any], raizes: list[Path]) -> str | None:
-        return _leitura_proibida(upd, raizes)
+    def _vigiar(self, upd: dict[str, Any], raizes: list[Path], citados: list[Path] | None = None,
+                ctl: ControleExecucao | None = None) -> str | None:
+        motivo = _leitura_proibida(upd, raizes, self.fora_da_pasta)
+        if motivo is None and ctl is not None and raizes and upd.get("sessionUpdate") == "tool_call":
+            item = descrever_acao(upd, raizes[0], raizes[1:], [])
+            if item["fora_do_workspace"]:  # permitido pela preferencia: fica registrado (citado pelo usuario ou por conta propria)
+                citado = bool(item.get("alvos")) and all(dentro_de_citado(a, citados or []) for a in item["alvos"])
+                ctl.evento("codex.fora_da_pasta", {"descricao": item["descricao"][:200], "citado_no_pedido": citado,
+                                                   "politica": self.fora_da_pasta})
+        return motivo
 
     def _regras_agente(self, tarefa: dict[str, Any]) -> str:
-        """O Codex nao tem perfil com regras DENY: a regra completa de segredos vai no pedido, mais o limite das pastas."""
+        """Regra completa de segredos no pedido (o Codex nao tem o perfil DENY do Kiro) e a orientacao de pastas da preferencia."""
+        fora = perfil_kiro.regra_fora(self.fora_da_pasta) + "\n"
         if tarefa.get("modo") in MODOS_ESCRITA:  # o protocolo de escrita ja traz a regra completa
-            return "\n" + REGRA_PASTAS
-        return "\n" + perfil_kiro.SEGREDOS_REGRA + "\n" + REGRA_PASTAS
+            return "\n" + fora
+        return "\n" + perfil_kiro.SEGREDOS_REGRA + "\n" + fora

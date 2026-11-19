@@ -27,7 +27,13 @@ export function toast(mensagem, tipo = "") {
   caixa.append(t);
   // Popover na top layer: o aviso fica ACIMA de janelas modais abertas (reabrir o traz para o topo da pilha).
   if (caixa.showPopover) { try { if (caixa.matches(":popover-open")) caixa.hidePopover(); caixa.showPopover(); } catch { /* sem suporte */ } }
-  setTimeout(() => { t.remove(); if (!caixa.children.length && caixa.hidePopover && caixa.matches(":popover-open")) caixa.hidePopover(); }, tipo === "erro" ? 7000 : 3500);
+  const sair = () => {  // sai deslizando (movimento.css); sem animacao (reduzir movimento) some na hora
+    t.classList.add("saindo");
+    setTimeout(() => { t.remove(); if (!caixa.children.length && caixa.hidePopover && caixa.matches(":popover-open")) caixa.hidePopover(); },
+      matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 180);
+  };
+  t.addEventListener("click", sair, { once: true });
+  setTimeout(sair, tipo === "erro" ? 7000 : 3500);
 }
 
 // ---------------------------------------------------------------- janelas flutuantes

@@ -101,12 +101,24 @@ Atualizada em 2026-11-18. Esta ficha substitui o histórico do chat anterior: le
   `deps.listar`, `json.consultar`, `tabela.resumir`, `links.verificar` (37 no total). **Perfil de permissão nativo do Codex**
   (`perfil_permissoes()` em `codex_acp/provedor.py`: estende `:workspace` + deny dos globs de segredo). Dados de demo com acentos.
 
+- **Rodada 5 de 2026-11-19 (ADR-027)**: reciclagem de sessões antigas (`orquestracao/reciclagem.py`, tabela `reciclagem`, migração
+  0015; só cria nota com valor, enriquece a existente, liga ao tópico do projeto; prévia e "Reciclar agora" em Config > Manutenção);
+  ponte caderno ↔ segundo cérebro ↔ grafo (`ConhecimentoTarefa`, `GET /tarefas/{id}/caderno?amplo=true`, `links()` com ligações
+  tipadas, contexto com o namespace do projeto, `POST /memorias?evitar_duplicata=true`); catálogo de autocompletar de código
+  (`assistente/codigo.py` + `assistente/codigo/*.json`, 30 ramos, 969 itens; IA cria/atualiza ramo pelo projeto `forja-codigo`);
+  LSP (`adapters/lsp/`: Pyright, typescript-language-server com typescript@5, HTML/CSS do VS Code, csharp-ls; instalação pela tela
+  em `<dados>/lsp`, em fila); editor com completar por contexto, explicação, assinatura, hover e F12 pelo LSP (`js/completar.js`,
+  `js/editorcfg.js`, `js/editor.js`); Config > Editor (`views/config_editor.js`, tipo `escolhas`); política `acesso_fora_pasta`
+  (Kiro lê sozinho o caminho citado; Codex lê e registra) e `codex_pastas_com_segredo`; visual (`movimento.css`, `js/movimento.js`:
+  dicas, transições, troca de tema, avisos).
+
 ## 5 Testes e verificações (último estado)
 
-- `python -m pytest -p no:cacheprovider -q` -> **1262 passed** (~3,7 min).
+- `python -m pytest -p no:cacheprovider -q` -> **1280 passed** (~4,6 min).
+- LSP real: Pyright, TypeScript, HTML e CSS instalados pela API e testados (`%TEMP%\forja_sonda\sonda_lsp.py`, `sonda_lsp_ui.py`).
 - Testes reais desta etapa com Kiro e Codex: scripts e resultados em `%TEMP%\forja_sonda\` (fora do Git, dados fictícios).
 - `python -m ruff check .` -> ok; `node --check` em todos os módulos JS -> ok.
-- Navegador real: `inspecionar_painel.py --interagir --a11y` -> 128 OK, 0 falhas (14 vistas, axe sem violação); `--login --a11y` -> 0 problemas.
+- Navegador real: `inspecionar_painel.py --interagir --a11y` -> 136 OK, 0 falhas (14 vistas, axe sem violação); `--login --a11y` -> 0 problemas.
 - Acessibilidade: árvore do Chromium + volta de Tab em 9 vistas limpa (NVDA não instalado; teste com leitor real pendente).
 - Codex real com o perfil nativo: sessão aceita, deny aplicado pelo sandbox, sem vazamento (`c_rapida`, `c_fora`, `c_env_proc`).
 - `benchmark_busca.py` global 0.94/0.87/0.89 (recall@5/MRR/nDCG@5).
@@ -114,9 +126,8 @@ Atualizada em 2026-11-18. Esta ficha substitui o histórico do chat anterior: le
 
 ## 6 O que falta
 
-1. Bancada: LSP opcional; teste com leitor de tela real (NVDA).
-2. Codex: negar leitura fora da pasta no perfil quando o `codex-acp` aceitar `:root` deny; ler o uso/créditos do Codex; medir o
-   roteador `inteligente`.
+1. Bancada: C# com servidor de linguagem real (falta .NET SDK nesta máquina); teste com leitor de tela real (NVDA).
+2. Codex: ler o uso/créditos do Codex; medir o roteador `inteligente`. Medir o ganho da reciclagem no contexto de tarefas reais.
 3. Catálogo de comandos: ampliar com o uso real (a documentação por IA entra só após importação do usuário).
 4. Medir com o Kiro real: taxa de pausas por escopo (falso positivo) e economia da renovação de sessão.
 5. Lacunas antigas (ver STATUS): auditoria com leitor de tela, embeddings só se superarem o baseline (4.9), pool de processos ACP.

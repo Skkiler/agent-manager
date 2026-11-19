@@ -1,0 +1,69 @@
+{
+ "versao": 1,
+ "ramos": [
+  {"id": "html.tags", "linguagem": "html", "rotulo": "Elementos", "descricao": "Elementos HTML, com os semânticos primeiro. Aparecem depois de '<'.",
+   "grupos": [
+    {"tipo": "tag", "itens": [
+     ["div", "<div>", "Bloco genérico (prefira um elemento semântico quando houver).", "div>${0}</div>"],
+     ["span", "<span>", "Trecho genérico em linha.", "span>${0}</span>"],
+     ["p", "<p>", "Parágrafo.", "p>${0}</p>"],
+     ["a", "<a href>", "Link.", "a href=\"${url}\">${0}</a>"],
+     ["button", "<button type>", "Botão (sempre informe type).", "button type=\"${button}\">${0}</button>"],
+     ["img", "<img src alt>", "Imagem (alt é obrigatório para acessibilidade).", "img src=\"${caminho}\" alt=\"${descricao}\">${0}"],
+     ["header", "<header>", "Cabeçalho da página ou seção.", "header>\n  ${0}\n</header>"],
+     ["nav", "<nav aria-label>", "Navegação.", "nav aria-label=\"${Principal}\">\n  ${0}\n</nav>"],
+     ["main", "<main>", "Conteúdo principal (um por página).", "main>\n  ${0}\n</main>"],
+     ["section", "<section>", "Seção com título.", "section aria-labelledby=\"${id}\">\n  <h2 id=\"${id}\">${Título}</h2>\n  ${0}\n</section>"],
+     ["article", "<article>", "Conteúdo independente.", "article>\n  ${0}\n</article>"],
+     ["aside", "<aside>", "Conteúdo lateral.", "aside>\n  ${0}\n</aside>"],
+     ["footer", "<footer>", "Rodapé.", "footer>\n  ${0}\n</footer>"],
+     ["h1", "<h1>", "Título principal.", "h1>${0}</h1>"], ["h2", "<h2>", "Título de seção.", "h2>${0}</h2>"], ["h3", "<h3>", "Subtítulo.", "h3>${0}</h3>"],
+     ["ul", "<ul>", "Lista sem ordem.", "ul>\n  <li>${0}</li>\n</ul>"], ["ol", "<ol>", "Lista ordenada.", "ol>\n  <li>${0}</li>\n</ol>"], ["li", "<li>", "Item de lista.", "li>${0}</li>"],
+     ["form", "<form>", "Formulário.", "form action=\"${/enviar}\" method=\"${post}\">\n  ${0}\n</form>"],
+     ["label", "<label for>", "Rótulo de campo (ligue pelo for/id).", "label for=\"${id}\">${0}</label>"],
+     ["input", "<input>", "Campo.", "input type=\"${text}\" id=\"${id}\" name=\"${nome}\">${0}"],
+     ["textarea", "<textarea>", "Texto longo.", "textarea id=\"${id}\" name=\"${nome}\" rows=\"${4}\">${0}</textarea>"],
+     ["select", "<select>", "Lista de escolha.", "select id=\"${id}\" name=\"${nome}\">\n  <option value=\"${valor}\">${0}</option>\n</select>"],
+     ["table", "<table>", "Tabela de dados.", "table>\n  <caption>${Título}</caption>\n  <thead><tr><th scope=\"col\">${Coluna}</th></tr></thead>\n  <tbody><tr><td>${0}</td></tr></tbody>\n</table>"],
+     ["dialog", "<dialog>", "Janela (use showModal() no JS).", "dialog aria-labelledby=\"${id}\">\n  <h2 id=\"${id}\">${Título}</h2>\n  ${0}\n</dialog>"],
+     ["details", "<details>", "Bloco que abre e fecha.", "details>\n  <summary>${Resumo}</summary>\n  ${0}\n</details>"],
+     ["figure", "<figure>", "Figura com legenda.", "figure>\n  ${0}\n  <figcaption>${Legenda}</figcaption>\n</figure>"],
+     ["picture", "<picture>", "Imagem responsiva.", "picture>\n  <source srcset=\"${imagem.webp}\" type=\"image/webp\">\n  <img src=\"${imagem.jpg}\" alt=\"${descricao}\">\n</picture>${0}"],
+     ["video", "<video controls>", "Vídeo.", "video src=\"${video.mp4}\" controls>${0}</video>"],
+     ["script", "<script type=module>", "Script em módulo.", "script type=\"module\" src=\"${app.js}\"></script>${0}"],
+     ["link", "<link rel=stylesheet>", "Folha de estilo.", "link rel=\"stylesheet\" href=\"${estilo.css}\">${0}"],
+     ["meta", "<meta>", "Metadado.", "meta name=\"${description}\" content=\"${0}\">"],
+     ["template", "<template>", "Modelo reaproveitável (não renderiza).", "template id=\"${id}\">\n  ${0}\n</template>"],
+     ["time", "<time datetime>", "Data legível por máquina.", "time datetime=\"${2026-01-01}\">${0}</time>"],
+     ["strong", "<strong>", "Importante.", "strong>${0}</strong>"], ["em", "<em>", "Ênfase.", "em>${0}</em>"], ["code", "<code>", "Código em linha.", "code>${0}</code>"], ["pre", "<pre>", "Texto pré-formatado.", "pre>${0}</pre>"],
+     ["br", "<br>", "Quebra de linha.", "br>${0}"], ["hr", "<hr>", "Separador temático.", "hr>${0}"]]}
+   ]},
+  {"id": "html.atributos", "linguagem": "html", "rotulo": "Atributos", "descricao": "Atributos globais, de acessibilidade (ARIA) e de formulário. Aparecem dentro da tag.",
+   "grupos": [
+    {"tipo": "atributo", "apos": ["*"], "itens": [
+     ["class", "class=\"\"", "Classes CSS.", "class=\"${0}\""], ["id", "id=\"\"", "Identificador único.", "id=\"${0}\""], ["title", "title=\"\"", "Dica ao passar o mouse (não substitui rótulo).", "title=\"${0}\""],
+     ["hidden", "hidden", "Esconde o elemento.", "hidden"], ["lang", "lang=\"pt-BR\"", "Idioma.", "lang=\"${pt-BR}\"${0}"], ["tabindex", "tabindex=\"0\"", "Entra na ordem do Tab (evite valores > 0).", "tabindex=\"${0}\""],
+     ["data-", "data-*=\"\"", "Dado próprio (lido em el.dataset).", "data-${nome}=\"${0}\""], ["role", "role=\"\"", "Papel ARIA (prefira o elemento nativo).", "role=\"${0}\""],
+     ["aria-label", "aria-label=\"\"", "Nome acessível quando não há texto visível.", "aria-label=\"${0}\""], ["aria-labelledby", "aria-labelledby=\"\"", "Nome vindo de outro elemento.", "aria-labelledby=\"${0}\""],
+     ["aria-describedby", "aria-describedby=\"\"", "Descrição vinda de outro elemento.", "aria-describedby=\"${0}\""], ["aria-hidden", "aria-hidden=\"true\"", "Esconde de leitores de tela (só decorativo).", "aria-hidden=\"true\"${0}"],
+     ["aria-expanded", "aria-expanded=\"false\"", "Aberto/fechado (menus, sanfonas).", "aria-expanded=\"${false}\"${0}"], ["aria-current", "aria-current=\"page\"", "Item atual da navegação.", "aria-current=\"${page}\"${0}"],
+     ["aria-live", "aria-live=\"polite\"", "Anuncia mudanças.", "aria-live=\"${polite}\"${0}"], ["style", "style=\"\"", "Estilo inline (evite; bloqueado por CSP estrita).", "style=\"${0}\""]]},
+    {"tipo": "atributo", "apos": ["a"], "itens": [["href", "href=\"\"", "Destino do link.", "href=\"${0}\""], ["target", "target=\"_blank\"", "Nova aba (junte rel=\"noopener\").", "target=\"_blank\" rel=\"noopener\"${0}"], ["download", "download", "Baixa em vez de abrir.", "download"]]},
+    {"tipo": "atributo", "apos": ["img", "video", "audio", "source", "script", "iframe"], "itens": [["src", "src=\"\"", "Endereço do recurso.", "src=\"${0}\""], ["alt", "alt=\"\"", "Texto alternativo da imagem.", "alt=\"${0}\""],
+     ["loading", "loading=\"lazy\"", "Carrega só quando aparecer.", "loading=\"lazy\"${0}"], ["width", "width=\"\"", "Largura (evita salto de layout).", "width=\"${0}\""], ["height", "height=\"\"", "Altura.", "height=\"${0}\""]]},
+    {"tipo": "atributo", "apos": ["input", "select", "textarea", "button", "form"], "itens": [["type", "type=\"\"", "Tipo (text, email, number, password, checkbox, submit...).", "type=\"${0}\""], ["name", "name=\"\"", "Nome enviado no formulário.", "name=\"${0}\""],
+     ["value", "value=\"\"", "Valor.", "value=\"${0}\""], ["placeholder", "placeholder=\"\"", "Exemplo dentro do campo (não substitui label).", "placeholder=\"${0}\""], ["required", "required", "Obrigatório.", "required"],
+     ["disabled", "disabled", "Desativado.", "disabled"], ["autocomplete", "autocomplete=\"\"", "Dica de preenchimento (email, current-password...).", "autocomplete=\"${0}\""], ["min", "min=\"\"", "Mínimo.", "min=\"${0}\""],
+     ["max", "max=\"\"", "Máximo.", "max=\"${0}\""], ["pattern", "pattern=\"\"", "Expressão que o valor deve casar.", "pattern=\"${0}\""], ["action", "action=\"\"", "Para onde o formulário envia.", "action=\"${0}\""], ["method", "method=\"post\"", "Método do formulário.", "method=\"${post}\"${0}"]]}
+   ]},
+  {"id": "html.trechos", "linguagem": "html", "rotulo": "Estruturas prontas", "descricao": "Documento base, formulário acessível, navegação, cartão.",
+   "grupos": [
+    {"tipo": "trecho", "itens": [
+     ["html5", "documento", "Documento HTML5 com idioma e viewport.", "<!DOCTYPE html>\n<html lang=\"pt-BR\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>${Título}</title>\n  <link rel=\"stylesheet\" href=\"${estilo.css}\">\n</head>\n<body>\n  <main>\n    ${0}\n  </main>\n  <script type=\"module\" src=\"${app.js}\"></script>\n</body>\n</html>"],
+     ["campo", "campo com rótulo", "Rótulo, campo e ajuda ligados (acessível).", "<div class=\"campo\">\n  <label for=\"${id}\">${Rótulo}</label>\n  <input id=\"${id}\" name=\"${id}\" type=\"${text}\" aria-describedby=\"${id}-ajuda\">\n  <p id=\"${id}-ajuda\" class=\"ajuda\">${Ajuda}</p>\n</div>${0}"],
+     ["navlista", "navegação", "Menu com lista de links.", "<nav aria-label=\"${Principal}\">\n  <ul>\n    <li><a href=\"${/}\" aria-current=\"page\">${Início}</a></li>\n    <li><a href=\"${/sobre}\">${Sobre}</a></li>\n  </ul>\n</nav>${0}"],
+     ["cartao", "cartão", "Cartão com título, texto e ação.", "<article class=\"cartao\">\n  <h3>${Título}</h3>\n  <p>${Texto}</p>\n  <a class=\"botao\" href=\"${#}\">${Ação}</a>\n</article>${0}"],
+     ["skip", "pular para o conteúdo", "Link de atalho para teclado.", "<a class=\"pular\" href=\"#conteudo\">Pular para o conteúdo</a>${0}"]]}
+   ]}
+ ]
+}

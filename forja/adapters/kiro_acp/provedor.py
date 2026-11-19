@@ -52,6 +52,7 @@ from forja.orquestracao import escopo
 from forja.orquestracao.roteamento import Rota, classificar
 from forja.seguranca import spotlight
 from forja.seguranca.acoes import caminhos_do_tool_call
+from forja.seguranca.pastas import caminhos_citados
 from forja.seguranca.sensiveis import segredos_nas_pastas
 
 log = logging.getLogger("forja.kiro")
@@ -339,6 +340,7 @@ class ProvedorKiroAcp:
         self.ajustar_rota: Callable[[Rota, dict[str, Any]], Rota] | None = None  # roteamento que aprende (AprendizadoRotas)
         self.limite_contexto_reuso = 120_000  # tokens medidos pelo Kiro acima dos quais a retomada usa sessao nova + resumo
         self.controle_escopo = "pausar"  # preferencia: pausar | avisar | desligado (forja/orquestracao/escopo.py)
+        self.fora_da_pasta = "perguntar"  # preferencia 'acesso_fora_pasta': bloquear | perguntar | livre_leitura (ADR-027)
         self.limite_contexto_sessao = 120_000  # idem DENTRO da execucao, entre turnos (preferencia 'contexto_limite_sessao')
         self.ficha_de: Callable[[dict[str, Any]], str] | None = None  # Caderno.ficha (ligado pelo app): estado fora da janela
         self.max_ferramentas = 200  # orcamento rigido de chamadas de ferramenta por execucao (preferencia)
@@ -475,10 +477,11 @@ class ProvedorKiroAcp:
                 ctl.evento("kiro.privacidade", {"coleta_de_conteudo": "nao_alterada", "motivo": sanitizar_texto(e.mensagem)[:120]})
 
     def _regras_agente(self, tarefa: dict[str, Any]) -> str:
-        """Regras extras por agente no pedido. Kiro: nenhuma (o perfil 'forja' ja leva a regra completa de segredos)."""
-        return ""
+        """Regras extras por agente no pedido. Kiro: so a orientacao de pastas (o perfil 'forja' ja leva a regra de segredos)."""
+        return "\n" + perfil_kiro.regra_fora(self.fora_da_pasta) + "\n"
 
-    def _vigiar(self, upd: dict[str, Any], raizes: list[Path]) -> str | None:
+    def _vigiar(self, upd: dict[str, Any], raizes: list[Path], citados: list[Path] | None = None,
+                ctl: ControleExecucao | None = None) -> str | None:
         """Vigia de seguranca por chamada de ferramenta (motivo -> a Forja cancela o turno). Kiro: nada aqui, porque todo pedido de
         permissao passa pelo mediador e o perfil nega segredos. O Codex sobrescreve (o sandbox dele le fora da pasta sem pedir)."""
         return None
@@ -577,6 +580,9 @@ class ProvedorKiroAcp:
         if not trabalho:
             self.workspace.mkdir(parents=True, exist_ok=True)
         raizes_vigia = [cwd, *trabalho[1:], *consulta]
+        # caminhos fora das pastas que o USUARIO citou no pedido: ler o que ele pediu nao e "esticar" (ADR-027)
+        citados = caminhos_citados(" ".join([str(tarefa.get("titulo") or ""), str(tarefa.get("descricao") or ""),
+                                             " ".join(str(c) for c in tarefa.get("criterios_aceite") or [])]))
         seguranca_parada: list[bool] = []  # a parada foi por seguranca (vigia): a resposta parcial NAO e guardada
         segredos_pastas: tuple[list[str], bool] = ([], True)
         if trabalho or consulta:  # so NOMES (nada e lido): base do aviso de varredura e da regra do Codex
@@ -627,7 +633,7 @@ class ProvedorKiroAcp:
                 tid = str(upd.get("toolCallId") or f"sem-id-{len(observadas)}")
                 if tipo == "tool_call" and tid not in observadas and not motivo_parada:
                     try:
-                        bloqueio_vigia = self._vigiar(upd, raizes_vigia)
+                        bloqueio_vigia = self._vigiar(upd, raizes_vigia, citados, ctl)
                     except Exception:  # noqa: BLE001 - vigia com erro = bloqueia (falha fechada)
                         bloqueio_vigia = "vigia_indisponivel: a Forja nao conseguiu conferir a chamada"
                     if bloqueio_vigia:
@@ -664,6 +670,7 @@ class ProvedorKiroAcp:
 
         mediador = MediadorPermissoes(ctl, cwd, janela=self.janela_agrupamento, perfil=perfil, trabalho=trabalho[1:], consulta=consulta)
         mediador.pasta_com_segredos = bool(segredos_pastas[0]) or not segredos_pastas[1]
+        mediador.fora_da_pasta, mediador.citados = self.fora_da_pasta, citados
         cliente: ClienteAcp | None = None
         saudavel = True  # o processo pode voltar para o pool (pool.py)? Falha de transporte/tempo => encerra
         sid: str | None = None

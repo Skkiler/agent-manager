@@ -250,3 +250,108 @@ def pedir_ia(d: PedirIaIn, a: Assist) -> dict[str, Any]:
 @ra2.post("/comandos/ia/importar")
 def importar_ia(d: ImportarIaIn, a: Assist) -> dict[str, Any]:
     return a.importar(d.tarefa_id)
+
+
+# ------------------------------------------------------------------ editor: autocompletar de codigo e servidores de linguagem
+class ItemCodigoIn(_In):
+    ramo: Annotated[str, Field(min_length=3, max_length=60)]
+    item: dict[str, Any]
+    ramo_meta: dict[str, Any] | None = None
+
+
+class PedirIaCodigoIn(_In):
+    linguagem: Annotated[str, Field(min_length=1, max_length=20)]
+    ramo: Annotated[str, Field(max_length=60)] = ""
+    pedido: Annotated[str, Field(max_length=500)] = ""
+    executar: bool = True
+
+
+class LspIn(_In):
+    projeto: IdProjeto
+    raiz: Raiz
+    rel: Rel
+    texto: Annotated[str, Field(max_length=2_000_000)] = ""
+    linha: Annotated[int, Field(ge=0, le=10_000_000)] = 0
+    coluna: Annotated[int, Field(ge=0, le=1_000_000)] = 0
+    gatilho: Annotated[str, Field(max_length=1)] = ""
+
+
+class InstalarLspIn(_In):
+    servidor: Literal["python", "typescript", "html", "css", "csharp"]
+    confirmado: bool = False
+
+
+def _prefs_editor(request: Request) -> dict[str, Any]:
+    p = request.app.state.prefs
+    return {k: p.valor(k) for k in ("autocompletar_codigo", "autocompletar_automatico", "autocompletar_atraso_ms", "autocompletar_max",
+                                    "autocompletar_fontes", "autocompletar_ramos_desligados", "lsp_ativo", "terminal_assistente")}
+
+
+@ra2.get("/editor")
+def editor(request: Request) -> dict[str, Any]:
+    """Configuracao do editor para o painel: assistentes de autocompletar e servidores de linguagem."""
+    g = request.app.state.area.gerente_lsp
+    return {"preferencias": _prefs_editor(request), "lsp": g.estado() if g is not None else None,
+            "ramos": request.app.state.codigo.catalogo.resumo()}
+
+
+@ra2.get("/codigo/catalogo")
+def codigo_catalogo(request: Request, linguagem: Annotated[str, Query(min_length=1, max_length=20)]) -> dict[str, Any]:
+    desligados = request.app.state.prefs.valor("autocompletar_ramos_desligados") or []
+    return request.app.state.codigo.catalogo.catalogo(linguagem, desligados)
+
+
+@ra2.post("/codigo/item")
+def codigo_item(d: ItemCodigoIn, request: Request) -> dict[str, Any]:
+    return request.app.state.codigo.salvar_item(d.ramo, d.item, d.ramo_meta)
+
+
+@ra2.delete("/codigo/item")
+def codigo_remover(request: Request, ramo: Annotated[str, Query(min_length=3, max_length=60)],
+                   rotulo: Annotated[str, Query(min_length=1, max_length=80)]) -> dict[str, Any]:
+    request.app.state.codigo.catalogo.remover_item(ramo, rotulo)
+    return {"removido": rotulo}
+
+
+@ra2.post("/codigo/ramos/{ramo}/revisar")
+def codigo_revisar(ramo: Annotated[str, Field(min_length=3, max_length=60)], request: Request) -> dict[str, Any]:
+    return {"revisados": request.app.state.codigo.catalogo.revisar(ramo)}
+
+
+@ra2.post("/codigo/ia")
+def codigo_ia(d: PedirIaCodigoIn, request: Request) -> dict[str, Any]:
+    return request.app.state.codigo.pedir_ia(d.linguagem, d.ramo, d.pedido, d.executar)
+
+
+@ra2.post("/codigo/ia/importar")
+def codigo_ia_importar(d: ImportarIaIn, request: Request) -> dict[str, Any]:
+    return request.app.state.codigo.importar(d.tarefa_id)
+
+
+@ra2.get("/lsp")
+def lsp_estado(request: Request) -> dict[str, Any]:
+    g = request.app.state.area.gerente_lsp
+    return g.estado() if g is not None else {"ativo": False, "servidores": []}
+
+
+@ra2.post("/lsp/instalar")
+def lsp_instalar(d: InstalarLspIn, request: Request) -> dict[str, Any]:
+    from forja.adapters.lsp.cliente import ErroLsp
+    from forja.dominio.erros import ConfirmacaoNecessaria, ValidacaoDominio
+
+    g = request.app.state.area.gerente_lsp
+    if g is None:
+        raise ValidacaoDominio("servidores de linguagem indisponíveis neste servidor")
+    if not d.confirmado:
+        alvo = next(s for s in g.estado()["servidores"] if s["id"] == d.servidor)
+        raise ConfirmacaoNecessaria(f"Instalar o servidor de linguagem {alvo['rotulo']}?", [
+            f"baixa pacotes da internet ({alvo['instalacao']})", "fica só na pasta de dados da Forja; não altera o Node/.NET do sistema"], "medio")
+    try:
+        return g.instalar(d.servidor)
+    except ErroLsp as e:
+        raise ValidacaoDominio(str(e)) from e
+
+
+@ra2.post("/lsp/{acao}")
+def lsp_acao(acao: Literal["completar", "explicar", "definicao", "diagnosticos", "fechar"], d: LspIn, s: Svc) -> dict[str, Any]:
+    return s.lsp(acao, d.projeto, d.raiz, d.rel, d.texto, d.linha, d.coluna, d.gatilho)

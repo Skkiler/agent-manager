@@ -580,3 +580,19 @@ class MensagemCoordenacao(Base):
     dados: Mapped[Any] = mapped_column(JSON, nullable=True)
     tarefa_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     criado_em: Mapped[str] = mapped_column(String(40))
+
+
+# ============================ Reciclagem de sessoes antigas (ADR-027) ============================
+class Reciclagem(Base):
+    """Uma sessao antiga (tarefa terminada ou sub-master encerrado) ja destilada para o segundo cerebro. Uma linha por alvo."""
+
+    __tablename__ = "reciclagem"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(16), index=True)  # tarefa | coordenacao
+    alvo_id: Mapped[str] = mapped_column(String(64), unique=True)
+    projeto_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    memoria_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resultado: Mapped[str] = mapped_column(String(16))  # criada | enriquecida | coberta | sem_valor
+    pontos: Mapped[int] = mapped_column(Integer, default=0)
+    compactado: Mapped[str] = mapped_column(String(16), default="nada")  # nada | caderno | detalhes
+    criado_em: Mapped[str] = mapped_column(String(40))

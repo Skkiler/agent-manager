@@ -250,6 +250,11 @@ class EstudoServico:
                                                          namespace=namespace, tags=tags[:10], fonte=FonteIn(tipo="execucao")), "forja")
         return m["id"]
 
+    def topico_projeto(self, namespace: str, nome: str) -> str:
+        """Nota-topico 'Projeto: <nome>' (a mesma do registro ao concluir): raiz das notas do projeto no grafo."""
+        return self._topico(namespace, f"Projeto: {nome}"[:200], f"Decisões, aprendizados e registros do projeto {nome}.",
+                            ["projeto", "registro"])
+
     def criar_notas(self, tarefa: dict[str, Any], res: ResultadoAgente) -> dict[str, Any]:
         cfg = (tarefa.get("entrada") or {}).get("estudo") or {}
         ns = cfg.get("namespace") or "pessoal/estudos"
@@ -311,6 +316,11 @@ class EstudoServico:
         with self.servico.repo.leitura() as t:
             projeto = t.obter(T.Projeto, tarefa["projeto_id"]) or {"nome": "geral"}
             respostas = [m["conteudo"] for m in t.listar(T.Mensagem, tarefa_id=tarefa["id"], papel="operador", limite=50)]
+            caderno = [i for i in t.listar(T.CadernoItem, ordem=T.CadernoItem.criado_em, tarefa_id=tarefa["id"], limite=300)
+                       if i["tipo"] in ("decisao", "resolvido", "erro", "fato")]
+        # sem conteudo reutilizavel (so evidencias), uma nota por tarefa seria ruido no segundo cerebro (ADR-027)
+        if not (any(secoes.get(k) for k in ("entendimento", "plano", "premissas")) or respostas or res.pendencias or caderno):
+            return None
         partes = []
         for chave, rotulo in (("entendimento", "Entendimento"), ("plano", "Plano"), ("premissas", "Premissas"),
                               ("evidencias", "Evidências"), ("verificacao", "Verificação da Forja")):
@@ -320,6 +330,12 @@ class EstudoServico:
             partes.append("## Decisões do desenvolvedor\n" + "\n".join(f"- {sanitizar_texto(r)[:400]}" for r in respostas[-5:]))
         if res.pendencias:
             partes.append("## Pendências\n" + "\n".join(f"- {p[:200]}" for p in res.pendencias[:8]))
+        if caderno:  # o caderno da sessao entra aqui uma vez; a reciclagem nao repete o que ja esta na nota
+            rot = {"decisao": "Decisões", "resolvido": "Resolvido", "erro": "Erros e correções", "fato": "Fatos"}
+            for tipo in ("decisao", "resolvido", "erro", "fato"):
+                linhas = [i["texto"][:300] for i in caderno if i["tipo"] == tipo][-8:]
+                if linhas:
+                    partes.append(f"## {rot[tipo]}\n" + "\n".join(f"- {x}" for x in linhas))
         partes.append("## Evidências registradas\n" + "\n".join(f"- {e.tipo}{' (simulada)' if e.simulada else ''}: {e.resumo[:200]}"
                                                                 for e in res.evidencias[:6]))
         if not partes:

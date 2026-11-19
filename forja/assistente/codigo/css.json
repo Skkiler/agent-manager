@@ -1,0 +1,72 @@
+{
+ "versao": 1,
+ "ramos": [
+  {"id": "css.propriedades", "linguagem": "css", "rotulo": "Propriedades", "descricao": "Layout (flex/grid), caixa, texto, cor, efeitos e movimento. Aparecem dentro de { }.",
+   "grupos": [
+    {"tipo": "propriedade", "itens": [
+     ["display", "display: flex | grid | block | inline | none", "Como o elemento é desenhado.", "display: ${flex};${0}"],
+     ["position", "position: relative | absolute | fixed | sticky", "Posicionamento.", "position: ${relative};${0}"],
+     ["inset", "inset: 0", "top/right/bottom/left de uma vez.", "inset: ${0};"],
+     ["z-index", "z-index: n", "Ordem de sobreposição (só com position ou flex/grid).", "z-index: ${1};${0}"],
+     ["flex", "flex: 1 1 auto", "Crescer/encolher/base.", "flex: ${1};${0}"], ["flex-direction", "flex-direction: row | column", "Direção do flex.", "flex-direction: ${column};${0}"],
+     ["flex-wrap", "flex-wrap: wrap", "Quebra de linha no flex.", "flex-wrap: ${wrap};${0}"], ["justify-content", "justify-content: center | space-between", "Alinhamento no eixo principal.", "justify-content: ${center};${0}"],
+     ["align-items", "align-items: center | stretch", "Alinhamento no eixo cruzado.", "align-items: ${center};${0}"], ["gap", "gap: 8px", "Espaço entre itens (flex e grid).", "gap: ${8px};${0}"],
+     ["grid-template-columns", "grid-template-columns: repeat(auto-fill, minmax(200px, 1fr))", "Colunas da grade.", "grid-template-columns: ${repeat(auto-fill, minmax(200px, 1fr))};${0}"],
+     ["grid-template-areas", "grid-template-areas: \"a b\"", "Áreas nomeadas.", "grid-template-areas: \"${cabeca cabeca}\" \"${lado conteudo}\";${0}"], ["grid-area", "grid-area: nome", "Área do item.", "grid-area: ${nome};${0}"],
+     ["place-items", "place-items: center", "Centraliza nos dois eixos (grid).", "place-items: ${center};${0}"],
+     ["width", "width", "Largura.", "width: ${100%};${0}"], ["max-width", "max-width", "Largura máxima.", "max-width: ${60rem};${0}"], ["min-width", "min-width", "Largura mínima (0 resolve estouro no flex).", "min-width: ${0};"],
+     ["height", "height", "Altura.", "height: ${auto};${0}"], ["min-height", "min-height", "Altura mínima.", "min-height: ${100dvh};${0}"], ["aspect-ratio", "aspect-ratio: 16 / 9", "Proporção.", "aspect-ratio: ${16 / 9};${0}"],
+     ["margin", "margin", "Espaço por fora.", "margin: ${0};"], ["padding", "padding", "Espaço por dentro.", "padding: ${8px 12px};${0}"], ["margin-inline", "margin-inline: auto", "Margens laterais (centraliza bloco).", "margin-inline: ${auto};${0}"],
+     ["box-sizing", "box-sizing: border-box", "Largura inclui borda e padding.", "box-sizing: border-box;${0}"], ["overflow", "overflow: auto | hidden", "O que sobra.", "overflow: ${auto};${0}"],
+     ["border", "border: 1px solid", "Borda.", "border: ${1px} solid ${var(--borda)};${0}"], ["border-radius", "border-radius", "Cantos arredondados.", "border-radius: ${8px};${0}"], ["outline", "outline", "Contorno (foco visível).", "outline: ${2px} solid ${var(--foco)};${0}"],
+     ["outline-offset", "outline-offset", "Distância do contorno.", "outline-offset: ${2px};${0}"],
+     ["color", "color", "Cor do texto.", "color: ${var(--texto)};${0}"], ["background", "background", "Fundo.", "background: ${var(--fundo)};${0}"], ["background-color", "background-color", "Cor de fundo.", "background-color: ${0};"],
+     ["opacity", "opacity", "Transparência (0 a 1).", "opacity: ${0.8};${0}"], ["box-shadow", "box-shadow", "Sombra.", "box-shadow: ${0 2px 8px rgb(0 0 0 / 0.15)};${0}"],
+     ["font-family", "font-family", "Fonte.", "font-family: ${system-ui, sans-serif};${0}"], ["font-size", "font-size", "Tamanho do texto (prefira rem).", "font-size: ${1rem};${0}"], ["font-weight", "font-weight", "Peso (400 normal, 600 seminegrito).", "font-weight: ${600};${0}"],
+     ["line-height", "line-height", "Altura da linha (1.4-1.6 para texto).", "line-height: ${1.5};${0}"], ["letter-spacing", "letter-spacing", "Espaço entre letras.", "letter-spacing: ${0.02em};${0}"], ["text-align", "text-align", "Alinhamento do texto.", "text-align: ${center};${0}"],
+     ["text-overflow", "text-overflow: ellipsis", "Reticências (com overflow hidden e white-space nowrap).", "overflow: hidden;\ntext-overflow: ellipsis;\nwhite-space: nowrap;${0}"], ["white-space", "white-space", "Quebra de espaços.", "white-space: ${nowrap};${0}"],
+     ["cursor", "cursor: pointer", "Cursor do mouse.", "cursor: ${pointer};${0}"], ["pointer-events", "pointer-events: none", "Ignora o mouse.", "pointer-events: ${none};${0}"], ["user-select", "user-select: none", "Seleção de texto.", "user-select: ${none};${0}"],
+     ["transition", "transition", "Animação ao mudar valores.", "transition: ${background-color} ${150ms} ${ease-out};${0}"], ["animation", "animation", "Animação com @keyframes.", "animation: ${nome} ${200ms} ${ease-out} ${both};${0}"],
+     ["transform", "transform", "Mover/girar/escalar sem refazer o layout.", "transform: ${translateY(-2px)};${0}"], ["will-change", "will-change", "Avisa o navegador (use pouco).", "will-change: ${transform};${0}"],
+     ["filter", "filter", "Efeitos (blur, brightness).", "filter: ${blur(4px)};${0}"], ["backdrop-filter", "backdrop-filter", "Efeito no que está atrás.", "backdrop-filter: ${blur(8px)};${0}"],
+     ["accent-color", "accent-color", "Cor de checkbox/radio/range.", "accent-color: ${var(--primaria)};${0}"], ["scroll-behavior", "scroll-behavior: smooth", "Rolagem suave.", "scroll-behavior: ${smooth};${0}"],
+     ["container-type", "container-type: inline-size", "Habilita @container.", "container-type: inline-size;${0}"], ["content", "content: \"\"", "Conteúdo de ::before/::after.", "content: \"${0}\";"]]},
+    {"tipo": "valor", "apos": ["display"], "itens": [["flex", "flex", "Flexbox."], ["grid", "grid", "Grade."], ["block", "block", "Bloco."], ["inline-flex", "inline-flex", "Flex em linha."], ["none", "none", "Não desenha."], ["contents", "contents", "Só os filhos."]]},
+    {"tipo": "valor", "apos": ["position"], "itens": [["relative", "relative", "Referência para filhos absolutos."], ["absolute", "absolute", "Fora do fluxo."], ["fixed", "fixed", "Preso à janela."], ["sticky", "sticky", "Gruda ao rolar."]]},
+    {"tipo": "valor", "apos": ["justify-content", "align-items", "align-content", "place-items", "align-self"], "itens": [["center", "center", "Centro."], ["start", "start", "Início."], ["end", "end", "Fim."], ["space-between", "space-between", "Espaço entre."], ["stretch", "stretch", "Estica."], ["baseline", "baseline", "Linha de base do texto."]]},
+    {"tipo": "valor", "apos": ["*"], "itens": [["var", "var(--nome, padrao)", "Variável CSS.", "var(--${nome})${0}"], ["calc", "calc(a + b)", "Conta.", "calc(${100% - 2rem})${0}"], ["clamp", "clamp(min, ideal, max)", "Valor fluido com limites.", "clamp(${1rem}, ${2.5vw}, ${2rem})${0}"],
+     ["min", "min(a, b)", "Menor.", "min(${a}, ${b})${0}"], ["max", "max(a, b)", "Maior.", "max(${a}, ${b})${0}"], ["rgb", "rgb(r g b / alfa)", "Cor.", "rgb(${0 0 0} / ${0.5})${0}"], ["color-mix", "color-mix(in srgb, a, b)", "Mistura cores.", "color-mix(in srgb, ${var(--a)} ${20%}, ${transparent})${0}"],
+     ["repeat", "repeat(n, 1fr)", "Repete trilhas da grade.", "repeat(${3}, ${1fr})${0}"], ["minmax", "minmax(min, max)", "Trilha entre limites.", "minmax(${0}, ${1fr})"], ["inherit", "inherit", "Herda do pai."], ["auto", "auto", "Automático."]]}
+   ]},
+  {"id": "css.regras", "linguagem": "css", "rotulo": "Regras @", "descricao": "@media, @keyframes, @container, @layer, @supports. Aparecem depois de '@'.",
+   "grupos": [
+    {"tipo": "arroba", "itens": [
+     ["media", "@media (max-width: ...)", "Estilos por tamanho de tela.", "media (max-width: ${760px}) {\n  ${0}\n}"],
+     ["media-reduce", "@media (prefers-reduced-motion: reduce)", "Respeita quem pediu menos movimento.", "media (prefers-reduced-motion: reduce) {\n  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }\n}${0}"],
+     ["media-dark", "@media (prefers-color-scheme: dark)", "Tema escuro do sistema.", "media (prefers-color-scheme: dark) {\n  :root { ${0} }\n}"],
+     ["keyframes", "@keyframes nome", "Passos de uma animação.", "keyframes ${nome} {\n  from { ${opacity: 0; transform: translateY(4px);} }\n  to { ${opacity: 1; transform: none;} }\n}${0}"],
+     ["container", "@container (min-width: ...)", "Estilos pelo tamanho do contêiner.", "container (min-width: ${30rem}) {\n  ${0}\n}"],
+     ["supports", "@supports (prop: valor)", "Só se o navegador suportar.", "supports (${display: grid}) {\n  ${0}\n}"],
+     ["layer", "@layer nome", "Camadas de cascata.", "layer ${base} {\n  ${0}\n}"],
+     ["font-face", "@font-face", "Fonte própria.", "font-face {\n  font-family: \"${Nome}\";\n  src: url(\"${fonte.woff2}\") format(\"woff2\");\n  font-display: swap;\n}${0}"],
+     ["import", "@import url()", "Importa outro CSS.", "import url(\"${arquivo.css}\");${0}"]]}
+   ]},
+  {"id": "css.trechos", "linguagem": "css", "rotulo": "Padrões prontos", "descricao": "Centralizar, grade responsiva, foco visível, texto só para leitor de tela, variáveis de tema, transições.",
+   "grupos": [
+    {"tipo": "trecho", "itens": [
+     ["centro", "centralizar", "Centraliza o conteúdo nos dois eixos.", "display: grid;\nplace-items: center;${0}"],
+     ["gradeauto", "grade responsiva", "Cartões que se ajustam à largura.", "display: grid;\ngrid-template-columns: repeat(auto-fill, minmax(${16rem}, 1fr));\ngap: ${1rem};${0}"],
+     ["foco", ":focus-visible", "Foco visível só para teclado.", ":focus-visible {\n  outline: 2px solid ${var(--foco)};\n  outline-offset: 2px;\n}${0}"],
+     ["srOnly", ".sr-only", "Texto só para leitor de tela.", ".sr-only {\n  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;\n  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;\n}${0}"],
+     ["tema", ":root com variáveis", "Paleta em variáveis.", ":root {\n  --fundo: ${#ffffff};\n  --texto: ${#1a1a1a};\n  --primaria: ${#005a9c};\n  --foco: ${#ffbf47};\n}${0}"],
+     ["hover", ":hover com transição", "Resposta ao passar o mouse.", "transition: background-color 150ms ease-out, transform 150ms ease-out;\n\n&:hover {\n  background-color: ${var(--realce)};\n  transform: translateY(-1px);\n}${0}"],
+     ["entrada", "animação de entrada", "Aparece suave (respeite prefers-reduced-motion).", "animation: entrar 180ms ease-out both;\n\n@keyframes entrar {\n  from { opacity: 0; transform: translateY(4px); }\n}${0}"],
+     ["reticencias", "texto com …", "Corta texto longo numa linha.", "overflow: hidden;\ntext-overflow: ellipsis;\nwhite-space: nowrap;\nmin-width: 0;${0}"],
+     ["rolagem", "barra de rolagem fina", "Rolagem discreta.", "scrollbar-width: thin;\nscrollbar-color: ${var(--borda)} transparent;${0}"],
+     ["sticky", "cabeçalho fixo", "Gruda no topo ao rolar.", "position: sticky;\ntop: 0;\nz-index: ${10};\nbackground: ${var(--fundo)};${0}"]]},
+    {"tipo": "palavra", "itens": [[":root", ":root", "Raiz do documento (variáveis globais)."], [":hover", ":hover", "Mouse em cima."], [":focus-visible", ":focus-visible", "Foco por teclado."], [":is", ":is(a, b)", "Qualquer um dos seletores.", ":is(${0})"],
+     [":where", ":where(a, b)", "Como :is, sem especificidade.", ":where(${0})"], [":has", ":has(seletor)", "Pai que contém.", ":has(${0})"], ["::before", "::before", "Pseudo-elemento antes."], ["::after", "::after", "Pseudo-elemento depois."],
+     [":not", ":not(seletor)", "Negação.", ":not(${0})"], [":nth-child", ":nth-child(n)", "Pela posição.", ":nth-child(${2n})${0}"]]}
+   ]}
+ ]
+}

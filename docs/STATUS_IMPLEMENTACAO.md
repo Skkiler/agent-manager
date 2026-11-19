@@ -424,6 +424,27 @@ Relatorio completo: `docs/RELATORIO_AVALIACAO_2026-11-18.md`. Somente avaliacao;
   painel Git desenhado duas vezes (guarda de geracao); espera da lista de Agentes; servidor de teste orfao segurando o banco.
 - **Pendente:** teste com NVDA real; LSP (o editor tem IntelliSense leve local); leitura fora da pasta pelo Codex no modo de
   escrita coberta so pela vigia.
+
+## Rodada 5: reciclagem, conhecimento integrado, autocompletar de codigo, LSP e agentes fora da pasta (2026-11-19, ADR-027) — resultados reais
+- **Validacao caderno/segundo cerebro/grafo (lacunas achadas e corrigidas):** caderno nao chegava a memoria; registro criava nota
+  sem valor; `links()` ignorava ligacoes tipadas; contexto nao via as notas do proprio projeto; `forja_propor_nota` duplicava.
+- **Testes executados:** `python -m pytest` -> **1280 passed** (novo: `tests/test_rodada5_conhecimento_editor.py`, 15: reciclagem
+  com valor/sem valor/enriquecer/compactar, caderno amplo, contexto do projeto, anti-duplicata, catalogo das 5 linguagens, IA
+  importa ramo, preferencia `escolhas`, LSP com servidor falso por subprocesso, caminhos citados, mediador fora da pasta);
+  `ruff check .` ok; `node --check` nos 38 modulos JS ok.
+- **Painel em navegador real** (8799, dados ficticios): `inspecionar_painel.py --interagir --a11y` -> **136 OK, 0 falhas**, axe sem
+  violacao em 14 vistas. Novos: catalogo completa `os.` com explicacao ao lado, assinatura ao abrir parenteses, dica animada,
+  previa da reciclagem, Configuracoes > Editor (servidores, assistentes ligaveis, catalogo por ramo, fontes). Login (8798): 0 problemas.
+- **LSP real** (servidores instalados pela API em pasta temporaria): Pyright completa `os.getc` (1,5 s na 1a vez), explica
+  `soma` e acha a definicao; diagnostico de tipo errado e nome inexistente em 0,3 s; typescript-language-server completa `v.toF`
+  e acha `dobro`; HTML completa `<di`; CSS completa `colo` e acusa `colr`. No navegador: itens do Pyright na lista, erro na barra
+  de status e explicacao ao parar o mouse. Achados e corrigidos: instalacoes simultaneas corrompiam o `package.json` (agora em
+  fila); TypeScript 7 sem `tsserver.js` (fixado `typescript@5`); URI do Pyright com outra codificacao perdia os diagnosticos.
+  C#: nao testado (.NET SDK ausente nesta maquina).
+- **Kiro/Codex reais com `acesso_fora_pasta = perguntar`:** pedido citando um arquivo fora do projeto: Kiro leu com aprovacao
+  automatica ("pasta citada no pedido", sem perguntar), 12,3 s, 0,0206 credito; Codex leu, 36,6 s, acesso registrado. Nenhum
+  segredo vazou.
+- **Pendente:** C# com servidor real; teste com NVDA real.
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -442,8 +463,8 @@ Relatorio completo: `docs/RELATORIO_AVALIACAO_2026-11-18.md`. Somente avaliacao;
 - gitleaks e CI ativos (ver Fase 9). Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1262 passed. Proximo: teste com NVDA real, LSP opcional e
-   negar leitura fora da pasta no perfil do Codex quando o adaptador aceitar `:root` deny.
+1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1280 passed. Proximo: C# com servidor de linguagem real (precisa
+   do .NET SDK), teste com NVDA real e medir o ganho da reciclagem no contexto de tarefas reais.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,
    com `source_ref` e rotulo de dado nao confiavel; depois benchmark recall@k/MRR contra o baseline textual antes de embeddings.

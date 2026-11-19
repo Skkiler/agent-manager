@@ -18,6 +18,7 @@ from typing import Any
 from forja.agentes.base import ControleExecucao
 from forja.agentes.estilo import PADRAO, PerfilTrabalho
 from forja.seguranca.acoes import descrever_acao
+from forja.seguranca.pastas import dentro_de_citado
 from forja.seguranca.regras import avaliar as avaliar_regras
 
 log = logging.getLogger("forja.mediador")
@@ -69,6 +70,10 @@ class MediadorPermissoes:
         # A pasta (trabalho/consulta) tem arquivos com cara de segredo? (provedor confere SO os nomes). Se sim, comando de varredura
         # ampla (busca/copia recursiva) nunca e aprovado sozinho: ele le o .env sem citar o nome (achado no Kiro real).
         self.pasta_com_segredos = False
+        # Fora das pastas do projeto (ADR-027): 'perguntar' (padrao: pede permissao, exceto leitura do que o usuario citou no
+        # pedido), 'bloquear' (nega sem perguntar) ou 'livre_leitura' (leitura fora aprovada; escrita fora continua perguntando).
+        self.fora_da_pasta = "perguntar"
+        self.citados: list[Path] = []  # caminhos absolutos citados pelo usuario no pedido (seguranca.pastas.caminhos_citados)
 
     def _conferir_escopo(self, item: dict[str, Any]) -> bool:
         """Anti 'esticar': passou do limite de arquivos escritos da tarefa, cada nova escrita deixa de ser automatica e PERGUNTA
@@ -118,6 +123,17 @@ class MediadorPermissoes:
             if decisao[0] == "aprovar" and not varre_segredo:
                 return permitir
         perguntar_sempre = (decisao is not None and decisao[0] == "perguntar") or alem_do_escopo or varre_segredo
+        if item.get("fora_do_workspace"):  # fora das pastas do projeto: preferencia 'acesso_fora_pasta' (ADR-027)
+            if self.fora_da_pasta == "bloquear":
+                self.ctl.evento("kiro.permissao_negada_automatica", {"motivo": "fora das pastas do projeto (Configurações > Segurança)",
+                                                                     "descricao": item["descricao"]})
+                return rejeitar
+            leitura = item.get("categoria") == "ler" and not varre_segredo
+            citado = leitura and bool(item.get("alvos")) and all(dentro_de_citado(a, self.citados) for a in item["alvos"])
+            if leitura and not perguntar_sempre and (citado or self.fora_da_pasta == "livre_leitura"):
+                self.ctl.evento("kiro.permissao_automatica", {"nivel": self.perfil.nivel, "categoria": "ler", "descricao": item["descricao"],
+                                                              "motivo": "pasta citada no pedido" if citado else "leitura fora da pasta liberada"})
+                return permitir
         if not perguntar_sempre and self.perfil.aprova_sozinho(item):  # auditavel: toda aprovacao automatica vira evento
             self.ctl.evento("kiro.permissao_automatica", {"nivel": self.perfil.nivel, "categoria": item["categoria"], "descricao": item["descricao"]})
             return permitir

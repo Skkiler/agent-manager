@@ -22,6 +22,15 @@ def _pacotes() -> list[dict[str, Any]]:
         return []
 
 
+def _ramos_codigo() -> list[dict[str, Any]]:
+    try:
+        from forja.assistente.codigo import CatalogoCodigo
+
+        return CatalogoCodigo().resumo()
+    except Exception:  # noqa: BLE001 - catalogo invalido nao derruba as preferencias (os testes do catalogo acusam)
+        return []
+
+
 @dataclass(frozen=True)
 class Exemplo:
     rotulo: str
@@ -63,6 +72,7 @@ class Preferencia:
 CATEGORIAS: tuple[Categoria, ...] = (
     Categoria("agentes", "Agentes", "Quanta liberdade os agentes têm e como eles trabalham. Combine métodos como tags e escreva suas regras."),
     Categoria("cosmetica", "Aparência", "Como a interface se parece e quanto detalhe ela mostra. Não muda o que o sistema faz."),
+    Categoria("editor", "Editor", "Assistentes de escrita de código e de comandos, e servidores de linguagem (LSP). Tudo local."),
     Categoria("eficiencia", "Eficiência", "Quanto contexto os agentes recebem. Mais contexto ajuda a acertar, mas custa tokens."),
     Categoria("consumo", "Consumo", "Qual modelo de IA cada parte usa. É aqui que o custo em créditos mais muda."),
     Categoria("privacidade", "Privacidade", "O que os agentes podem ler no seu computador e o que fica oculto."),
@@ -425,6 +435,28 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         True, se_ligar="Você roda testes, git e scripts sem sair do painel.",
         se_desligar="O painel não executa comandos (o editor, o Git e o Docker continuam).", risco="alto"),
     Preferencia(
+        "acesso_fora_pasta", "seguranca", "geral", "Agentes fora das pastas do projeto", "selecao",
+        "O que o Kiro e o Codex podem fazer FORA das pastas do projeto. Em todas as opções eles são orientados a ficar nas pastas e "
+        "a propor antes de olhar outra (ex.: algo visto no grafo); o que você cita no pedido (um caminho completo) pode ser lido. "
+        "Segredos continuam sempre bloqueados para os agentes.", "perguntar",
+        (Exemplo("Bloquear", "bloquear", "Nada fora das pastas: o Kiro tem o pedido negado e o turno do Codex é cancelado."),
+         Exemplo("Perguntar (padrão)", "perguntar", "O Kiro pede sua permissão; lê sozinho só o caminho que você citou. O Codex não "
+                 "consegue pedir antes: pode ler, cada acesso fica registrado nos eventos."),
+         Exemplo("Leitura livre", "livre_leitura", "Leitura fora aprovada sem perguntar (escrever fora continua perguntando). Para "
+                 "projetos de baixa sensibilidade.")),
+        se_ligar="Mais liberdade: menos interrupções quando o projeto depende de outras pastas.",
+        se_desligar="Mais restrito: o agente fica preso às pastas do projeto.", risco="medio",
+        opcoes=(("bloquear", "Bloquear"), ("perguntar", "Perguntar"), ("livre_leitura", "Leitura livre"))),
+    Preferencia(
+        "codex_pastas_com_segredo", "seguranca", "avancado", "Codex em pastas com arquivos de segredo", "selecao",
+        "Pastas com .env, chaves ou credenciais. 'Bloquear' manda essas tarefas para o Kiro (que nega segredos pelo perfil). 'Perfil "
+        "nativo' deixa o Codex trabalhar: o sandbox dele nega os mesmos padrões de segredo (testado) e a vigia cancela o turno se "
+        "uma chamada citar um segredo.", "bloquear",
+        (Exemplo("Bloquear (padrão)", "bloquear", "Falha fechada: Codex só em pastas sem segredo."),
+         Exemplo("Perfil nativo", "perfil_nativo", "Mais liberdade; confia no deny do sandbox do Codex + vigia da Forja.")),
+        se_ligar="O Codex pode trabalhar em mais projetos.", se_desligar="Mais seguro: segredos ficam só com o Kiro.", risco="alto",
+        opcoes=(("bloquear", "Bloquear"), ("perfil_nativo", "Perfil nativo do Codex"))),
+    Preferencia(
         "limite_requisicoes_por_minuto", "seguranca", "avancado", "Limite de requisições por minuto", "int",
         "Quantas chamadas por minuto o servidor aceita de um mesmo cliente. Protege contra laços de automação e abuso.",
         240, (Exemplo("Baixo", 120, "Uso solo e calmo. Mais proteção; pode dar erro 429 se você abrir muitas telas."),
@@ -466,6 +498,92 @@ PREFERENCIAS: tuple[Preferencia, ...] = (
         "revisao_esquema", "manutencao", "geral", "Revisão do esquema", "revisao",
         "Pede a um agente que reavalie a plataforma: há melhorias que valem o custo (novos modelos, pesquisas, bibliotecas) ou o esquema está num "
         "ponto agradável? Entrega fatos medidos e exige fontes.", None, persistida=False),
+    Preferencia(
+        "reciclagem_dias", "manutencao", "geral", "Reciclar sessões antigas depois de", "int",
+        "Tarefas terminadas e sub-masters encerrados parados há mais deste tempo viram conhecimento no segundo cérebro (decisões, "
+        "o que foi resolvido, erros e pendências, ligados ao tópico do projeto no grafo) e a sessão é arquivada. Só vira nota o que "
+        "tem valor; se já existe nota do assunto, ela é completada em vez de criar outra. 0 = desligado.", 30,
+        (Exemplo("Desligado", 0, "Nada é reciclado sozinho; dá para reciclar pela tela."),
+         Exemplo("Semanal", 7, "Arquiva rápido; o conhecimento chega cedo ao contexto das próximas tarefas."),
+         Exemplo("Mensal (padrão)", 30, "Equilíbrio.")),
+        se_ligar="Mais curto: o segundo cérebro aprende antes.", se_desligar="Mais longo: as sessões ficam como estão por mais tempo.",
+        minimo=0, maximo=3650, unidade="dias"),
+    Preferencia(
+        "reciclagem_compactar", "manutencao", "avancado", "Ao reciclar, apagar do banco", "selecao",
+        "Depois que o conteúdo foi para a nota, o que pode sair do banco. Pedido, respostas, decisões e artefatos NUNCA são apagados.",
+        "nada", (Exemplo("Nada (padrão)", "nada", "Só arquiva."),
+                 Exemplo("Caderno", "caderno", "Apaga os itens do caderno já copiados para a nota."),
+                 Exemplo("Detalhes", "detalhes", "Caderno + eventos detalhados (cada chamada de ferramenta). O replay da oficina dessas "
+                         "tarefas fica sem os passos.")),
+        se_ligar="Banco menor.", se_desligar="Guarda tudo.", risco="medio",
+        opcoes=(("nada", "Nada"), ("caderno", "Caderno"), ("detalhes", "Caderno e detalhes"))),
+    Preferencia(
+        "reciclagem_agora", "manutencao", "avancado", "Reciclar agora", "reciclagem",
+        "Mostra o que a próxima rodada faria com cada sessão antiga (nota nova, completar uma nota existente ou só arquivar) e "
+        "recicla na hora, sem esperar a rodada automática.", None, persistida=False),
+    Preferencia(
+        "contexto_memoria_projeto", "eficiencia", "avancado", "Contexto com o histórico do projeto", "bool",
+        "O contexto inicial de cada tarefa também procura nas notas do PRÓPRIO projeto (registros de tarefas e sessões recicladas). "
+        "Outros projetos ficam de fora.", True,
+        se_ligar="O agente não refaz investigações que outra sessão já fez.", se_desligar="Só os namespaces de contexto configurados."),
+    # ------------------------------------------------------------------ editor
+    Preferencia(
+        "autocompletar_codigo", "editor", "geral", "Autocompletar de código", "bool",
+        "Sugestões enquanto você escreve código: funções, métodos, bibliotecas, técnicas e padrões da linguagem (Python, C#, "
+        "JavaScript/TypeScript, HTML e CSS), com a explicação de cada item. Setas escolhem, Tab ou Enter aceitam, Esc fecha; "
+        "Ctrl+Espaço abre a qualquer momento.", True,
+        se_ligar="Escreve mais rápido e vê a assinatura e a explicação de cada função.", se_desligar="O editor não sugere nada."),
+    Preferencia(
+        "autocompletar_automatico", "editor", "avancado", "Sugerir enquanto digita", "bool",
+        "Desligado, as sugestões só aparecem com Ctrl+Espaço.", True,
+        se_ligar="A lista aparece sozinha a partir de 2 letras ou depois de um ponto.", se_desligar="Só com Ctrl+Espaço."),
+    Preferencia(
+        "autocompletar_fontes", "editor", "avancado", "De onde vêm as sugestões", "escolhas",
+        "Combine as fontes. O servidor de linguagem (LSP) entende o projeto (tipos, imports, definições), mas precisa estar "
+        "instalado; o catálogo traz funções e bibliotecas comuns com explicação em português.",
+        ["lsp", "catalogo", "trechos", "palavras"], se_ligar="Mais fontes: mais sugestões.", se_desligar="Menos fontes: lista mais curta.",
+        opcoes=(("lsp", "Servidor de linguagem (LSP)"), ("catalogo", "Catálogo de funções e bibliotecas"), ("trechos", "Trechos e padrões"),
+                ("palavras", "Palavras do próprio arquivo"))),
+    Preferencia(
+        "autocompletar_ramos_desligados", "editor", "avancado", "Ramos do catálogo desligados", "escolhas",
+        "Partes do catálogo que você não quer ver (ex.: uma biblioteca que não usa). Ramos de bibliotecas só aparecem quando o "
+        "arquivo importa a biblioteca.", [], se_ligar="Lista mais focada.", se_desligar="Todos os ramos ativos.",
+        opcoes=tuple((r["id"], f"{r['rotulo']} ({r['id']})") for r in _ramos_codigo())),
+    Preferencia(
+        "autocompletar_atraso_ms", "editor", "avancado", "Espera antes de sugerir", "int",
+        "Tempo sem digitar antes de a lista aparecer (só quando 'Sugerir enquanto digita' está ligado).", 120,
+        (Exemplo("Imediato", 0, "Mais reativo."), Exemplo("Padrão", 120, "Equilíbrio."), Exemplo("Calmo", 400, "Menos distração.")),
+        se_ligar="Mais alto: a lista aparece menos e só quando você para.", se_desligar="Mais baixo: aparece enquanto digita.",
+        minimo=0, maximo=2000, unidade="ms"),
+    Preferencia(
+        "autocompletar_max", "editor", "avancado", "Sugestões na lista", "int",
+        "Quantos itens a lista de sugestões mostra de uma vez (as setas e Page Up/Down percorrem).", 12,
+        (Exemplo("Curta", 6, "Só o essencial."), Exemplo("Padrão", 12, "Equilíbrio."), Exemplo("Longa", 30, "Mais opções na tela.")),
+        se_ligar="Mais itens: mais opções visíveis.", se_desligar="Menos itens: lista mais limpa.", minimo=3, maximo=50, unidade="itens"),
+    Preferencia(
+        "catalogo_codigo", "editor", "avancado", "Catálogo de autocompletar", "catalogo_codigo",
+        "Ramos do catálogo (funções, bibliotecas e padrões por linguagem). Peça à IA para buscar e incluir algo novo (ex.: uma "
+        "biblioteca) ou para atualizar um ramo; o resultado chega marcado como não revisado e só entra quando você importa.",
+        None, persistida=False),
+    Preferencia(
+        "terminal_assistente", "editor", "geral", "Assistente de comandos no terminal", "bool",
+        "Explica cada parte do comando, aponta erro de tipo, avisa comando perigoso e sugere como completar (setas e Tab).", True,
+        se_ligar="O terminal ajuda enquanto você digita.", se_desligar="Terminal simples (o aviso de comando perigoso continua)."),
+    Preferencia(
+        "lsp_ativo", "editor", "geral", "Servidores de linguagem (LSP)", "bool",
+        "Completar com tipos do projeto, explicação ao parar o mouse, ir para a definição (F12) e erros do compilador, como no VS Code. "
+        "Cada servidor é instalado uma vez pela tela (fica na pasta de dados da Forja) e só abre quando um arquivo daquela linguagem "
+        "precisa. Python: Pyright; JS/TS: typescript-language-server; HTML/CSS: servidores do VS Code; C#: csharp-ls (pede .NET SDK).",
+        True, se_ligar="Mais precisão (usa ~100-300 MB por servidor aberto).", se_desligar="Só o catálogo local; nenhum processo extra."),
+    Preferencia(
+        "lsp_servidores", "editor", "geral", "Instalar servidores de linguagem", "lsp",
+        "Estado de cada servidor e botão para instalar. A instalação baixa os pacotes uma vez (npm, ou dotnet para C#) para a pasta de "
+        "dados da Forja, sem mexer no Node ou no .NET do sistema.", None, persistida=False),
+    Preferencia(
+        "lsp_max_servidores", "editor", "avancado", "Servidores de linguagem abertos ao mesmo tempo", "int",
+        "Ao passar do limite, o mais antigo é fechado. Fechados por inatividade depois de 10 minutos.", 2,
+        (Exemplo("Econômico", 1, "Máquinas com pouca memória."), Exemplo("Padrão", 2, "16 GB de RAM."), Exemplo("Folgado", 4, "32 GB ou mais.")),
+        se_ligar="Mais servidores: troca de linguagem sem esperar.", se_desligar="Menos memória em uso.", minimo=1, maximo=6, unidade="servidores"),
 )
 
 POR_ID: dict[str, Preferencia] = {p.id: p for p in PREFERENCIAS}

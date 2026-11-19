@@ -120,7 +120,11 @@ def test_regra_de_segredos_no_pedido():
     assert perfil_kiro.SEGREDOS_REGRA in montar_prompt({**_tarefa("alteracao_codigo")})
     assert perfil_kiro.SEGREDOS_CURTO in montar_prompt(_tarefa("analise"))
     codex = ProvedorCodexAcp(None, Path("."))
-    assert REGRA_PASTAS in codex._regras_agente(_tarefa("analise")) and perfil_kiro.SEGREDOS_REGRA in codex._regras_agente(_tarefa("analise"))
+    regras = codex._regras_agente(_tarefa("analise"))
+    assert perfil_kiro.regra_fora("perguntar") in regras and perfil_kiro.SEGREDOS_REGRA in regras  # ADR-027: orientacao por preferencia
+    codex.fora_da_pasta = "bloquear"
+    assert "regra absoluta" in codex._regras_agente(_tarefa("analise")).split("PASTAS", 1)[1][:40]
+    assert REGRA_PASTAS.startswith(perfil_kiro._FORA_BASE)  # vai na instrucao de desenvolvedor da sessao
 
 
 # ------------------------------------------------------------------ vigia do Codex
@@ -143,6 +147,7 @@ def test_codex_que_tenta_ler_fora_e_cancelado_e_nada_e_guardado(tmp_path):
     (proj / "calc.py").write_text("x = 1\n", encoding="utf-8")
     eventos: list = []
     prov = ProvedorCodexAcp(cmd("codex_le_fora"), tmp_path / "ws", timeout_prompt=30, timeout_handshake=10)
+    prov.fora_da_pasta = "bloquear"  # preferencia 'acesso_fora_pasta = bloquear' (ADR-027): comportamento antigo
     t = {**_tarefa("analise"), "projeto_ctx": {"projeto": "P", "pastas": [{"caminho": str(proj), "papel": "trabalho"}], "anexos": []}}
     r = prov.executar(t, {}, _ctl(eventos))
     assert r.estado == "bloqueada" and r.pendencias[0].startswith("codex_fora_da_pasta")
@@ -150,6 +155,11 @@ def test_codex_que_tenta_ler_fora_e_cancelado_e_nada_e_guardado(tmp_path):
     assert any(tp == "agente.bloqueio_seguranca" for tp, _ in eventos)
     ok = ProvedorCodexAcp(cmd("codex_le_dentro"), tmp_path / "ws", timeout_prompt=30, timeout_handshake=10).executar(t, {}, _ctl([]))
     assert ok.estado == "concluida" and "Resposta do Codex" in ok.resumo
+    # padrao 'perguntar': o Codex nao consegue pedir antes, entao pode ler; cada acesso fora fica registrado para o usuario
+    eventos2: list = []
+    livre = ProvedorCodexAcp(cmd("codex_le_fora"), tmp_path / "ws", timeout_prompt=30, timeout_handshake=10).executar(t, {}, _ctl(eventos2))
+    assert livre.estado != "bloqueada" and not any(tp == "agente.bloqueio_seguranca" for tp, _ in eventos2)
+    assert any(tp == "codex.fora_da_pasta" and not d["citado_no_pedido"] for tp, d in eventos2)
 
 
 def test_codex_escolhe_esforco_por_parte():

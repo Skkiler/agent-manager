@@ -217,7 +217,8 @@ perigoso no terminal) pedem confirmação com o motivo. Os bloqueios de seguran�
 | Recurso | Como funciona |
 |---|---|
 | **Explorador** | Árvore das pastas de cada projeto. Arquivos de segredo (`.env`, chaves) aparecem com cadeado e abrem com uma faixa de aviso; o conteúdo fica só na sua tela e nunca vai para log nem para agente. Pasta de consulta: somente leitura. |
-| **Editor** | Realce de sintaxe (Python, JS/TS, JSON, CSS, HTML, Markdown, SQL, shell/PowerShell, YAML/TOML, Dockerfile, diff), números de linha, busca/substituição, indentação, correção ortográfica do navegador e prévia de Markdown/HTML (HTML isolado, sem scripts). Autocompletar local (palavras do arquivo, palavras-chave e trechos; setas e Tab), F12 ou Ctrl+clique vai para a definição. Ctrl+S grava pela API; se o arquivo mudou no disco, nada é sobrescrito. Mantém o fim de linha (CRLF/LF) do arquivo. Sem LSP. |
+| **Editor** | Realce de sintaxe (Python, JS/TS, JSON, CSS, HTML, Markdown, SQL, shell/PowerShell, YAML/TOML, Dockerfile, diff), números de linha, busca/substituição, indentação, correção ortográfica do navegador e prévia de Markdown/HTML (HTML isolado, sem scripts). Autocompletar por contexto (membro depois de `obj.`, tag e atributo no HTML, propriedade e valor no CSS) com um catálogo de ~970 funções, métodos, bibliotecas e padrões de Python, C#, JS/TS, HTML e CSS, explicação do item ao lado e assinatura ao abrir parênteses; com servidor de linguagem (LSP) instalado, também os tipos do projeto. Ctrl+Shift+Espaço explica o que está no cursor; F12 ou Ctrl+clique vai para a definição. Ctrl+S grava pela API; se o arquivo mudou no disco, nada é sobrescrito. Mantém o fim de linha (CRLF/LF) do arquivo. |
+| **Servidores de linguagem (LSP)** | Pyright (Python), typescript-language-server (JS/TS), servidores HTML/CSS do VS Code e csharp-ls (C#, pede .NET SDK). Instalados pela tela (Configurações > Editor), uma vez, na pasta de dados da Forja; abrem sob demanda (no máximo 2) e fecham após 10 min sem uso. Completar com tipos, explicação ao parar o mouse, definição e erros do analisador no painel Problemas. |
 | **Diff lado a lado** | Clique num arquivo do painel Git: compara a versão do Git (último commit ou preparada) com a pasta, com as linhas alinhadas. |
 | **Problemas** | JSON (sintaxe) e Python (compilação + `ruff`, se instalado) ao abrir, editar e salvar; marcas na calha e lista no painel inferior. |
 | **Busca** | Texto ou expressão regular em todas as pastas do projeto. Pula segredos por padrão; marque "incluir segredos" para buscar neles. |
@@ -388,8 +389,9 @@ O Codex não tem as regras deny que a Forja aplica no Kiro. Por isso, em falha f
 - o processo recebe ambiente limpo (sem variáveis com cara de segredo e sem `APP_*`/`FORJA_*`; chave de API por variável não chega);
 - só trabalha em pastas **sem** arquivos com cara de segredo (`.env`, chaves, credenciais) ou na **cópia sem segredos**; se
   houver segredo, a tarefa vai para o Kiro (ou fica bloqueada);
-- **vigia em tempo real**: se uma chamada do Codex citar um segredo ou um caminho fora das pastas do projeto, a Forja cancela o
-  turno, bloqueia a tarefa e não guarda a resposta parcial (o sandbox `read-only` do Codex lê o disco quase inteiro sem pedir);
+- **vigia em tempo real**: se uma chamada do Codex citar um segredo, a Forja cancela o turno, bloqueia a tarefa e não guarda a
+  resposta parcial. Fora das pastas do projeto vale a preferência `acesso_fora_pasta` ([7.1](#71-aprovações-autonomia-e-regras)):
+  o Codex não consegue pedir permissão antes, então lê (padrão) com cada acesso registrado, ou tem o turno cancelado (`bloquear`);
 - comandos que o Codex roda **dentro** da pasta não passam pelas suas aprovações: o sandbox dele decide;
 - modo da sessão (`codex-acp` 2.7): `read-only` para planejar, revisar, estudar, coordenar, status e toda tarefa que não escreve
   (análise, estudo) ou sem pasta de trabalho; `workspace-write` só para executar alteração, documentação ou verificação, com cada
@@ -410,7 +412,10 @@ tarefa (`politicas.complexidade`) nunca muda.
 - **Por ação, agrupadas, com adendo.** "Posso excluir forçadamente `build`?" em vez do comando cru; você aprova todos, alguns ou
   nenhum e pode escrever um adendo, que o agente recebe. Sem resposta no prazo: **negado**.
 - **Autonomia:** `restrito` (pergunta tudo), `liberado` (lê e edita na pasta de trabalho), `total` (também roda comandos na pasta).
-  Sempre perguntam: excluir, publicar, descartar alterações, instalar dependências, rede, fora da pasta e ações não identificadas.
+  Sempre perguntam: excluir, publicar, descartar alterações, instalar dependências, rede e ações não identificadas.
+- **Fora das pastas do projeto** (`acesso_fora_pasta`, Config > Segurança): `perguntar` (padrão) lê sem perguntar o caminho que você
+  citou no pedido e pergunta o resto; `bloquear` nega; `livre_leitura` aprova leitura (escrever fora continua perguntando). Os
+  agentes são orientados a ficar nas pastas e a propor antes de olhar outra pasta (ex.: algo visto no grafo). Segredos: sempre negados.
 - **Métodos (tags)** e **observações guia** enviadas em toda tarefa.
 - **Regras de controle** (Config > Segurança): negar, sempre perguntar ou aprovar por tipo de ação, comando e caminho. Vale a mais
   restritiva; nenhuma regra libera segredo.
@@ -503,6 +508,11 @@ Preferência `status_resumos`:
 
 ## 10 SEGUNDO CÉREBRO
 
+- **Reciclagem de sessões antigas** (`reciclagem_dias`, padrão 30): tarefas terminadas e sub-masters encerrados viram conhecimento
+  (decisões, o que foi resolvido, erros, pendências, ligados ao tópico do projeto no grafo). Só vira nota o que tem valor; se já
+  existe nota do assunto, ela é completada em vez de criar outra. Configurações > Manutenção mostra a prévia e recicla na hora.
+- **Caderno, segundo cérebro e grafo conversam**: a consulta do caderno de uma tarefa traz também o que outras sessões do mesmo
+  projeto deixaram e os vizinhos no grafo; o contexto inicial inclui as notas do próprio projeto; agentes não criam nota repetida.
 - **Notas** com tipo, namespace (`publico`, `pessoal`, `terceiros`, `empresa/<id>`), fonte, tags e estado
   (`candidato → observado → verificado → validado`, além de contestado, obsoleto, substituído, revogado). Validar exige evidência
   real; PII e segredos são redigidos antes de gravar.
@@ -601,8 +611,9 @@ As que mais mudam o comportamento:
 | Agentes | autonomia, `copia_sem_segredos`, correção automática, `subagentes`, `controle_escopo` (pausar/avisar/desligado), `master_executar` (executar/propor), métodos, observações guia |
 | Eficiência | limites de ferramentas e tempo, contexto e orçamento, `contexto_limite_sessao`, `status_resumos` (desligado/deterministico/marcos), roteamento que aprende, `reaproveitar_processos`, MCP |
 | Consumo | modelos por parte, `codex_ativo`, `distribuicao_provedores` (painel Custo com créditos **medidos** pelo Kiro), `limite_creditos_dia` (teto diário: ao atingir, novas execuções não começam; 0 = sem teto) |
-| Segurança | pastas permitidas/proibidas, regras de controle, isolamento dos testes, `terminal_ativo` |
-| Manutenção | desfazer, pastas isoladas, retomada após queda, organização da memória, pacotes, telemetria |
+| Segurança | pastas permitidas/proibidas, regras de controle, isolamento dos testes, `terminal_ativo`, `acesso_fora_pasta`, `codex_pastas_com_segredo` |
+| Editor | `autocompletar_codigo`, `autocompletar_automatico`, `autocompletar_fontes`, ramos desligados, `terminal_assistente`, `lsp_ativo`, servidores de linguagem (instalar), catálogo (pedir à IA) |
+| Manutenção | desfazer, pastas isoladas, retomada após queda, organização da memória, pacotes, telemetria, `reciclagem_dias`, `reciclagem_compactar` |
 
 ---
 
@@ -620,7 +631,8 @@ Documentação interativa em `http://127.0.0.1:8787/api/docs`. Todas sob `/api/v
 | Desfazer e isolamento | `GET /tarefas/{id}/restauracao`, `POST /restauracao/{id}/desfazer`, `GET/DELETE /isolamentos` |
 | Memória | `POST /memorias`, `GET /memorias/buscar`, `GET /memorias/navegar`, `GET /memorias/revisao`, `POST /memorias/organizar`, `POST /estudos` |
 | Visões | `GET /kanban`, `GET /conhecimento/grafo`, `GET /oficina`, `GET /execucoes/{id}/replay`, `GET /custos`, `GET /roteamento/estatisticas` |
-| Bancada | `GET /area/arvore`, `GET/PUT /area/arquivo`, `GET /area/buscar`, `GET/POST /area/git`, `POST /area/terminal`, `GET/POST /area/docker`, `POST /area/http`, `GET /area/comandos`, `POST /area/comandos/analisar`, `POST /area/comandos/ia` (ação arriscada responde 428 até ser reenviada com `confirmado: true`) |
+| Bancada | `GET /area/arvore`, `GET/PUT /area/arquivo`, `GET /area/buscar`, `GET/POST /area/git`, `POST /area/terminal`, `GET/POST /area/docker`, `POST /area/http`, `GET /area/comandos`, `POST /area/comandos/analisar`, `POST /area/comandos/ia`, `GET /area/editor`, `GET /area/codigo/catalogo`, `POST /area/codigo/ia`, `GET /area/lsp`, `POST /area/lsp/instalar\|completar\|explicar\|definicao\|diagnosticos` (ação arriscada responde 428 até ser reenviada com `confirmado: true`) |
+| Reciclagem | `GET /reciclagem`, `GET /reciclagem/previa`, `POST /reciclagem`, `GET /tarefas/{id}/caderno?amplo=true&q=` |
 | Sistema | `GET /saude` (pública), `/recursos`, `/kiro/status`, `/provedores`, `/preferencias`, `/configuracao`, `/ferramentas`, `/integracoes`, `/quadro`, `GET /eventos/stream` |
 
 ---
@@ -633,14 +645,14 @@ forja/
   orquestracao/    casos de uso: servico, coordenacao (master), caderno, status, escopo, aprovacoes, roteamento,
                    restauracao, isolamento, subtarefas, custos, organizacao, oficina, estudos…
   agentes/         contrato do provedor, estilo/autonomia e roteador Kiro/Codex
-  adapters/        kiro_acp (cliente ACP, provedor, mediador, perfis), codex_acp, sqlite, agentes_mock
+  adapters/        kiro_acp (cliente ACP, provedor, mediador, perfis), codex_acp, lsp (servidores de linguagem), sqlite, agentes_mock
   dominio/         contratos Pydantic, estados, erros, tempo
   memoria/ contexto/ conversa/ ferramentas/ seguranca/ preferencias/ integracoes/ observabilidade/ mcp/
   painel/estatico/ HTML/CSS/JS sem build (módulos ES), só consome a API
-  migrations/      Alembic (0001…0014)
+  migrations/      Alembic (0001…0015)
 scripts/           instalar.ps1, iniciar_forja.ps1, backup, diagnóstico do Kiro, demo, inspeção do painel, benchmarks
 tests/             pytest (unidade, integração, agente ACP falso por subprocesso, API)
-docs/              STATUS_IMPLEMENTACAO.md e ADRs 0001…0026
+docs/              STATUS_IMPLEMENTACAO.md e ADRs 0001…0027
 ```
 
 Camadas não se misturam: rotas não têm SQL, a orquestração não conhece HTTP, adaptadores não têm regra de negócio.
@@ -651,7 +663,7 @@ Camadas não se misturam: rotas não têm SQL, a orquestração não conhece HTT
 
 ```powershell
 pip install -r requirements-dev.txt          # + requirements-ui.txt para o navegador real
-python -m pytest -q                          # 1262 testes (agente ACP falso por subprocesso; nada real é chamado)
+python -m pytest -q                          # 1280 testes (agente ACP falso por subprocesso; nada real é chamado)
 python -m ruff check forja tests scripts
 pre-commit install                           # gitleaks + ruff a cada commit
 
@@ -672,9 +684,9 @@ O CI (GitHub Actions) roda gitleaks, ruff, a suíte, o painel em Chromium com ac
 ## 18 LIMITES CONHECIDOS
 
 - O Codex real (`codex-acp` 2.7.0) foi conferido com dados sintéticos (segurança, correção, roteamento); o uso contínuo ainda
-  não foi medido e os créditos do Codex não são lidos. O perfil de permissão nativo do Codex nega segredos, mas não a leitura
-  fora da pasta no modo de escrita (a Forja cobre com a vigia em tempo real).
-- O editor tem autocompletar local e "ir para a definição", sem LSP. A acessibilidade foi auditada pela árvore de acessibilidade
+  não foi medido e os créditos do Codex não são lidos. O perfil de permissão nativo do Codex nega segredos; leitura fora da pasta
+  segue a preferência `acesso_fora_pasta` (o Codex lê e a Forja registra, ou o turno é cancelado).
+- O LSP de C# (csharp-ls) não foi testado com servidor real (exige .NET SDK). A acessibilidade foi auditada pela árvore de acessibilidade
   do navegador e por teclado; ainda falta um teste com leitor de tela real (NVDA).
 - Workflows do Kiro IDE e `/compact` não são expostos pelo ACP; a Forja orquestra e gerencia o contexto por conta própria.
 - A hospedagem contínua é por sessão do Windows: a Forja fica no ar enquanto você estiver conectado.

@@ -65,6 +65,7 @@ class MemoriaAtualizaIn(_Estrito):
     resumo: Annotated[str, Field(max_length=2000)] | None = None
     conteudo: Annotated[str, Field(max_length=100_000)] | None = None
     tags: list[Annotated[str, Field(min_length=1, max_length=50)]] | None = Field(default=None, max_length=30)
+    refs: list[Texto] | None = Field(default=None, max_length=50)
     afirma: AfirmacaoIn | None = None
     motivo: Annotated[str, Field(max_length=1000)] = ""
 

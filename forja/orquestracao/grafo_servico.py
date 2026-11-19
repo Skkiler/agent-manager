@@ -160,9 +160,13 @@ class GrafoServico:
             alvo = t.obter(T.Memoria, memoria_id)
         if alvo is None or not p.pode(alvo["namespace"]):
             raise NaoEncontrado(f"Memoria {memoria_id} nao encontrada.")  # sem oraculo de existencia (igual ao ServicoMemoria)
-        memorias, _, _ = self._carregar(p, [alvo["namespace"]], incluir_inativas=True)
+        memorias, _, tipadas = self._carregar(p, [alvo["namespace"]], incluir_inativas=True)
         arestas, _ = self._arestas_de_memorias(memorias)
         nomes = {m["id"]: m["titulo"] for m in memorias}
+        # ligacoes tipadas (SUBTOPICO_DE, RELACIONADO_A...) tambem sao vizinhanca: sem elas o topico do projeto e as notas
+        # ligadas pela organizacao/reciclagem nao apareciam nos backlinks (achado da validacao do ADR-027)
+        arestas += [{"origem": a["origem"], "destino": a["destino"], "tipo": a["tipo"]} for a in tipadas
+                    if "nota" in a and a["origem"] in nomes and a["destino"] in nomes]
         saida = [{"id": a["destino"], "titulo": nomes.get(a["destino"], a["destino"][1:]), "tipo": a["tipo"],
                   "resolvido": not a["destino"].startswith("?")} for a in arestas if a["origem"] == memoria_id]
         entrada = [{"id": a["origem"], "titulo": nomes[a["origem"]], "tipo": a["tipo"]}

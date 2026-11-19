@@ -12,6 +12,7 @@ Regras (todas testadas):
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -105,3 +106,45 @@ def validar_lista(textos: list[str], rotulo: str, *, deve_existir: bool = True) 
     for t in textos:
         vistas.setdefault(str(validar_pasta(t, rotulo, deve_existir=deve_existir)), None)
     return list(vistas)
+
+
+# ------------------------------------------------------------------ caminhos citados pelo usuario (ADR-027)
+_CITADO = re.compile(r"(?<![\w/\\])(?:[A-Za-z]:[\\/]|~[\\/]|/(?=[\w.~-]))[^\s\"'<>|*?`,;()\[\]{}]*")
+ACESSO_FORA = ("bloquear", "perguntar", "livre_leitura")
+
+
+def caminhos_citados(texto: str, limite: int = 10) -> list[Path]:
+    """Pastas/arquivos ABSOLUTOS que o usuario escreveu no pedido ("olhe C:\\dados\\relatorios"). Ler o que o usuario pediu
+    explicitamente nao e o agente 'esticando': pode ser aprovado sem perguntar. So entram caminhos que existem, sem cara de
+    segredo e fora das pastas protegidas (dados da Forja, .git)."""
+    from forja.seguranca.sensiveis import caminho_sensivel
+
+    saida: list[Path] = []
+    for m in _CITADO.finditer(texto or ""):
+        bruto = m.group(0).rstrip(".:!")
+        if len(bruto) < 3:
+            continue
+        try:
+            p = Path(bruto).expanduser()
+            if not p.is_absolute() or not p.exists():
+                continue
+            r = p.resolve()
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if protegido(r) or caminho_sensivel(r.as_posix()) or r == Path(r.anchor) or r == Path.home().resolve():
+            continue  # disco ou pasta pessoal inteiros nao contam como "pasta citada"
+        if r not in saida:
+            saida.append(r)
+        if len(saida) >= limite:
+            break
+    return saida
+
+
+def dentro_de_citado(caminho: str, citados: list[Path]) -> bool:
+    if not citados or not caminho:
+        return False
+    try:
+        r = _real(Path(caminho))
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return any(_dentro(r, _real(c)) for c in citados) and not protegido(r)

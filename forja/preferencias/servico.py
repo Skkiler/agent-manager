@@ -55,6 +55,11 @@ def validar_valor(p: Preferencia, valor: Any) -> Any:
         if not isinstance(valor, list) or not all(isinstance(x, str) and x in validos for x in valor):
             raise ValidacaoDominio(f"{p.rotulo}: escolha entre {', '.join(sorted(validos)) or 'nenhum pacote disponivel'}")
         return sorted(set(valor))
+    if p.tipo == "escolhas":  # lista de caixas marcaveis (opcoes declaradas no registro)
+        validos = {v for v, _ in p.opcoes}
+        if not isinstance(valor, list) or not all(isinstance(x, str) and x in validos for x in valor):
+            raise ValidacaoDominio(f"{p.rotulo}: escolha entre {', '.join(sorted(validos))}")
+        return [v for v, _ in p.opcoes if v in set(valor)]
     raise ValidacaoDominio(f"{p.rotulo}: nao pode ser alterada aqui")
 
 

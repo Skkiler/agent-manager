@@ -41,7 +41,12 @@ Pr = Annotated[Principal, Depends(_principal)]
 
 
 @rm.post("/memorias", status_code=201)
-def criar(d: MemoriaIn, s: Mem, p: Pr) -> dict[str, Any]:
+def criar(d: MemoriaIn, s: Mem, p: Pr, evitar_duplicata: bool = False) -> dict[str, Any]:
+    """evitar_duplicata=true (usado pelos agentes): se ja existe nota ativa parecida no namespace, devolve ELA (duplicata=true)."""
+    if evitar_duplicata:
+        existente = s.parecida(p, d.namespace, d.titulo, d.conteudo or d.resumo)
+        if existente is not None:
+            return {**existente, "duplicata": True}
     return s.criar(p, d, ATOR)
 
 

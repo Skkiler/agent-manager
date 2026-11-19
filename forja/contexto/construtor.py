@@ -108,6 +108,9 @@ class ConstrutorContexto:
         # Com o MCP da Forja ligado o agente le sob demanda (just-in-time): o contexto vira REFERENCIAS (local + resumo),
         # sem trechos longos. Sem MCP, o agente nao tem como buscar, entao continua recebendo o trecho.
         self.referencias = False
+        # Namespace do PROJETO da tarefa (registros e sessoes recicladas do mesmo projeto, ADR-027). So o do proprio projeto:
+        # o agente que trabalha nele ja ve esse conteudo; outros projetos continuam fora. None = desligado.
+        self.namespaces_da_tarefa: Any | None = None  # (tarefa) -> list[str]
 
     # ------------------------------------------------------------------ consulta derivada da tarefa
     @staticmethod
@@ -145,8 +148,14 @@ class ConstrutorContexto:
                         pacote.omitidos.get("ref_explicita_inacessivel", 0) + 1
                     )
         pacote.termos = self.termos_da_tarefa(tarefa)
+        extra: list[str] = []
+        if self.namespaces_da_tarefa is not None:
+            try:
+                extra = [n for n in self.namespaces_da_tarefa(tarefa) or [] if n not in self.namespaces]
+            except Exception:  # noqa: BLE001 - o extra e melhoria; sem ele vale o contexto padrao
+                extra = []
         if pacote.termos:
-            candidatos += self._automaticos(" ".join(pacote.termos), pacote)
+            candidatos += self._automaticos(" ".join(pacote.termos), pacote, extra)
         escolhidos = self._selecionar(candidatos, limite, pacote)
         for n, it in enumerate(escolhidos, start=1):
             it.ref = f"{'M' if it.origem == 'memoria' else 'C'}{n}"
@@ -188,9 +197,11 @@ class ConstrutorContexto:
             sel.append("CONFLITO com outra memoria")
         return f"({' · '.join(sel)}) "
 
-    def _automaticos(self, consulta: str, pacote: PacoteContexto) -> list[ItemContexto]:
+    def _automaticos(self, consulta: str, pacote: PacoteContexto, extra: list[str] | None = None) -> list[ItemContexto]:
+        ns = [*self.namespaces, *(extra or [])]
+        p = Principal(self.principal.id, frozenset({*self.principal.namespaces, *(extra or [])})) if extra else self.principal
         try:
-            r = self.memoria.buscar(self.principal, consulta, self.namespaces, limite=12)
+            r = self.memoria.buscar(p, consulta, ns, limite=12)
         except ErroDominio:
             pacote.omitidos["sem_acesso"] = 1
             return []

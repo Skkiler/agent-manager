@@ -40,6 +40,22 @@ SEGREDOS_CURTO = ("SEGREDOS (regra absoluta): nunca leia, busque, imprima ou cop
                   "para conferir um .env use env.verificar da Forja.")
 PRESETS = {"restrito": ["read-workspace"], "liberado": ["edit-workspace"], "total": ["edit-workspace"]}
 
+# Fora das pastas do projeto (ADR-027): orientacao forte, sem proibir o que o usuario pediu. Preferencia 'acesso_fora_pasta'.
+_FORA_BASE = ("PASTAS: trabalhe nas pastas do projeto citadas no pedido. Fora delas, leia SO o que o usuario citou explicitamente "
+              "neste pedido (ex.: um caminho que ele escreveu). Se achar util olhar outra pasta (algo que viu no grafo, na memoria "
+              "ou num import), NAO leia por conta propria: proponha em '## Decisões para você' com o caminho e o motivo, e espere. ")
+REGRA_FORA = {
+    "perguntar": _FORA_BASE + "A Forja pede permissao ao usuario antes de qualquer acesso fora das pastas que nao foi citado.",
+    "livre_leitura": _FORA_BASE + "O usuario liberou LEITURA fora das pastas, mas prefira as pastas do projeto; escrever fora continua "
+                                  "pedindo permissao.",
+    "bloquear": ("PASTAS (regra absoluta): trabalhe SO dentro das pastas do projeto citadas neste pedido. Nao leia, liste nem busque "
+                 "nada fora delas: a Forja nega ou cancela o turno. Precisa de algo de fora? Peca em '## Decisões para você'."),
+}
+
+
+def regra_fora(politica: str) -> str:
+    return REGRA_FORA.get(politica, REGRA_FORA["perguntar"])
+
 
 # Contrato de escopo (anti "esticar"): o system prompt do kiro-cli manda agir sem hesitar e o prompt do agente entra como contexto
 # de prioridade menor (kirodotdev/Kiro#7792). Por isso a linguagem e forte, curta e repetida no pedido da Forja.

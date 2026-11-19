@@ -33,9 +33,36 @@ class FalaIn(BaseModel):
 # ------------------------------------------------------------------ caderno da tarefa (usado pelo MCP do agente)
 @rc.get("/tarefas/{id_}/caderno")
 def caderno(id_: ID, request: Request, q: Annotated[str, Query(max_length=100)] = "",
-            tipo: TipoCaderno | None = None) -> list[dict[str, Any]]:
+            tipo: TipoCaderno | None = None, amplo: bool = False) -> list[dict[str, Any]]:
+    """Caderno da tarefa. amplo=true (com q): tambem as notas do projeto no segundo cerebro e os vizinhos delas no grafo."""
     request.app.state.servico.obter(T.Tarefa, id_)  # 404 se a tarefa nao existe
+    if amplo:
+        return request.app.state.conhecimento.consultar(id_, q, tipo or "", amplo=True)
     return request.app.state.caderno.listar(id_, q, tipo or "")
+
+
+# ------------------------------------------------------------------ reciclagem de sessoes antigas (ADR-027)
+class ReciclarIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    alvo_id: str | None = Field(None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+    tipo: Literal["tarefa", "coordenacao"] = "tarefa"
+    dias: Annotated[int, Field(ge=0, le=3650)] | None = None
+
+
+@rc.get("/reciclagem")
+def reciclagem(request: Request, limite: Annotated[int, Query(ge=1, le=500)] = 100) -> dict[str, Any]:
+    r = request.app.state.reciclagem
+    return {"dias": r.dias, "compactar": r.compactar, "historico": r.historico(limite)}
+
+
+@rc.get("/reciclagem/previa")
+def reciclagem_previa(request: Request, dias: Annotated[int, Query(ge=0, le=3650)] | None = None) -> dict[str, Any]:
+    return request.app.state.reciclagem.previa(dias)
+
+
+@rc.post("/reciclagem")
+def reciclar(d: ReciclarIn, request: Request) -> dict[str, Any]:
+    return request.app.state.reciclagem.reciclar(d.alvo_id, d.tipo, d.dias)
 
 
 @rc.post("/tarefas/{id_}/caderno")

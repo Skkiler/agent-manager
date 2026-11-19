@@ -1,7 +1,8 @@
 // Editor de codigo leve (sem build, sem bibliotecas externas): textarea nativa (desfazer, selecao, IME e leitor de tela do
 // navegador) + camada de realce alinhada + calha com numeros de linha e marcas de problema. Busca/substituicao, previa de
 // Markdown/HTML (iframe sandbox, sem scripts), corretor ortografico do navegador e Ctrl+S. O conteudo e DADO (so DOM/texto).
-import { criarCompletador } from "./completar.js";
+import { criarCompletador, explicacaoDoCatalogo } from "./completar.js";
+import { lspDisponivel, lspLigado, prefsEditor } from "./editorcfg.js";
 import { icone } from "./icones.js";
 import { renderizar as renderizarMarkdown } from "./markdown.js";
 import { realcar } from "./realce.js";
@@ -59,7 +60,7 @@ export function criarEditor(op) {
   const camada = el("div", { className: "codigo" }, realce, area);
   const ajuda = el("span", { id: `${id}-ajuda`, className: "sr-only", textContent:
     "Tab indenta. Pressione Esc e depois Tab para sair do editor. Ctrl+S salva, Ctrl+F busca, Ctrl+H substitui, Ctrl+Espaço sugere, "
-    + "F12 vai para a definição." });
+    + "Ctrl+Shift+Espaço explica o que está no cursor, F12 vai para a definição." });
   const previa = el("div", { className: "previa", hidden: true, tabIndex: 0, "aria-label": "Prévia" });
 
   // ---- barra de busca
@@ -97,6 +98,12 @@ export function criarEditor(op) {
     larguraCaractere = c.measureText("0000000000").width / 10 || 7.8;
     return larguraCaractere;
   };
+  /** Posicao no formato do LSP: linha 0-based e coluna em unidades UTF-16 (as mesmas do JavaScript). */
+  const posLsp = (pos = area.selectionStart) => {
+    const v = area.value, ini = v.lastIndexOf("\n", pos - 1) + 1;
+    return { linha: (v.slice(0, ini).match(/\n/g) || []).length, coluna: pos - ini };
+  };
+  const pedirLsp = (acao, pos, extra = {}) => (op.lsp && lspLigado(linguagem) ? op.lsp(acao, { ...posLsp(pos), texto: area.value, ...extra }) : Promise.resolve(null));
   const comp = criarCompletador(area, {
     linguagem: () => linguagem,
     coordenadas: () => {
@@ -109,8 +116,85 @@ export function criarEditor(op) {
       inserir(area, texto);
       area.setSelectionRange(ini + cursorRel, ini + cursorRel);
     },
+    lsp: op.lsp ? (gatilho) => (lspDisponivel(linguagem) ? pedirLsp("completar", area.selectionStart, { gatilho })
+      .then((r) => (r && !r.indisponivel ? r : null)) : Promise.resolve(null)) : null,
   });
   corpo.append(comp.no);
+
+  // ---- explicacao ao parar o mouse (LSP ou catalogo) e dica de assinatura ao abrir parenteses (Ctrl+Shift+Espaco)
+  const dica = el("div", { className: "dica-codigo", role: "tooltip", id: `${id}-dica`, hidden: true });
+  corpo.append(dica);
+  let tDica = null, dicaSeq = 0;
+  const esconderDica = () => { clearTimeout(tDica); dicaSeq++; dica.hidden = true; area.removeAttribute("aria-describedby"); area.setAttribute("aria-describedby", `${id}-ajuda`); };
+  const mostrarDica = (conteudo, x, y) => {
+    dica.replaceChildren(...conteudo);
+    dica.style.left = `${Math.max(4, x)}px`;
+    dica.style.top = `${Math.max(4, y)}px`;
+    dica.hidden = false;
+    dica.classList.remove("entrando"); void dica.offsetWidth; dica.classList.add("entrando");
+    area.setAttribute("aria-describedby", `${id}-ajuda ${id}-dica`);
+  };
+  const blocosDica = (r) => {
+    const partes = [];
+    if (r?.assinatura?.rotulo) {
+      const { rotulo, parametro } = r.assinatura;
+      const i = parametro ? rotulo.indexOf(parametro) : -1;
+      partes.push(el("code", { className: "dica-assinatura" }, ...(i >= 0 ? [rotulo.slice(0, i), el("strong", { textContent: parametro }), rotulo.slice(i + parametro.length)] : [rotulo])));
+      if (r.assinatura.doc_parametro) partes.push(el("p", { className: "mudo", textContent: r.assinatura.doc_parametro.slice(0, 300) }));
+    }
+    if (r?.texto) partes.push(renderizarMarkdown(r.texto.slice(0, 2500)));
+    return partes;
+  };
+  const indicePorPonteiro = (ev) => {
+    const cs = getComputedStyle(area), rect = area.getBoundingClientRect();
+    const x = ev.clientX - rect.left - parseFloat(cs.paddingLeft || "0") + area.scrollLeft;
+    const y = ev.clientY - rect.top - parseFloat(cs.paddingTop || "0") + area.scrollTop;
+    const linha = Math.floor(y / ALTURA_LINHA) + 1, col = Math.floor(x / medirCaractere());
+    if (linha < 1 || col < 0) return -1;
+    const ini = inicioDaLinha(area.value, linha), fimLinha = area.value.indexOf("\n", ini);
+    const fim = fimLinha < 0 ? area.value.length : fimLinha;
+    return ini + col <= fim ? ini + col : -1;
+  };
+  const palavraEm = (pos) => {
+    const v = area.value;
+    let i = pos, f = pos;
+    while (i > 0 && /[\w$]/.test(v[i - 1])) i -= 1;
+    while (f < v.length && /[\w$]/.test(v[f])) f += 1;
+    return v.slice(i, f);
+  };
+  async function explicarEm(pos, x, y, soAssinatura = false) {
+    const meu = ++dicaSeq;
+    let r = await pedirLsp("explicar", pos).catch(() => null);
+    if (r?.indisponivel) r = null;
+    if (soAssinatura && r) r = { assinatura: r.assinatura, texto: r.assinatura ? "" : r.texto };
+    if (!r?.texto && !r?.assinatura) {  // sem LSP: a explicacao do catalogo (mesma do autocompletar)
+      const w = palavraEm(soAssinatura ? Math.max(0, area.value.lastIndexOf("(", pos - 1)) : pos);
+      const item = w ? await explicacaoDoCatalogo(linguagem, w, area.value) : null;
+      r = item ? { assinatura: { rotulo: item.assinatura || item.rotulo, parametro: "" }, texto: item.doc } : null;
+    }
+    if (meu !== dicaSeq || !r) return;
+    const blocos = blocosDica(r);
+    if (blocos.length) mostrarDica(blocos, x, y);
+  }
+  area.addEventListener("pointermove", (ev) => {
+    if (ev.buttons || comp.aberto()) return;
+    clearTimeout(tDica);
+    if (!dica.hidden && dica.dataset.origem === "mouse") esconderDica();
+    tDica = setTimeout(() => {
+      const pos = indicePorPonteiro(ev);
+      if (pos < 0 || !/[\w$]/.test(area.value[pos] || "")) return;
+      const r = corpo.getBoundingClientRect();
+      dica.dataset.origem = "mouse";
+      explicarEm(pos, ev.clientX - r.left + 8, ev.clientY - r.top + 18);
+    }, 650);
+  });
+  area.addEventListener("pointerleave", () => { if (dica.dataset.origem === "mouse") esconderDica(); });
+  const dicaNoCursor = (soAssinatura) => {
+    const [l, c] = linhaColuna(area.value, area.selectionStart);
+    dica.dataset.origem = "cursor";
+    explicarEm(area.selectionStart, calha.offsetWidth + 16 + (c - 1) * medirCaractere() - area.scrollLeft, 8 + (l - 1) * ALTURA_LINHA - area.scrollTop - 4, soAssinatura)
+      .then(() => { if (!dica.hidden) dica.style.top = `${Math.max(4, 8 + (l - 1) * ALTURA_LINHA - area.scrollTop - dica.offsetHeight - 4)}px`; });
+  };
   const palavraNoCursor = () => {
     const v = area.value, p = area.selectionStart;
     let i = p, f = p;
@@ -118,7 +202,13 @@ export function criarEditor(op) {
     while (f < v.length && /[\w$]/.test(v[f])) f += 1;
     return v.slice(i, f);
   };
-  const irDefinicao = () => { const w = palavraNoCursor(); if (w && op.aoDefinicao) op.aoDefinicao(w); };
+  const irDefinicao = async () => {
+    const w = palavraNoCursor();
+    if (!w) return;
+    const r = await pedirLsp("definicao", area.selectionStart).catch(() => null);  // LSP primeiro (entende o projeto)
+    if (r?.definicoes?.length && op.aoDefinicaoLsp) { op.aoDefinicaoLsp(w, r.definicoes); return; }
+    if (op.aoDefinicao) op.aoDefinicao(w);  // sem LSP: indice estrutural da Forja
+  };
   const divisao = el("div", { className: "editor-divisao" }, corpo, previa);
   const no = el("div", { className: "editor", dataset: { linguagem } }, barra, barraBusca, divisao, ajuda);
 
@@ -245,6 +335,8 @@ export function criarEditor(op) {
 
   // ---- teclado
   area.addEventListener("keydown", (ev) => {
+    if ((ev.ctrlKey || ev.metaKey) && ev.shiftKey && ev.key === " ") { ev.preventDefault(); comp.fechar(); dicaNoCursor(false); return; }
+    if (!dica.hidden && (ev.key === "Escape" || dica.dataset.origem === "mouse")) { esconderDica(); if (ev.key === "Escape" && !comp.aberto()) { ev.preventDefault(); return; } }
     if (comp.tecla(ev)) return;
     const ctrl = ev.ctrlKey || ev.metaKey;
     if (ev.key === "F12") { ev.preventDefault(); irDefinicao(); return; }
@@ -279,8 +371,14 @@ export function criarEditor(op) {
     }
   });
   const cursor = () => { const [l, c] = linhaColuna(area.value, area.selectionStart); op.aoCursor?.(l, c); };
-  area.addEventListener("input", (ev) => { agendar(); atualizarSujo(); if (!barraBusca.hidden) calcularMarcas(); op.aoAlterarTexto?.(area.value); if (!op.somenteLeitura) comp.aoDigitar(ev); });
-  area.addEventListener("blur", () => setTimeout(() => comp.fechar(), 120));
+  area.addEventListener("input", (ev) => {
+    agendar(); atualizarSujo(); if (!barraBusca.hidden) calcularMarcas(); op.aoAlterarTexto?.(area.value);
+    if (op.somenteLeitura) return;
+    comp.aoDigitar(ev);
+    if (ev.data === "(" || ev.data === ",") { if (prefsEditor().autocompletar_codigo) dicaNoCursor(true); }  // composicao da chamada
+    else if (ev.data === ")" && dica.dataset.origem === "cursor") esconderDica();
+  });
+  area.addEventListener("blur", () => setTimeout(() => { comp.fechar(); esconderDica(); }, 120));
   area.addEventListener("click", (ev) => { comp.fechar(); if (ev.ctrlKey || ev.metaKey) irDefinicao(); });
   area.addEventListener("scroll", sincronizarRolagem, { passive: true });
   for (const t of ["keyup", "click", "focus"]) area.addEventListener(t, cursor);

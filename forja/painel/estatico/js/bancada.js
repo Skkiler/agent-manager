@@ -4,6 +4,7 @@
 import { api, consulta } from "./api.js";
 import { criarDiff } from "./diff.js";
 import { criarEditor } from "./editor.js";
+import { configEditor, lspLigado } from "./editorcfg.js";
 import { agrupar, definirPainel, emitir, estado, ouvir, painelAberto, selecionarTarefa, tamanhoAtual, tamanhoPadrao, tamanhoPainel } from "./estado.js";
 import { icone } from "./icones.js";
 import { $, dialogo, el, limpar, toast } from "./ui.js";
@@ -133,10 +134,13 @@ async function montarAba(a) {
   if (!a.editor) {
     limpar(v); v.append(el("p", { className: "mudo carregando", textContent: `Abrindo ${a.rel}…` }));
     try {
-      const [r, p] = await Promise.all([api("GET", `/area/arquivo?${consulta({ projeto: a.projeto, raiz: a.raiz, rel: a.rel })}`), projeto(a.projeto)]);
+      const [r, p] = await Promise.all([api("GET", `/area/arquivo?${consulta({ projeto: a.projeto, raiz: a.raiz, rel: a.rel })}`), projeto(a.projeto),
+        configEditor()]);
       a.sha = r.sha; a.crlf = r.fim_de_linha === "crlf"; a.somente_leitura = r.somente_leitura; a.segredo = r.segredo; a.projetoNome = p?.nome; a.pastaNome = (p?.pastas?.[a.raiz]?.caminho || "").split(/[\\/]/).pop();
       a.editor = criarEditor({ texto: r.conteudo, linguagem: r.linguagem, somenteLeitura: r.somente_leitura, rotulo: `Editor: ${a.rel}`,
         aoSalvar: (texto) => salvarArquivo(a, texto), aoMudar: () => desenharAbas(), aoCursor: cursor, aoDefinicao: (nome) => irDefinicao(a, nome),
+        lsp: (acao, corpo) => api("POST", `/area/lsp/${acao}`, { projeto: a.projeto, raiz: a.raiz, rel: a.rel, ...corpo }),
+        aoDefinicaoLsp: (nome, defs) => irDefinicaoLsp(a, nome, defs),
         aoAlterarTexto: agrupar(() => verificarProblemas(a, a.editor.valor()), 1200) });
       lembrarRecente(a);
       verificarProblemas(a);
@@ -168,6 +172,17 @@ async function irDefinicao(a, nome) {
   } catch (e) { toast(e.message, "erro"); }
 }
 
+/** F12 pelo servidor de linguagem: definicoes dentro do projeto abrem; fora dele (biblioteca instalada) so sao mostradas. */
+function irDefinicaoLsp(a, nome, defs) {
+  const dentro = defs.filter((d) => !d.externo);
+  if (dentro.length === 1 && defs.length === 1) return abrirArquivo({ projeto: a.projeto, raiz: a.raiz, rel: dentro[0].rel, linha: dentro[0].linha });
+  if (!dentro.length) return toast(`"${nome}" é definido fora do projeto (${defs[0].nome}:${defs[0].linha}), em uma biblioteca instalada.`);
+  const d = dialogo(`Definições de ${nome}`, el("ul", { className: "lista-definicoes" }, ...defs.map((x) => el("li", {},
+    x.externo ? el("span", { className: "bloco mudo", textContent: `${x.nome}:${x.linha} (fora do projeto)` })
+      : el("button", { type: "button", className: "bloco", onclick: () => { d.fechar(); abrirArquivo({ projeto: a.projeto, raiz: a.raiz, rel: x.rel, linha: x.linha }); } },
+        el("span", { className: "trunc", textContent: x.rel }), el("span", { className: "mudo", textContent: `linha ${x.linha}` }))))));
+}
+
 /** Simbolos do arquivo da aba ativa (para a paleta: @). */
 export async function simbolosDaAba() {
   const a = abaAtiva();
@@ -194,11 +209,24 @@ async function salvarArquivo(a, texto) {
 
 async function verificarProblemas(a, conteudo) {
   try {
+    const minha = (a.geracaoProblemas = (a.geracaoProblemas || 0) + 1);
     const r = await api("POST", "/area/problemas", { projeto: a.projeto, raiz: a.raiz, rel: a.rel, ...(conteudo !== undefined ? { conteudo } : {}) });
-    a.problemas = r.problemas;
-    a.editor?.marcarProblemas(r.problemas);
-    if (st.ativa === a.chave) status(a);
-    emitir("problemas", { aba: a.chave, titulo: a.rel, itens: r.problemas });
+    const publicar = (itens) => {
+      if (minha !== a.geracaoProblemas) return;
+      a.problemas = itens;
+      a.editor?.marcarProblemas(itens);
+      if (st.ativa === a.chave) status(a);
+      emitir("problemas", { aba: a.chave, titulo: a.rel, itens });
+    };
+    publicar(r.problemas);
+    if (a.editor && lspLigado(a.editor.linguagem())) {  // erros do compilador/analisador do servidor de linguagem, sem travar a tela
+      const texto = conteudo !== undefined ? conteudo : a.editor.valor();
+      const d = await api("POST", "/area/lsp/diagnosticos", { projeto: a.projeto, raiz: a.raiz, rel: a.rel, texto }).catch(() => null);
+      if (d?.problemas?.length) {
+        const vistos = new Set(r.problemas.map((p) => `${p.linha}|${p.mensagem}`));
+        publicar([...r.problemas, ...d.problemas.filter((p) => !vistos.has(`${p.linha}|${p.mensagem}`))]);
+      }
+    }
   } catch { /* diagnostico e conveniencia */ }
 }
 

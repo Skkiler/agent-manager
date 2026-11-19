@@ -3,6 +3,7 @@
 import { api } from "./api.js";
 import { abaAtiva, abas as abasEditor, ativar } from "./bancada.js";
 import { comConfirmacao } from "./confirmar.js";
+import { configEditor } from "./editorcfg.js";
 import { definirPainel, emitir, ouvir } from "./estado.js";
 import { icone } from "./icones.js";
 import { atualizarOficina, montarOficina } from "./oficina.js";
@@ -174,6 +175,7 @@ async function montarTerminal(corpo) {
       const minha = ++geracaoAnalise;
       const linha = entrada.value;
       if (!linha.trim()) { limpar(assist); fecharSugestoes(); return; }
+      if (!(await configEditor()).preferencias.terminal_assistente) { limpar(assist); fecharSugestoes(); return; } // Configurações > Editor
       try {
         const r = await api("POST", "/area/comandos/analisar", { linha, contexto: contextoTerminal.dados });
         if (minha !== geracaoAnalise) return;
