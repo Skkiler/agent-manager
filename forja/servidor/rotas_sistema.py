@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Request, Response
 
 from forja.dominio.configuracao import SalvarConfiguracaoIn
 from forja.dominio.revisao import SolicitarRevisaoIn
+from forja.orquestracao.alimentacao import LoteIn
 from forja.orquestracao.configuracao_servico import ConfiguracaoServico
 from forja.orquestracao.estudos import EstudoIn
 from forja.orquestracao.revisao import RevisaoServico
@@ -56,3 +57,28 @@ def solicitar_estudo(d: EstudoIn, request: Request, resposta: Response) -> dict[
     Cria uma tarefa preparada (executa so com `executar=true`, pois consome creditos). As notas nascem candidatas."""
     resposta.headers["Cache-Control"] = "no-store"
     return request.app.state.estudos.solicitar(d)
+
+
+# ------------------------------------------------------------------ alimentacao em lote (ADR-029)
+@rs.post("/estudos/lote/descobrir")
+def descobrir_lote(d: LoteIn, request: Request) -> dict[str, Any]:
+    """Previa (sem IA, sem gravar): projetos encontrados na pasta, escopo (empresa/proprio) e pasta de destino de cada um."""
+    return request.app.state.alimentacao.descobrir(d)
+
+
+@rs.post("/estudos/lote", status_code=202)
+def iniciar_lote(d: LoteIn, request: Request) -> dict[str, Any]:
+    """Indexa o codigo e cria a nota-hub de cada projeto (deterministico) e, com `estudar`, um estudo do Kiro por projeto
+    (consome creditos, ate `teto_creditos`). Roda em segundo plano; acompanhe em GET /estudos/lote."""
+    return request.app.state.alimentacao.iniciar(d)
+
+
+@rs.get("/estudos/lote")
+def estado_lote(request: Request) -> dict[str, Any]:
+    return request.app.state.alimentacao.estado()
+
+
+@rs.post("/estudos/lote/cancelar")
+def cancelar_lote(request: Request) -> dict[str, Any]:
+    """Para de iniciar estudos novos (os que ja estao rodando terminam)."""
+    return request.app.state.alimentacao.cancelar()

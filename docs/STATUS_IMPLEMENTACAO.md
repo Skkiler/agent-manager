@@ -464,6 +464,59 @@ Relatorio completo: `docs/RELATORIO_AVALIACAO_2026-11-18.md`. Somente avaliacao;
   abas por grupo conferido pelo script. Login (8798): 0 problemas.
 - **Nao feito nesta rodada:** sondagem com Kiro/Codex reais do acesso pelo MCP (so testes de unidade e API); C# com servidor
   real; NVDA real.
+## Rodada 7: pastas do segundo cerebro e alimentacao em lote com os projetos reais (2026-11-19/23, ADR-029) — resultados reais
+- **Codigo novo:**
+  - `orquestracao/pastas_memoria.py`: criar, mover, renomear e remover pasta; agentes so propoem.
+  - `orquestracao/alimentacao.py`: descoberta, indice, hubs e estudos em lote.
+  - Notas por escopo (projeto, entidade, generico) em `EstudoServico`.
+  - Busca padrao em todo o segundo cerebro; grafo comeca em `pessoal`.
+  - Telas: aba Pastas e cartao "Alimentar com uma pasta de projetos".
+  - MCP `forja_pasta_propor`.
+- **Alimentacao real** da pasta `3.0 - Codigos Python`, so leitura:
+  - 47 projetos (39 empresa, 8 proprios); 2 pastas puladas (a propria Forja e uma vazia);
+  - 2836 arquivos de codigo indexados (46 mil simbolos), sem logs, dados, entrada/saida, `.env` ou chaves;
+  - 47 estudos do Kiro concluidos, 3 por vez, cerca de 13 creditos (0,2 por projeto);
+  - 3 pedidos de organizar com IA (cerca de 9 creditos cada) e 13 topicos;
+  - total medido de 42 creditos, dentro do teto de 300 pedido pelo usuario.
+- **Resultado no banco real** (agregados):
+  - 632 notas ativas: 228 de projetos da empresa, 135 de entidades da empresa, 188 genericas (`pessoal/geral`), 45 de
+    projetos proprios e 14 de entidades proprias;
+  - 61 hubs de entidade, 8 modulos e 963 ligacoes (647 SUBTOPICO_DE, 176 REUTILIZAVEL_EM, 95 DEPENDE_DE, 45 RELACIONADO_A);
+  - saude final: nota 100, mediana de 141 palavras, 0,5% de texto repetido (era 2,6%), 5 orfas e 9 links sem nota;
+  - 95 sugestoes ficam na Revisao para o usuario (87 ligacoes e 8 topicos);
+  - aceitas pela sonda: 8 modulos, 5 fusoes, 27 tags, 13 topicos e 45 ligacoes.
+- **Uso real pelos agentes:**
+  - Codex respondeu "quais automacoes usam o sistema X (um sistema interno)" so pelo MCP (buscar e navegar), citando as notas e anotando no caderno.
+  - Kiro, na primeira tentativa, nao achou nenhuma nota: a busca so devolvia codigo. Depois da correcao (notas primeiro),
+    descreveu a arquitetura comum dos RPAs citando 8 notas e gravou a conclusao no caderno (0,9 credito).
+- **Achados do teste real e corrigidos com teste** (detalhes no ADR-029):
+  - o MCP pedia aprovacao no nivel restrito;
+  - falso laco "Tool Load";
+  - estudo bloqueado por decisoes;
+  - copias feitas por `forja_propor_nota`;
+  - descoberta quebrando `src/` e `tests/` em projetos;
+  - pastas `.0.` tratadas como ocultas;
+  - pedido de organizacao acima de 4000 caracteres;
+  - modulo entre projetos reduzido a 1 nota;
+  - 700 sugestoes de ligacao inuteis;
+  - tags e entidades com grafias diferentes;
+  - links quebrados por acento e entre pastas;
+  - "Registro" de tarefas internas;
+  - "null" na tela.
+- **Testes executados:**
+  - `python -m pytest`: **1309 passed** (novo: `tests/test_rodada7_pastas_lote.py`, 19 testes);
+  - `ruff check .` ok; `node --check` em todos os modulos JS ok;
+  - inspetor no navegador (8799, dados ficticios): **147 OK, 0 falhas**, axe sem violacao (inclui a aba Pastas), 0 px de
+    estouro em tela estreita; login (8798): 0 problemas;
+  - capturas da copia do banco real (servidor temporario, sem login), fora do Git.
+- **Dados:**
+  - backups do banco antes do lote e antes do conserto em massa (`scripts/backup_banco.py`);
+  - a sonda rodou fora do Git, em `%TEMP%\forja_sonda\alimentar`, e nunca leu token, `.env` nem segredos.
+- **Pendente:**
+  - revisar as 95 sugestoes;
+  - validar as notas candidatas (todas nascem candidatas);
+  - a heuristica empresa/proprio e por caminho: o usuario corrige movendo ou renomeando a pasta;
+  - C# com servidor real; NVDA real.
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.
@@ -483,8 +536,8 @@ Relatorio completo: `docs/RELATORIO_AVALIACAO_2026-11-18.md`. Somente avaliacao;
 - gitleaks e CI ativos (ver Fase 9). Um processo `kiro-cli` por execucao (sem pool).
 
 ## Retomada sem reprocessar
-1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1290 passed. Proximo: sondar com Kiro/Codex reais o acesso
-   amplo pelo MCP, C# com servidor de linguagem real (precisa do .NET SDK), teste com NVDA real e medir o ganho da reciclagem
+1. `scripts\instalar.ps1` (uso) ou `pip install -r requirements-dev.txt`; `python -m pytest` -> 1309 passed. Proximo: revisar as sugestoes pendentes da
+   alimentacao em lote, validar as notas mais usadas, C# com servidor de linguagem real (precisa do .NET SDK), teste com NVDA real e medir o ganho da reciclagem
    e da modularizacao no contexto de tarefas reais.
 2. Para ingerir um repo: definir `APP_MEMORY_INGEST_ROOTS` e chamar `POST /api/v1/memorias/ingerir` (ver README).
 3. Proxima tarefa liberada: rotular >= 15 perguntas reais (4.8) para decidir 4.9 (embeddings so se superarem o baseline); 4.21 (CI visual); 4.22 (arestas pela UI). Historico anterior: Historico: Fase 4 inicial ligou memoria+codigo ao prompt do provedor Kiro,

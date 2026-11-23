@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { emitir, selecionarTarefa } from "../estado.js";
 import { el, limpar, tag, toast } from "../ui.js";
 import { formularioEstudo } from "./memoria.js";
+import { listarPastas } from "./pastas.js";
 
 const cabeca = (titulo, texto) => [el("h1", { textContent: titulo }), el("p", { className: "subtitulo", textContent: texto })];
 const carregando = (t = "Carregando…") => el("p", { className: "mudo carregando", role: "status", textContent: t });
@@ -30,6 +31,7 @@ export const aprender = {
       ...cabeca("Buscar e aprender", "Peça a um agente para estudar uma pasta ou pesquisar um tópico. Ele cria notas modulares (um assunto por nota, ligadas por tópico) que entram como candidatas."),
       el("div", { className: "grade-conhecimento" },
         el("section", { className: "card" }, el("h2", { textContent: "Novo estudo" }), formularioEstudo()),
+        cartaoLote(),
         el("section", { className: "card" }, el("h2", { textContent: "Aprender com o que já foi feito" }),
           el("p", { textContent: "Sessões antigas (tarefas terminadas e sub-masters encerrados) viram conhecimento: decisões, o que foi resolvido, erros e pendências, sem duplicar notas que já existem." }),
           el("button", { type: "button", textContent: "Ver o que seria reciclado", onclick: verReciclagem }), recicla,
@@ -37,6 +39,72 @@ export const aprender = {
           el("ul", { className: "regras-nota" }, ...REGRAS.map((r) => el("li", { textContent: r })))))));
   },
 };
+
+// ---------------------------------------------------------------- alimentacao em lote (ADR-029)
+const ETAPAS = { na_fila: "na fila", indexado: "indexado", estudando: "estudando", estudado: "estudado", ja_estudado: "já estudado",
+  teto_de_creditos: "parou no teto", estudo_recusado: "recusado" };
+const lista = (v) => v.split(",").map((x) => x.trim()).filter(Boolean);
+
+function cartaoLote() {
+  const raiz = el("input", { type: "text", maxLength: 500, required: true, placeholder: "C:\\Codigos (pasta permitida em Configurações > Privacidade)", "aria-label": "Pasta com os projetos" });
+  const empresa = el("input", { type: "text", maxLength: 41, value: "trabalho", pattern: "[a-z0-9][a-z0-9._-]{0,40}", "aria-label": "Identificador da empresa" });
+  const interno = el("input", { type: "text", maxLength: 41, value: "proprios", pattern: "[a-z0-9][a-z0-9._-]{0,40}", "aria-label": "Identificador dos projetos próprios" });
+  const proprios = el("input", { type: "text", maxLength: 500, placeholder: "Ex.: Estudos e projetos pessoais", "aria-label": "Trechos do caminho que marcam projeto próprio" });
+  const excluir = el("input", { type: "text", maxLength: 500, placeholder: "Opcional: nomes de pastas a pular", "aria-label": "Pastas a pular" });
+  const estudar = el("input", { type: "checkbox", checked: true });
+  const paralelo = el("select", { "aria-label": "Estudos ao mesmo tempo" }, ...[1, 2, 3, 4].map((n) => el("option", { value: n, textContent: String(n), selected: n === 2 })));
+  const teto = el("input", { type: "number", min: 0, max: 1000, step: 1, value: 300, "aria-label": "Teto de créditos" });
+  const saida = el("div", { "aria-live": "polite" });
+  const estado = el("div", { "aria-live": "polite" });
+  const pedido = () => ({ raiz: raiz.value.trim(), empresa_id: empresa.value.trim() || "trabalho", interno_id: interno.value.trim() || "proprios",
+    interno_contem: lista(proprios.value), excluir: lista(excluir.value), estudar: estudar.checked, paralelo: Number(paralelo.value), teto_creditos: Number(teto.value) || 0 });
+  const previa = async () => {
+    if (!raiz.value.trim()) return raiz.focus();
+    limpar(saida); saida.append(carregando("Procurando projetos…"));
+    try {
+      const d = await api("POST", "/estudos/lote/descobrir", pedido());
+      limpar(saida);
+      saida.append(el("p", { textContent: `${d.projetos.length} projeto(s): ${Object.entries(d.por_escopo).map(([k, v]) => `${v} ${k === "empresa" ? "da empresa" : "próprio(s)"}`).join(", ")}; ${d.ignorados.length} pasta(s) puladas.` }),
+        el("table", { className: "tabela-lote" }, el("thead", {}, el("tr", {}, ...["Projeto", "Escopo", "Pasta no segundo cérebro", "Código"].map((x) => el("th", { scope: "col", textContent: x })))),
+          el("tbody", {}, ...d.projetos.map((p) => el("tr", {}, el("td", { textContent: p.grupo ? `${p.grupo} / ${p.nome}` : p.nome }),
+            el("td", {}, tag(p.escopo === "empresa" ? "empresa" : "próprio", p.escopo === "empresa" ? "aviso" : "ok")), el("td", { textContent: p.namespace }),
+            el("td", { textContent: Object.entries(p.linguagens).slice(0, 3).map(([k, v]) => `${k} ${v}`).join(", ") || "-" }))))));
+    } catch (e) { limpar(saida); saida.append(el("p", { className: "aviso", role: "alert", textContent: e.message })); }
+  };
+  let relogio = null;
+  const acompanhar = async () => {
+    clearTimeout(relogio);
+    if (!estado.isConnected && relogio) return;
+    try {
+      const e = await api("GET", "/estudos/lote");
+      limpar(estado);
+      if (!e.projetos?.length) return;
+      const cont = {};
+      for (const p of e.projetos) cont[p.etapa] = (cont[p.etapa] || 0) + 1;
+      estado.append(el("p", { textContent: `Lote ${e.rodando ? "rodando" : e.situacao} · ${e.projetos.length} projeto(s) · ${Number(e.creditos || 0).toFixed(2)} crédito(s)${e.teto_atingido ? " · teto atingido" : ""}` }),
+        el("div", { className: "linha" }, ...Object.entries(cont).map(([k, v]) => tag(`${ETAPAS[k] || k.replace("estudo_", "estudo ")}: ${v}`, k === "estudado" ? "ok" : k.startsWith("estudo_") ? "aviso" : ""))),
+        ...(e.rodando ? [el("button", { type: "button", textContent: "Parar de iniciar estudos", onclick: async () => { await api("POST", "/estudos/lote/cancelar"); acompanhar(); } })] : []));
+      if (e.rodando) relogio = setTimeout(acompanhar, 5000);
+    } catch { /* sem lote ainda */ }
+  };
+  const iniciar = async () => {
+    if (!raiz.value.trim()) return raiz.focus();
+    const p = pedido();
+    if (p.estudar && !confirm(`Indexar o código e estudar cada projeto com IA (até ${p.teto_creditos || "sem teto de"} créditos, ${p.paralelo} por vez)? As notas entram como candidatas.`)) return;
+    try { await api("POST", "/estudos/lote", p); toast("Alimentação em lote iniciada", "ok"); relogio = 1; acompanhar(); } catch (e) { toast(e.message, "erro"); }
+  };
+  requestAnimationFrame(acompanhar);
+  return el("section", { className: "card" }, el("h2", { textContent: "Alimentar com uma pasta de projetos" }),
+    el("p", { textContent: "Cada projeto vira uma pasta no segundo cérebro (pessoal/empresa/<id>/projetos ou pessoal/interno/<id>/projetos) com o código indexado e uma nota-hub. Com IA, um agente estuda cada um e separa o que é do projeto, o que é de um sistema compartilhado (nota da entidade, uma só) e o que é técnica reutilizável. Pastas de logs e dados e arquivos de segredo ficam de fora." }),
+    el("label", { className: "campo" }, el("span", { textContent: "Pasta com os projetos" }), raiz),
+    el("div", { className: "linha" }, el("label", { className: "campo" }, el("span", { textContent: "Empresa (id)" }), empresa),
+      el("label", { className: "campo" }, el("span", { textContent: "Próprios (id)" }), interno)),
+    el("label", { className: "campo" }, el("span", { textContent: "Marca de projeto próprio no caminho (separe por vírgula)" }), proprios),
+    el("label", { className: "campo" }, el("span", { textContent: "Pular" }), excluir),
+    el("div", { className: "linha" }, el("label", {}, estudar, " estudar com IA"), el("label", {}, "ao mesmo tempo ", paralelo), el("label", {}, "teto de créditos ", teto)),
+    el("div", { className: "linha" }, el("button", { type: "button", textContent: "Ver projetos (prévia)", onclick: previa }),
+      el("button", { type: "button", className: "primario", textContent: "Iniciar", onclick: iniciar })), saida, estado);
+}
 
 const REGRAS = [
   "Um assunto por nota, com título que diz o assunto (ex.: \"Sistema Função: automações por HTTP\").",
@@ -56,6 +124,8 @@ export const organizar = {
     limpar(raiz);
     const escopo = el("select", { "aria-label": "Quais notas analisar" }, el("option", { value: "", textContent: "Todas as notas permitidas" }),
       el("option", { value: "pessoal", textContent: "Pessoais (projetos, estudos, aprendizados)" }), el("option", { value: "publico", textContent: "Públicas" }));
+    listarPastas().then((ps) => escopo.append(...ps.filter((x) => x.nivel >= 1 && x.total > 0 && !x.namespace.startsWith("publico/forja-base"))
+      .map((x) => el("option", { value: x.namespace, textContent: `${"· ".repeat(x.nivel)}${x.namespace} (${x.total})` }))));
     const base = el("input", { type: "checkbox" });
     const painel = el("div", { "aria-live": "polite" });
     const foco = el("input", { type: "text", maxLength: 500, placeholder: "Opcional: ex.: notas do sistema Função; automações HTTP", "aria-label": "Foco da organização" });

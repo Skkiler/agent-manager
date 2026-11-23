@@ -72,7 +72,9 @@ def eh_base(ns: str) -> bool:
 ESTADOS_ARESTA = frozenset({"candidato", "observado", "verificado", "validado", "contestado", "obsoleto"})
 
 SENSIBILIDADES = ("publico", "pessoal", "empresa", "terceiros")
-_NS_RE = re.compile(r"^(publico|pessoal|terceiros|empresa/[a-z0-9][a-z0-9._-]{0,40})(/[a-z0-9][a-z0-9._-]{0,40}){0,4}$")
+# ate 6 subniveis: pastas do usuario como pessoal/empresa/<id>/projetos/<projeto>/<assunto> (ADR-029)
+_NS_RE = re.compile(r"^(publico|pessoal|terceiros|empresa/[a-z0-9][a-z0-9._-]{0,40})(/[a-z0-9][a-z0-9._-]{0,40}){0,6}$")
+RAIZES_NS = ("publico", "pessoal", "terceiros")
 
 
 def validar_namespace(ns: str) -> str:
@@ -81,6 +83,21 @@ def validar_namespace(ns: str) -> str:
         raise ValidacaoDominio(
             "namespace invalido (use publico | pessoal | terceiros | empresa/<id>, com subniveis opcionais).")
     return ns
+
+
+_PREFIXO_TAG = re.compile(r"^(?:tipo|assunto|projeto|entidade|tag|tema|categoria)\s*[:/]\s*")
+
+
+def normalizar_tag(tag: str) -> str:
+    """Uma forma so por tag escrita por agente (achado no lote real: 'técnica', 'tecnica', 'tipo:tecnica' e 'tipo/tecnica' viravam
+    4 tags): minusculas, sem acento, sem prefixo de categoria, espacos e '_' viram '-'."""
+    import unicodedata
+
+    t = "".join(c for c in unicodedata.normalize("NFKD", str(tag or "").casefold()) if not unicodedata.combining(c)).strip(" `'\"").lstrip("#").strip()
+    t = _PREFIXO_TAG.sub("", t)
+    t = re.sub(r"[\s_]+", "-", t)
+    t = re.sub(r"[^a-z0-9.+#-]", "", t)
+    return re.sub(r"-{2,}", "-", t).strip("-.")[:50]
 
 
 def sensibilidade_de(ns: str) -> str:

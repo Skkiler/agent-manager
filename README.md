@@ -242,7 +242,7 @@ os endereços `#/<área>` continuam valendo.
 | **Código** (barra lateral) | Git, Docker |
 | **Dev** | HTTP, Comandos |
 | **Agentes** | Master, Tarefas, Quadro |
-| **Saber** | Grafo e notas, Buscar e aprender, Organizar, Revisão, Ferramentas |
+| **Saber** | Grafo e notas, Buscar e aprender, Pastas, Organizar, Revisão, Ferramentas |
 | **Conexões** | Integrações, Custo |
 
 | Área | O que faz |
@@ -253,7 +253,8 @@ os endereços `#/<área>` continuam valendo.
 | **Conversa** (direita) | Briefing do agente em seções, relatos de status e verificação da Forja. Uma resposta sua cobre todas as decisões e retoma a execução. Anexos e @menção de arquivos. Aba **Decisões** com as aprovações pendentes. |
 | **Quadro** | Mensagens tipadas entre master, operador, sistema e agentes, por prioridade. |
 | **Grafo e notas** | Grafo do segundo cérebro (estilo Obsidian), backlinks, **Avaliar a busca**. |
-| **Buscar e aprender** | Busca em todo o segundo cérebro e **Estudar e alimentar** (pasta ou tópico). |
+| **Buscar e aprender** | **Estudar e alimentar** (pasta ou tópico) e **Alimentar com uma pasta de projetos** (lote, ver §10). |
+| **Pastas** | Árvore das pastas do segundo cérebro com contagem; criar, renomear (migra tudo), remover vazia e mover notas. |
 | **Organizar** | Saúde das notas (0–100), trechos repetidos entre notas e **Organizar com IA** (ver §10). |
 | **Revisão (N)** | Fila das sugestões de organização; nada muda sem você aceitar. |
 | **Ferramentas** | Catálogo das ferramentas determinísticas, com execução e custo em tokens. |
@@ -544,6 +545,15 @@ Preferência `status_resumos`:
   volta como sugestões: criar um **módulo** com a informação comum e a **nota da entidade** (ex.: "Sistema Função"), tirar a
   repetição das notas de origem com `Ver [[módulo]]`, ligar notas, dividir nota grande e acrescentar tags. Nota validada não é
   editada, só ligada.
+- **Pastas** (ADR-029): o segundo cérebro do usuário fica em `pessoal`, organizado em pastas como `pessoal/empresa/<id>/projetos`,
+  `pessoal/interno/<id>/projetos` e `pessoal/geral`; `publico` é o framework inicial. Você cria, renomeia (migra notas, subpastas e
+  índice de código), move e remove pastas vazias em Saber > Pastas. Agentes só propõem (`forja_pasta_propor`), e a proposta
+  espera você na Revisão. Busca e grafo começam em `pessoal`.
+- **Alimentar com uma pasta de projetos** (Saber > Buscar e aprender): a Forja acha os projetos, indexa o código e cria uma
+  nota-hub por projeto (stack, estrutura, entradas, dependências), sem IA. Depois, um estudo do Kiro por projeto (N por vez, até
+  o teto de créditos) separa o que é **do projeto**, o que é de uma **entidade** compartilhada (sistema, órgão, regra de negócio:
+  uma nota só, ligada a cada projeto que a usa) e o que é **técnica genérica** (em `pessoal/geral`). Logs, dados,
+  entrada/saída, `.env` e chaves ficam de fora; o agente de estudo é negado ao tentar abri-los.
 - **Notas eficientes**: um assunto por nota, título específico, 60–350 palavras, tags de entidade/tipo/projeto, fatos da entidade
   na nota da entidade. Os agentes recebem essas regras e `forja_propor_nota` devolve avisos de qualidade.
 
@@ -556,9 +566,11 @@ Preferência `status_resumos`:
   (pytest, jest, vitest, go, cargo),
   `logs.agrupar_falhas`, `git.diff_analisar`, `segredos.varrer`, `env.verificar` (só presença), `tokens.orcar` e outras. As de
   arquivo só enxergam as **pastas permitidas**.
-- **MCP da Forja** (stdio, sem porta; 9 ferramentas): `forja_listar_ferramentas`, `forja_executar_ferramenta`,
-  `forja_buscar_memoria`, `forja_navegar_memoria`, `forja_propor_nota`, `forja_quadro_ler`, `forja_quadro_publicar`,
-  `forja_caderno_salvar`, `forja_caderno_consultar`. Cada uso passa pelas suas aprovações.
+- **MCP da Forja** (stdio, sem porta; 10 ferramentas): `forja_listar_ferramentas`, `forja_executar_ferramenta`,
+  `forja_buscar_memoria` (notas primeiro, depois código indexado), `forja_navegar_memoria`, `forja_propor_nota`,
+  `forja_pasta_propor` (só propõe; você decide na Revisão), `forja_quadro_ler`, `forja_quadro_publicar`, `forja_caderno_salvar`,
+  `forja_caderno_consultar`. As que passam pela API da Forja (segundo cérebro, caderno, quadro, propostas) são liberadas em
+  qualquer nível de autonomia; `forja_executar_ferramenta` lê arquivos e segue o nível (em estudos, é liberada).
 - **Integrações** (Jira, GitHub, Trello, Notion, Google Agenda, Gmail, busca web, webhook e fontes locais): nascem desligadas; a
   tela recebe só o **nome** da variável (`FORJA_INT_*`), o valor fica no `.env` do seu perfil; só HTTPS; escrita só como proposta.
 
@@ -653,9 +665,10 @@ Documentação interativa em `http://127.0.0.1:8787/api/docs`. Todas sob `/api/v
 | Conversa e contexto | `GET/POST /tarefas/{id}/conversa`, `GET /tarefas/{id}/contexto`, `GET/POST /tarefas/{id}/caderno`, `GET /execucoes/{id}/status`, anexos |
 | Aprovações | `GET /aprovacoes`, `POST /aprovacoes/{id}/decidir`, `POST /aprovacoes/decidir-lote` |
 | Desfazer e isolamento | `GET /tarefas/{id}/restauracao`, `POST /restauracao/{id}/desfazer`, `GET/DELETE /isolamentos` |
-| Memória | `POST /memorias`, `GET /memorias/buscar` (`todos=true`: todos os namespaces permitidos), `GET /memorias/navegar`, `GET /memorias/revisao`, `POST /memorias/organizar`, `GET /memorias/saude`, `POST /memorias/organizar-ia`, `POST /memorias/organizar-ia/importar`, `POST /memorias/avaliar`, `POST /estudos` |
+| Memória | `POST /memorias`, `GET /memorias/buscar` (sem `namespace`: todo o segundo cérebro permitido), `GET /memorias/navegar`, `GET /memorias/revisao`, `POST /memorias/organizar`, `GET /memorias/saude`, `GET/POST/DELETE /memorias/pastas`, `GET /memorias/pastas/notas`, `POST /memorias/pastas/mover\|renomear\|propor`, `POST /memorias/organizar-ia`, `POST /memorias/organizar-ia/importar`, `POST /memorias/avaliar`, `POST /estudos` |
 | Visões | `GET /kanban`, `GET /conhecimento/grafo`, `GET /oficina`, `GET /execucoes/{id}/replay`, `GET /custos`, `GET /roteamento/estatisticas` |
 | Bancada | `GET /area/arvore`, `GET/PUT /area/arquivo`, `GET /area/buscar`, `GET/POST /area/git`, `POST /area/terminal`, `GET/POST /area/docker`, `POST /area/http`, `GET /area/comandos`, `POST /area/comandos/analisar`, `POST /area/comandos/ia`, `GET /area/editor`, `GET /area/codigo/catalogo`, `POST /area/codigo/ia`, `GET /area/lsp`, `POST /area/lsp/instalar\|completar\|explicar\|definicao\|diagnosticos` (ação arriscada responde 428 até ser reenviada com `confirmado: true`) |
+| Estudos | `POST /estudos`, `POST /estudos/lote/descobrir`, `POST /estudos/lote`, `GET /estudos/lote`, `POST /estudos/lote/cancelar` |
 | Reciclagem | `GET /reciclagem`, `GET /reciclagem/previa`, `POST /reciclagem`, `GET /tarefas/{id}/caderno?amplo=true&q=` |
 | Sistema | `GET /saude` (pública), `/recursos`, `/kiro/status`, `/provedores`, `/preferencias`, `/configuracao`, `/ferramentas`, `/integracoes`, `/quadro`, `GET /eventos/stream` |
 
@@ -676,7 +689,7 @@ forja/
   migrations/      Alembic (0001…0015)
 scripts/           instalar.ps1, iniciar_forja.ps1, backup, diagnóstico do Kiro, demo, inspeção do painel, benchmarks
 tests/             pytest (unidade, integração, agente ACP falso por subprocesso, API)
-docs/              STATUS_IMPLEMENTACAO.md e ADRs 0001…0028
+docs/              STATUS_IMPLEMENTACAO.md e ADRs 0001…0029
 ```
 
 Camadas não se misturam: rotas não têm SQL, a orquestração não conhece HTTP, adaptadores não têm regra de negócio.
@@ -687,7 +700,7 @@ Camadas não se misturam: rotas não têm SQL, a orquestração não conhece HTT
 
 ```powershell
 pip install -r requirements-dev.txt          # + requirements-ui.txt para o navegador real
-python -m pytest -q                          # 1290 testes (agente ACP falso por subprocesso; nada real é chamado)
+python -m pytest -q                          # 1309 testes (agente ACP falso por subprocesso; nada real é chamado)
 python -m ruff check forja tests scripts
 pre-commit install                           # gitleaks + ruff a cada commit
 

@@ -42,6 +42,7 @@ VISTAS = {
     "comandos": ".catalogo-grade .lista-catalogo",
     "aprender": ".grade-conhecimento form",
     "organizar": ".conhecimento-aba .metricas-saude",
+    "pastas": ".grade-pastas .arvore-pastas",
     "revisao": ".conhecimento-aba .revisao",
 }
 
@@ -444,12 +445,17 @@ def bancada(pagina, base: str, saida: Path, expect, passo) -> None:
     pagina.reload()
     expect(pagina.locator("#vista .grupo-abas [role=tab]").first).to_be_visible(timeout=8000)
     passo("barra de atividades com no maximo 8 itens (6 grupos + conta e configuracoes)", pagina.locator("#atividades button").count() <= 8)
-    passo("Conhecimento junta grafo, aprender, organizar, revisao e ferramentas em abas",
-          pagina.locator("#vista .grupo-abas [role=tab]").count() == 5 and pagina.locator("#atividades button[data-id=conhecimento][aria-current=page]").count() == 1)
+    passo("Conhecimento junta grafo, aprender, pastas, organizar, revisao e ferramentas em abas",
+          pagina.locator("#vista .grupo-abas [role=tab]").count() == 6 and pagina.locator("#atividades button[data-id=conhecimento][aria-current=page]").count() == 1)
     pagina.locator("#vista .grupo-abas [role=tab]", has_text="Organizar").click()
     expect(pagina.locator(".metricas-saude .medidor")).to_be_visible(timeout=8000)
     passo("organizar mostra a modularidade do grafo (nota 0-100, repeticao, orfas)", "modularidade" in pagina.locator(".medidor").inner_text())
     pagina.screenshot(path=str(saida / "conhecimento-organizar.png"))
+    pagina.locator("#vista .grupo-abas [role=tab][aria-selected=true]").press("ArrowLeft")
+    expect(pagina.locator(".grade-pastas .arvore-pastas")).to_be_visible(timeout=6000)
+    passo("aba Pastas mostra a arvore de pastas do segundo cerebro com contagem (ADR-029)",
+          pagina.locator(".arvore-pastas [role=treeitem]", has_text="pessoal").count() >= 1)
+    pagina.screenshot(path=str(saida / "conhecimento-pastas.png"))
     pagina.locator("#vista .grupo-abas [role=tab][aria-selected=true]").press("ArrowLeft")
     expect(pagina.locator(".grade-conhecimento form")).to_be_visible(timeout=6000)
     passo("setas trocam a aba do grupo (Buscar e aprender com o formulario de estudo)", pagina.locator(".aba-editor").filter(has_text="Buscar e aprender").count() == 1)
@@ -775,7 +781,8 @@ def interagir(pagina, base: str, saida: Path, erros: list[str]) -> int:
     pagina.locator("#dlg-geral").get_by_role("button", name="Cancelar").click()
     abrir_menu(pagina)
     pagina.fill('input[aria-label="Buscar no grafo"]', "alembic")
-    expect(pagina.locator(".grafo-caixa .no")).to_have_count(2, timeout=6000)
+    # demo no segundo cerebro do usuario (pessoal): Alembic, o guia ligado e a nota pessoal que cita o Alembic (ADR-029)
+    expect(pagina.locator(".grafo-caixa .no")).to_have_count(3, timeout=6000)
     passo("busca filtra o grafo", pagina.locator(".grafo-caixa .no").count() <= 3)
     pagina.locator(".lista-notas button", has_text="Alembic").click()
     pagina.wait_for_selector(".ligacoes", timeout=6000)

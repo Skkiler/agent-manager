@@ -17,7 +17,7 @@ from typing import Any
 
 from forja.agentes.base import ControleExecucao
 from forja.agentes.estilo import PADRAO, PerfilTrabalho
-from forja.seguranca.acoes import descrever_acao
+from forja.seguranca.acoes import FORJA_LIVRES, descrever_acao
 from forja.seguranca.pastas import dentro_de_citado
 from forja.seguranca.regras import avaliar as avaliar_regras
 
@@ -74,6 +74,25 @@ class MediadorPermissoes:
         # pedido), 'bloquear' (nega sem perguntar) ou 'livre_leitura' (leitura fora aprovada; escrita fora continua perguntando).
         self.fora_da_pasta = "perguntar"
         self.citados: list[Path] = []  # caminhos absolutos citados pelo usuario no pedido (seguranca.pastas.caminhos_citados)
+        # Pastas que a tarefa manda IGNORAR (ex.: estudo em lote: logs, dados, entrada): leitura negada sem perguntar (ADR-029)
+        self.ignorar_dirs: frozenset[str] = frozenset()
+        # Tarefa de ESTUDO: a pasta de consulta e exatamente o que o usuario mandou estudar; ler dentro dela dispensa pergunta
+        # em qualquer nivel (so leitura simples: varredura em pasta com segredo continua perguntando)
+        self.leitura_consulta_livre = False
+
+    def _leitura_em_consulta(self, item: dict[str, Any]) -> bool:
+        if item.get("categoria") != "ler" or item.get("sensivel") or item.get("varredura") or not self.consulta:
+            return False
+        return bool(item.get("so_consulta"))
+
+    def _ignorada(self, item: dict[str, Any]) -> bool:
+        if not self.ignorar_dirs:
+            return False
+        for alvo in item.get("alvos") or []:
+            partes = {p.casefold() for p in Path(str(alvo)).parts[:-1]} | ({Path(str(alvo)).name.casefold()} if item.get("categoria") == "ler" else set())
+            if partes & self.ignorar_dirs:
+                return True
+        return False
 
     def _conferir_escopo(self, item: dict[str, Any]) -> bool:
         """Anti 'esticar': passou do limite de arquivos escritos da tarefa, cada nova escrita deixa de ser automatica e PERGUNTA
@@ -104,11 +123,19 @@ class MediadorPermissoes:
             self.ctl.evento("kiro.permissao_negada_automatica",
                             {"motivo": "acao envolve segredo/credencial", "descricao": item["descricao"]})
             return rejeitar
+        if self._ignorada(item):
+            self.ctl.evento("kiro.permissao_negada_automatica", {"motivo": "pasta ignorada nesta tarefa (logs/dados)", "descricao": item["descricao"]})
+            return rejeitar
         if item.get("em_consulta"):  # pasta de consulta e SO leitura, em qualquer nivel
             self.ctl.evento("kiro.permissao_negada_automatica", {"motivo": "pasta de consulta e somente leitura", "descricao": item["descricao"]})
             return rejeitar
         if permitir is None:  # sem como permitir uma vez: nao arrisca allow_always
             return rejeitar
+        if self.leitura_consulta_livre and self._leitura_em_consulta(item):
+            # estudo: ler a pasta que o usuario mandou estudar E o pedido (segredos ja negados acima; pastas ignoradas tambem)
+            self.ctl.evento("kiro.permissao_automatica", {"nivel": self.perfil.nivel, "categoria": "ler", "descricao": item["descricao"],
+                                                          "motivo": "estudo: leitura da pasta estudada"})
+            return permitir
         alem_do_escopo = self._conferir_escopo(item)
         varre_segredo = bool(item.get("varredura")) and self.pasta_com_segredos  # invariante: nenhuma regra do usuario afrouxa
         if varre_segredo:
@@ -123,6 +150,11 @@ class MediadorPermissoes:
             if decisao[0] == "aprovar" and not varre_segredo:
                 return permitir
         perguntar_sempre = (decisao is not None and decisao[0] == "perguntar") or alem_do_escopo or varre_segredo
+        livre = item.get("forja") in FORJA_LIVRES or (self.leitura_consulta_livre and item.get("forja") == "forja_executar_ferramenta")
+        if decisao is None and item.get("categoria") == "ferramenta_forja" and livre:  # estudo: ferramentas de leitura da Forja tambem
+            self.ctl.evento("kiro.permissao_automatica", {"nivel": self.perfil.nivel, "categoria": "ferramenta_forja",
+                                                          "descricao": item["descricao"], "motivo": "segundo cérebro/caderno pela API da Forja"})
+            return permitir
         if item.get("fora_do_workspace"):  # fora das pastas do projeto: preferencia 'acesso_fora_pasta' (ADR-027)
             if self.fora_da_pasta == "bloquear":
                 self.ctl.evento("kiro.permissao_negada_automatica", {"motivo": "fora das pastas do projeto (Configurações > Segurança)",

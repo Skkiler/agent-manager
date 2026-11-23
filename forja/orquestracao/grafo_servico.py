@@ -13,7 +13,7 @@ from forja.adapters.sqlite.repositorio import RepositorioSqlite, novo_id
 from forja.dominio.erros import Conflito, NaoEncontrado, ValidacaoDominio
 from forja.dominio.tempo import RelogioSistema, iso
 from forja.memoria.modelo import ARESTAS, Principal, eh_base, namespace_dentro_de
-from forja.memoria.wikilinks import extrair_wikilinks
+from forja.memoria.wikilinks import chave_titulo, extrair_wikilinks
 
 INATIVOS = frozenset({"revogado", "substituido"})
 
@@ -48,13 +48,13 @@ class GrafoServico:
         """Arestas wikilink/ref entre memorias + titulos citados que nao existem (links fantasmas, como no Obsidian)."""
         por_titulo: dict[str, str] = {}
         for m in memorias:
-            por_titulo.setdefault(m["titulo"].casefold(), m["id"])
+            por_titulo.setdefault(chave_titulo(m["titulo"]), m["id"])
         ids = {m["id"] for m in memorias}
         arestas: list[dict] = []
         fantasmas: dict[str, None] = {}
         for m in memorias:
             for alvo in extrair_wikilinks(f"{m['resumo']}\n{m['conteudo']}"):
-                destino = por_titulo.get(alvo.casefold())
+                destino = por_titulo.get(chave_titulo(alvo))
                 if destino and destino != m["id"]:
                     arestas.append({"origem": m["id"], "destino": destino, "tipo": "wikilink"})
                 elif not destino:
@@ -160,7 +160,9 @@ class GrafoServico:
             alvo = t.obter(T.Memoria, memoria_id)
         if alvo is None or not p.pode(alvo["namespace"]):
             raise NaoEncontrado(f"Memoria {memoria_id} nao encontrada.")  # sem oraculo de existencia (igual ao ServicoMemoria)
-        memorias, _, tipadas = self._carregar(p, [alvo["namespace"]], incluir_inativas=True)
+        # todas as pastas permitidas: com o segundo cerebro em pastas (ADR-029), a nota do projeto aponta para a da entidade
+        # em outra pasta; carregar so a pasta da nota deixava esses links quebrados
+        memorias, _, tipadas = self._carregar(p, sorted(p.namespaces), incluir_inativas=True)
         arestas, _ = self._arestas_de_memorias(memorias)
         nomes = {m["id"]: m["titulo"] for m in memorias}
         # ligacoes tipadas (SUBTOPICO_DE, RELACIONADO_A...) tambem sao vizinhanca: sem elas o topico do projeto e as notas

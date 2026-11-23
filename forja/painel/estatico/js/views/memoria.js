@@ -5,10 +5,12 @@ import { desenhar } from "../grafo.js";
 import { renderizar } from "../markdown.js";
 import { dialogo, el, limpar, tag, toast } from "../ui.js";
 import { abrirRevisao, contarRevisao } from "./revisao.js";
+import { listarPastas, sugestoesPastas } from "./pastas.js";
 import { abrirRotulagem } from "./rotulagem.js";
 
 const NAMESPACES = ["publico", "pessoal"];
-const sel = { namespaces: new Set(["publico"]), q: "", inativas: false, base: false, vizinhos: 1, nota: null, editando: false };
+// padrao: o segundo cerebro do usuario (pessoal); publico e o framework inicial (ADR-029). `pasta` restringe a uma subpasta.
+const sel = { namespaces: new Set(["pessoal"]), pasta: "", q: "", inativas: false, base: false, vizinhos: 1, nota: null, editando: false };
 let ctx = {};
 let grafoAtual = { nos: [], arestas: [] };
 
@@ -18,7 +20,9 @@ async function carregarGrafo() {
   if (!ctx.caixa) return;
   try {
     const params = new URLSearchParams();
-    for (const ns of sel.namespaces) params.append("namespace", ns);
+    const nss = sel.pasta ? [sel.pasta] : [...sel.namespaces];
+    if (sel.base && !nss.includes("publico")) nss.push("publico/forja-base"); // "mostrar a base" vale mesmo filtrando so pessoal
+    for (const ns of nss) params.append("namespace", ns);
     if (sel.q) params.set("q", sel.q);
     params.set("vizinhos", String(sel.vizinhos));
     if (sel.inativas) params.set("incluir_inativas", "true");
@@ -67,11 +71,26 @@ function renderNota() {
     el("div", { className: "linha" }, tag(n.tipo), tag(n.estado, n.estado === "validado" ? "ok" : ""), tag(`v${n.versao}`, "so-avancado"), tag(n.namespace),
       ...(n.sinalizadores?.suspeita_injecao?.length ? [tag("possivel prompt injection", "erro")] : []),
       n.necessita_revalidacao ? tag("origem mudou: revalidar", "aviso") : null),
+    String(n.namespace || "").startsWith("publico/forja-base") ? null : moverNota(n),
     corpo,
     el("h2", { textContent: `Backlinks (${back.length})` }), back.length ? el("ul", {}, ...back) : el("p", { className: "mudo", textContent: "Nenhuma nota aponta para esta." }),
     secaoLigacoes(n),
     (n.links?.saida || []).length ? el("p", { className: "mudo so-avancado", textContent: `Saidas: ${n.links.saida.map((l) => l.titulo + (l.resolvido ? "" : " (sem nota)")).join(", ")}` }) : null,
     el("p", { className: "aviso", textContent: "Conteudo de memoria e dado nao confiavel: nunca e tratado como instrucao." }));
+}
+
+/** Mover a nota para outra pasta (o conteudo nao muda; fica uma versao com o motivo). */
+function moverNota(n) {
+  const destino = el("input", { type: "text", maxLength: 200, list: "pastas-nota", value: n.namespace, "aria-label": "Pasta da nota",
+    pattern: "^(publico|pessoal|terceiros)(/[a-z0-9][a-z0-9._-]{0,40}){0,6}$" });
+  const lista = el("datalist", { id: "pastas-nota" });
+  listarPastas().then((ps) => lista.replaceWith(sugestoesPastas(ps, "pastas-nota")));
+  return el("details", { className: "mover-nota" }, el("summary", { textContent: "Mover para outra pasta" }),
+    el("div", { className: "linha" }, destino, lista, el("button", { type: "button", textContent: "Mover", onclick: async () => {
+      const alvo = destino.value.trim();
+      if (!alvo || alvo === n.namespace || !destino.checkValidity()) return destino.focus();
+      try { await api("POST", "/memorias/pastas/mover", { ids: [n.id], destino: alvo }); toast(`Nota movida para ${alvo}`, "ok"); await abrirNo({ id: n.id, grupo: "memoria", rotulo: n.titulo }); } catch (e) { toast(e.message, "erro"); }
+    } })));
 }
 
 // ------------------------------------------------------------------ 4.22: ligacoes tipadas
@@ -129,10 +148,13 @@ function editor(n) {
 function criarNota(tituloInicial = "") {
   const titulo = el("input", { value: tituloInicial, required: true, maxLength: 200 });
   const texto = el("textarea", { rows: 8, maxLength: 100000 });
-  const ns = el("select", {}, ...NAMESPACES.map((v) => el("option", { value: v, textContent: v, selected: sel.namespaces.has(v) })));
+  const ns = el("input", { type: "text", value: sel.pasta || "pessoal", maxLength: 200, list: "pastas-nova-nota", required: true,
+    pattern: "^(publico|pessoal|terceiros)(/[a-z0-9][a-z0-9._-]{0,40}){0,6}$", "aria-label": "Pasta da nota" });
+  const sugestoes = el("datalist", { id: "pastas-nova-nota" });
+  listarPastas().then((ps) => sugestoes.replaceWith(sugestoesPastas(ps, "pastas-nova-nota")));
   const tipo = el("select", {}, ...["semantica", "procedimental", "episodica", "estrutural", "decisoria", "operacional"].map((v) => el("option", { value: v, textContent: v })));
   const f = el("form", {}, el("label", { className: "campo" }, el("span", { textContent: "Titulo" }), titulo), el("label", { className: "campo" }, el("span", { textContent: "Conteudo" }), texto),
-    el("label", { className: "campo" }, el("span", { textContent: "Namespace" }), ns), el("label", { className: "campo so-avancado" }, el("span", { textContent: "Tipo" }), tipo),
+    el("label", { className: "campo" }, el("span", { textContent: "Pasta" }), ns, sugestoes), el("label", { className: "campo so-avancado" }, el("span", { textContent: "Tipo" }), tipo),
     el("p", { className: "aviso", textContent: "A nota nasce como candidata (sem validacao). PII e segredos sao redigidos antes de gravar." }),
     el("div", { className: "linha" }, el("button", { type: "submit", className: "primario", textContent: "Criar nota" }), el("button", { type: "button", textContent: "Cancelar", onclick: () => d.fechar() })));
   const d = dialogo("Nova nota", f);
@@ -140,7 +162,7 @@ function criarNota(tituloInicial = "") {
     ev.preventDefault();
     try {
       const m = await api("POST", "/memorias", { tipo: tipo.value, titulo: titulo.value, conteudo: texto.value, namespace: ns.value });
-      d.fechar(); sel.namespaces.add(ns.value); await carregarGrafo(); await abrirNo({ id: m.id, grupo: "memoria", rotulo: m.titulo });
+      d.fechar(); if (!sel.pasta) sel.namespaces.add(ns.value.split("/")[0]); await carregarGrafo(); await abrirNo({ id: m.id, grupo: "memoria", rotulo: m.titulo });
     } catch (e) { toast(e.message, "erro"); }
   });
 }
@@ -192,14 +214,20 @@ export function montarLateral(lat) {
   busca.addEventListener("input", () => { clearTimeout(busca._t); busca._t = setTimeout(() => { sel.q = busca.value.trim(); carregarGrafo(); }, 250); });
   const nss = NAMESPACES.map((ns) => el("label", {}, el("input", { type: "checkbox", checked: sel.namespaces.has(ns), onchange: (ev) => {
     if (ev.target.checked) sel.namespaces.add(ns); else sel.namespaces.delete(ns);
-    if (!sel.namespaces.size) { sel.namespaces.add("publico"); ev.target.checked = ns === "publico"; }
+    if (!sel.namespaces.size) { sel.namespaces.add("pessoal"); ev.target.checked = ns === "pessoal"; }
     carregarGrafo();
   } }), ` ${ns}`));
+  const pasta = el("input", { type: "search", value: sel.pasta, maxLength: 200, list: "pastas-grafo", placeholder: "Ex.: pessoal/empresa/x/projetos",
+    "aria-label": "Mostrar só uma pasta" });
+  const sugestoes = el("datalist", { id: "pastas-grafo" });
+  listarPastas().then((ps) => sugestoes.replaceWith(sugestoesPastas(ps, "pastas-grafo")));
+  pasta.addEventListener("change", () => { const v = pasta.value.trim(); sel.pasta = /^(publico|pessoal|terceiros)(\/[a-z0-9][a-z0-9._-]{0,40}){0,6}$/.test(v) ? v : ""; carregarGrafo(); });
   const lista = el("ul", { className: "lista-notas", "aria-label": "Notas" });
   ctx.lista = lista;
   lat.append(el("h2", { textContent: "Segundo cerebro" }), el("button", { type: "button", className: "primario", textContent: "+ Nova nota", onclick: () => criarNota() }),
     el("label", { className: "campo" }, el("span", { textContent: "Busca" }), busca),
     el("fieldset", {}, el("legend", { className: "mudo", textContent: "Namespaces" }), ...nss.map((n) => el("div", {}, n))),
+    el("label", { className: "campo" }, el("span", { textContent: "Pasta (opcional)" }), pasta, sugestoes),
     el("label", { className: "campo so-avancado" }, el("span", { textContent: "Saltos de vizinhanca na busca" }), el("select", { onchange: (ev) => { sel.vizinhos = Number(ev.target.value); carregarGrafo(); } },
       ...[0, 1, 2].map((n) => el("option", { value: n, textContent: String(n), selected: n === sel.vizinhos })))),
     el("label", { className: "so-avancado" }, el("input", { type: "checkbox", checked: sel.inativas, onchange: (ev) => { sel.inativas = ev.target.checked; carregarGrafo(); } }), " incluir revogadas/substituidas"),
@@ -234,7 +262,15 @@ export function montar(raiz) {
   ctx = { ...ctx, raiz: grade, caixa, resumo, nota, vazio };
   renderNota();
   carregarGrafo();
+  if (notaPendente) { const x = notaPendente; notaPendente = null; abrirNo({ id: x, grupo: "memoria", rotulo: "" }); }
 }
 
 const reagir = agrupar(() => { if (ctx.caixa?.isConnected) carregarGrafo(); });
+// outras telas (Pastas, Revisao) abrem uma nota pelo id
+let notaPendente = null;
+ouvir("abrir-nota", (id) => {
+  notaPendente = id;
+  emitir("ir", "memoria");
+  requestAnimationFrame(() => { if (ctx.caixa?.isConnected && notaPendente) { const x = notaPendente; notaPendente = null; abrirNo({ id: x, grupo: "memoria", rotulo: "" }); } });
+});
 ouvir("evento", (e) => { if (String(e.tipo).startsWith("memoria.")) reagir(); });

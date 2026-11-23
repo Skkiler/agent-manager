@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -26,17 +27,27 @@ from forja.dominio.contratos import ObjetivoIn, ProjetoIn, ResultadoAgente, Tare
 from forja.dominio.erros import ErroDominio, ValidacaoDominio
 from forja.dominio.estados import EstadoTarefa
 from forja.memoria.contratos import FonteIn, MemoriaIn
-from forja.memoria.modelo import Principal, validar_namespace
+from forja.memoria.modelo import Principal, normalizar_tag, validar_namespace
 from forja.observabilidade.sanitizar import sanitizar_texto
 
 log = logging.getLogger("forja.estudos")
 PROJETO = "forja-estudos"
+# projetos que a propria Forja cria para tarefas internas: nao geram "Registro" no segundo cerebro
+PROJETOS_INTERNOS = frozenset({PROJETO, "forja-conhecimento", "forja-codigo", "forja-comandos", "forja-coordenacao", "forja-revisoes"})
 MAX_NOTAS = 30
 MAX_FATOS = 2600
 MAX_NOTAS_RESUMO = 25
 MAX_FATOS_RESUMO = 3000
 _NOTA = re.compile(r"^#{2,4}\s*Nota\s*:\s*(?P<t>.+?)\s*$", re.IGNORECASE | re.MULTILINE)
-_CAMPO = re.compile(r"^\s*(?P<k>t[oó]pico pai|pai|tags|fontes?)\s*:\s*(?P<v>.*)$", re.IGNORECASE)
+# tolera "- **Topico pai:** x" e campos depois do corpo (achado no lote real: 7 notas com "Topico pai:" dentro do texto)
+_CAMPO = re.compile(r"^\s*[-*]?\s*\**\s*(?P<k>t[oó]pico pai|pai|tags|fontes?|escopo|entidade)\s*\**\s*:\s*\**\s*(?P<v>.*?)\s*\**\s*$",
+                    re.IGNORECASE)
+# Escopo de cada nota (ADR-029): 'projeto' fica na pasta do projeto; 'entidade' (sistema, orgao, regra de negocio compartilhada
+# entre projetos) vai para a pasta de entidades; 'generico' (tecnica/biblioteca reutilizavel em qualquer automacao) vai para a
+# pasta geral. Assim o que se repete entre projetos e escrito UMA vez e os projetos so ligam.
+ESCOPOS = ("projeto", "entidade", "generico")
+NS_AGENTE = "pessoal/aprendizados"  # onde forja_propor_nota grava (forja/mcp/servidor.py)
+LIMIAR_REPETIDO = 0.6
 _SLUG = re.compile(r"[^a-z0-9._-]+")
 
 
@@ -57,6 +68,17 @@ class NotaEstudo:
     pai: str = ""
     tags: list[str] = field(default_factory=list)
     fontes: list[str] = field(default_factory=list)
+    escopo: str = "projeto"
+    entidade: str = ""
+
+
+def _escopo(v: str) -> str:
+    v = "".join(c for c in unicodedata.normalize("NFKD", v.casefold()) if not unicodedata.combining(c)).strip(" *`[]")
+    if v.startswith(("entidade", "sistema", "empresa", "compartilh")):
+        return "entidade"
+    if v.startswith(("generic", "geral", "reutiliz", "tecnica")):
+        return "generico"
+    return "projeto"
 
 
 def extrair_notas(texto: str) -> list[NotaEstudo]:
@@ -75,12 +97,16 @@ def extrair_notas(texto: str) -> list[NotaEstudo]:
             if not corpo and not linha.strip():
                 continue  # linhas em branco antes dos campos
             c = _CAMPO.match(linha)
-            if c and not corpo:
+            if c and (not corpo or c["k"].casefold() != "pai"):  # 'pai:' solto no meio do texto pode ser frase; os outros nao
                 k, v = c["k"].casefold(), c["v"].strip()
                 if "pai" in k:
                     nota.pai = v.strip(" *`[]")[:200]
                 elif k.startswith("tag"):
-                    nota.tags = [x.strip(" #`")[:50] for x in re.split(r"[,;]", v) if x.strip(" #`")][:8]
+                    nota.tags = list(dict.fromkeys(t for t in (normalizar_tag(x) for x in re.split(r"[,;]", v)) if t))[:8]
+                elif k == "escopo":
+                    nota.escopo = _escopo(v)
+                elif k == "entidade":
+                    nota.entidade = v.strip(" *`[]")[:120]
                 else:
                     nota.fontes = [x.strip(" <>`")[:200] for x in re.split(r"[,;\s]+", v) if x.strip(" <>`")][:8]
             else:
@@ -119,7 +145,11 @@ class EstudoServico:
         linhas = [f"- {x.get('titulo') or x.get('caminho')}: {(x.get('resumo') or '')[:160]}" for x in r["resultados"] if x["origem"] == "memoria"]
         return ("O segundo cerebro ja sabe (nao repita; aprofunde ou corrija):\n" + "\n".join(linhas)) if linhas else ""
 
-    def solicitar(self, d: EstudoIn) -> dict[str, Any]:
+    def solicitar(self, d: EstudoIn, extras: dict[str, Any] | None = None) -> dict[str, Any]:
+        """`extras` (alimentacao em lote, ADR-029): `pedido` substitui o texto padrao; o resto vai para `entrada.estudo`
+        (raiz_id, ns_entidade, ns_generico, ignorar, projeto_nome, lote_id)."""
+        extras = dict(extras or {})
+        pedido_extra = str(extras.pop("pedido", "") or "")
         validar_namespace(d.namespace)
         self.principal.exigir(d.namespace)
         pastas: list[dict[str, str]] = []
@@ -141,6 +171,8 @@ class EstudoServico:
             pedido = (f"Estude o topico '{d.alvo}' e organize o conhecimento util em notas para o segundo cerebro. "
                       + ("Pesquise na web fontes confiaveis e recentes; cada nota cita a fonte (URL) e a data. " if d.pesquisar_web
                          else "Nao pesquise na web; use o que voce sabe e marque incertezas. "))
+        if pedido_extra:
+            pedido = pedido_extra
         descricao = (pedido + (f" Foco: {d.foco}." if d.foco else "") + "\n" + fatos)[:3900]
         projeto = next(iter(self.servico.listar(T.Projeto, nome=PROJETO)), None)
         if projeto is None:
@@ -151,7 +183,8 @@ class EstudoServico:
             objetivo_id=objetivo["id"], titulo=f"Estudo ({d.tipo}): {assunto}"[:200], descricao=descricao, modo="estudo",
             especialidade="estudo", criterios_aceite=["Cada nota cobre UM subtopico, curta e com fonte",
                                                       "Notas ligadas a um topico pai; nada copiado de segredos ou dados pessoais"],
-            entrada={"estudo": {"tipo": d.tipo, "alvo": d.alvo[:500], "namespace": d.namespace, "assunto": assunto, "pastas": pastas}}))
+            entrada={"estudo": {**extras, "tipo": d.tipo, "alvo": d.alvo[:500], "namespace": d.namespace, "assunto": assunto,
+                                "pastas": pastas}}))
         for destino in (EstadoTarefa.CLASSIFICADA, EstadoTarefa.PREPARADA):
             tarefa, _ = self.servico.transicionar(tarefa["id"], TransicaoIn(para=destino, expected_version=tarefa["versao_estado"]))
         execucao = None
@@ -266,42 +299,154 @@ class EstudoServico:
                 t.emitir_evento("estudo.topico_criado", self.servico._ts(), {"tarefa_id": tarefa["id"], "topico": r["raiz"],
                                                                            "ligacoes": r["ligacoes"]})
             return r
-        raiz = self._topico(ns, f"Estudo: {cfg.get('assunto') or tarefa['titulo']}",
-                            f"Notas do estudo ({cfg.get('tipo')}) '{cfg.get('alvo', '')}'. Subtopicos ligados a esta nota.",
-                            ["estudo", cfg.get("tipo") or "topico"])
+        raiz = cfg.get("raiz_id") or self._topico(ns, f"Estudo: {cfg.get('assunto') or tarefa['titulo']}",
+                                                  f"Notas do estudo ({cfg.get('tipo')}) '{cfg.get('alvo', '')}'. Subtopicos ligados a esta nota.",
+                                                  ["estudo", cfg.get("tipo") or "topico"])
+        destinos = {"projeto": ns, "entidade": cfg.get("ns_entidade") or ns, "generico": cfg.get("ns_generico") or ns}
+        projeto_nome = str(cfg.get("projeto_nome") or cfg.get("assunto") or "")[:120]
         criadas: dict[str, str] = {}
+        completadas: dict[str, str] = {}  # nota de entidade/generica que ja existia (outro projeto) e ganhou o que faltava
         puladas = 0
-        with self.memoria.repo.leitura() as t:
-            existentes = {m["titulo"].casefold() for m in t.listar(T.Memoria, namespace=ns, limite=5000)}
+        cache: dict[str, dict[str, dict[str, Any]]] = {}
+
+        def existentes(alvo: str) -> dict[str, dict[str, Any]]:
+            if alvo not in cache:
+                with self.memoria.repo.leitura() as t:
+                    cache[alvo] = {m["titulo"].casefold(): m for m in t.listar(T.Memoria, namespace=alvo, limite=5000)
+                                   if m["estado"] not in ("revogado", "substituido")}
+            return cache[alvo]
+
         for n in notas:
-            if n.titulo.casefold() in existentes or n.titulo.casefold() in criadas:
+            chave = n.titulo.casefold()
+            alvo = destinos.get(n.escopo, ns)
+            if chave in criadas or chave in completadas:
                 puladas += 1
                 continue
             fontes = [f for f in n.fontes if f]
+            ja = existentes(alvo).get(chave)
+            if ja is not None:
+                if n.escopo != "projeto" and self._completar(ja, n, projeto_nome):
+                    completadas[chave] = ja["id"]
+                elif n.escopo != "projeto":
+                    completadas[chave] = ja["id"]  # ja dizia o mesmo: so liga ao projeto
+                else:
+                    puladas += 1
+                continue
             corpo = n.corpo + (("\n\nFontes: " + "; ".join(fontes)) if fontes else "")
             fonte = FonteIn(tipo="documento", repositorio=(Path(cfg["alvo"]).name if cfg.get("tipo") == "pasta" else "web")[:200])
+            extra_tags = {"entidade": ["entidade"], "generico": ["generico"]}.get(n.escopo, [])
             m = self.memoria.criar(self.principal, MemoriaIn(
                 tipo="semantica", titulo=n.titulo, resumo=next((x.strip(" -*") for x in n.corpo.splitlines() if x.strip()), n.titulo)[:300],
-                conteudo=corpo, namespace=ns, tags=["estudo", *n.tags][:15], fonte=fonte,
+                conteudo=corpo, namespace=alvo, tags=list(dict.fromkeys(["estudo", *extra_tags, *n.tags]))[:15], fonte=fonte,
                 refs=[f"tarefa:{tarefa['id']}", *[f"fonte:{f}"[:200] for f in fontes[:5]]], confianca=0.3), "agente:estudo")
-            criadas[n.titulo.casefold()] = m["id"]
+            criadas[chave] = m["id"]
+            existentes(alvo)[chave] = m
         ligacoes = 0
+        hubs: dict[str, str] = {}
+
+        def hub(entidade: str) -> str:
+            """Nota da entidade (ex.: 'Sistema Funcao'): raiz de tudo o que vale para ela, compartilhada pelos projetos. Acha a
+            existente pelo nome normalizado ('CadAlfa' == 'Cadalfa', achado no lote real) antes de criar outra."""
+            chave = normalizar_tag(entidade).replace("-", "")
+            if chave not in hubs:
+                hubs[chave] = self._hub_entidade(destinos["entidade"], entidade, chave)
+            return hubs[chave]
+
         for n in notas:
-            mid = criadas.get(n.titulo.casefold())
+            chave = n.titulo.casefold()
+            mid = criadas.get(chave) or completadas.get(chave)
             if not mid:
                 continue
-            pai = criadas.get(n.pai.casefold()) if n.pai else None
+            nova = chave in criadas
+            pai = (criadas.get(n.pai.casefold()) or completadas.get(n.pai.casefold())) if n.pai else None
             if pai is None and n.pai:  # pai fora do estudo: nota existente (inclusive a base da Forja)
                 pai = self._buscar_titulo(n.pai)
-            try:
-                self.grafo.ligar(self.principal, mid, pai or raiz, "SUBTOPICO_DE", ator="agente:estudo")
-                ligacoes += 1
-            except ErroDominio:
-                pass
+            raiz_entidade = hub(n.entidade) if n.escopo == "entidade" and n.entidade else None
+            if n.escopo == "projeto":
+                ligacoes += self._ligar(mid, pai or raiz, "SUBTOPICO_DE")
+                continue
+            if nova and (pai or raiz_entidade) and (pai or raiz_entidade) != mid:  # entidade/generica: arvore propria, nao do projeto
+                ligacoes += self._ligar(mid, pai or raiz_entidade or "", "SUBTOPICO_DE")
+            if n.escopo == "entidade":  # o projeto depende do sistema/regra: a nota e uma so, ligada a cada projeto que a usa
+                ligacoes += self._ligar(raiz, raiz_entidade or mid, "DEPENDE_DE")
+            else:
+                ligacoes += self._ligar(mid, raiz, "REUTILIZAVEL_EM")
+        absorvidas = self._absorver_do_agente(tarefa["id"], {**criadas, **completadas}, notas, raiz)
         with self.servico.repo.escrita() as t:
             t.emitir_evento("estudo.notas_criadas", self.servico._ts(), {"tarefa_id": tarefa["id"], "notas": len(criadas),
-                                                                           "puladas": puladas, "ligacoes": ligacoes})
-        return {"raiz": raiz, "criadas": list(criadas.values()), "puladas": puladas, "ligacoes": ligacoes}
+                                                                           "completadas": len(completadas), "puladas": puladas,
+                                                                           "ligacoes": ligacoes, "absorvidas": absorvidas})
+        return {"raiz": raiz, "criadas": list(criadas.values()), "completadas": list(completadas.values()), "puladas": puladas,
+                "ligacoes": ligacoes}
+
+    def _hub_entidade(self, ns: str, entidade: str, chave: str) -> str:
+        from forja.orquestracao.organizacao import TEXTO_HUB_ENTIDADE
+
+        with self.memoria.repo.leitura() as t:
+            for m in t.listar(T.Memoria, namespace=ns, limite=5000):
+                if m["estado"] not in ("revogado", "substituido") and "entidade" in (m["tags"] or []) \
+                        and normalizar_tag(m["titulo"]).replace("-", "") == chave:
+                    return m["id"]
+        return self._topico(ns, entidade, f"Entidade {entidade}: {TEXTO_HUB_ENTIDADE}.", ["entidade", "topico"])
+
+    def _absorver_do_agente(self, tarefa_id: str, feitas: dict[str, str], notas: list[NotaEstudo], raiz: str) -> int:
+        """O agente as vezes TAMBEM registra as notas do estudo com forja_propor_nota (achado no lote real). A copia que repete
+        uma nota do estudo vira 'substituida' pela nota do estudo; a que traz algo novo fica e e ligada ao topico do estudo."""
+        from forja.memoria.contratos import TransicaoMemoriaIn
+        from forja.memoria.modelo import EstadoMemoria
+        from forja.orquestracao.organizacao import jaccard, termos
+
+        ref = f"tarefa:{tarefa_id}"
+        with self.memoria.repo.leitura() as t:
+            copias = [m for m in t.listar(T.Memoria, namespace=NS_AGENTE, estado="candidato", limite=2000) if ref in (m["refs"] or [])]
+        if not copias:
+            return 0
+        corpos = [(feitas.get(n.titulo.casefold()), termos(n.titulo + " " + n.corpo)) for n in notas if feitas.get(n.titulo.casefold())]
+        absorvidas = 0
+        for m in copias:
+            proprio = termos(m["titulo"] + " " + m["conteudo"])
+            melhor = max(corpos, key=lambda c: jaccard(proprio, c[1]), default=(None, set()))
+            if melhor[0] and (jaccard(proprio, melhor[1]) >= 0.45 or m["titulo"].casefold() in feitas):
+                try:
+                    self.memoria.transicionar(self.principal, m["id"], TransicaoMemoriaIn(
+                        para=EstadoMemoria.SUBSTITUIDO, expected_version=m["versao"], motivo="repetia uma nota do mesmo estudo"), "agente:estudo")
+                    absorvidas += 1
+                except ErroDominio:
+                    pass
+            else:
+                self._ligar(m["id"], raiz, "RELACIONADO_A")
+        return absorvidas
+
+    def _ligar(self, origem: str, destino: str, tipo: str) -> int:
+        if not origem or not destino or origem == destino:
+            return 0
+        try:
+            self.grafo.ligar(self.principal, origem, destino, tipo, ator="agente:estudo")
+            return 1
+        except ErroDominio:  # ja ligadas (Conflito) ou ponta inacessivel
+            return 0
+
+    def _completar(self, existente: dict[str, Any], n: NotaEstudo, projeto: str) -> bool:
+        """Nota de entidade/generica que outro projeto ja criou: acrescenta so o que e novo (secao 'Visto em'), sem duplicar.
+        Nota validada nao e editada (so ligada). Devolve True se acrescentou algo."""
+        from forja.memoria.contratos import MemoriaAtualizaIn
+        from forja.orquestracao.organizacao import jaccard, termos
+
+        if existente["estado"] == "validado":
+            return False
+        novos = termos(n.corpo) - termos(existente["conteudo"])
+        if jaccard(termos(n.corpo), termos(existente["conteudo"])) >= LIMIAR_REPETIDO or len(novos) < 8:
+            return False
+        trecho = "\n".join(x for x in n.corpo.splitlines() if x.strip())[:1500]
+        conteudo = f"{existente['conteudo'].rstrip()}\n\n## Visto em {projeto or 'outro projeto'}\n{trecho}"[:100_000]
+        tags = list(dict.fromkeys([*(existente["tags"] or []), *n.tags]))[:30]
+        try:
+            self.memoria.atualizar(self.principal, existente["id"], MemoriaAtualizaIn(
+                expected_version=existente["versao"], conteudo=conteudo, tags=tags, motivo=f"estudo de {projeto}: complemento"[:1000]),
+                "agente:estudo")
+        except ErroDominio:
+            return False
+        return True
 
     def _buscar_titulo(self, titulo: str) -> str | None:
         with self.memoria.repo.leitura() as t:
@@ -315,6 +460,8 @@ class EstudoServico:
         secoes = {m.tipo: m.conteudo for m in res.mensagens}
         with self.servico.repo.leitura() as t:
             projeto = t.obter(T.Projeto, tarefa["projeto_id"]) or {"nome": "geral"}
+            if projeto["nome"] in PROJETOS_INTERNOS:
+                return None  # organizar o grafo, documentar comandos...: o resultado ja e o conhecimento; o registro seria ruido
             respostas = [m["conteudo"] for m in t.listar(T.Mensagem, tarefa_id=tarefa["id"], papel="operador", limite=50)]
             caderno = [i for i in t.listar(T.CadernoItem, ordem=T.CadernoItem.criado_em, tarefa_id=tarefa["id"], limite=300)
                        if i["tipo"] in ("decisao", "resolvido", "erro", "fato")]

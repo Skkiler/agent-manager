@@ -34,10 +34,12 @@ def _automacoes(app) -> list[dict]:
 # ------------------------------------------------------------------ acesso dos agentes
 def test_agentes_tem_acesso_livre_ao_segundo_cerebro(client):
     _nota(client.app, "Decisao de cache no projeto loja", "Usar cache de 5 minutos nas consultas de catalogo da loja virtual.")
-    so_publico = client.get(f"{M}/buscar", params={"q": "cache catalogo loja"}).json()["resultados"]
+    so_publico = client.get(f"{M}/buscar", params={"q": "cache catalogo loja", "namespace": "publico"}).json()["resultados"]
+    padrao = client.get(f"{M}/buscar", params={"q": "cache catalogo loja"}).json()["resultados"]
     todos = client.get(f"{M}/buscar", params={"q": "cache catalogo loja", "todos": True}).json()["resultados"]
     assert not [r for r in so_publico if r.get("namespace", "").startswith("pessoal")]
     assert any(r.get("titulo") == "Decisao de cache no projeto loja" for r in todos)  # o MCP dos agentes usa todos=true
+    assert any(r.get("titulo") == "Decisao de cache no projeto loja" for r in padrao)  # ADR-029: o padrao ja inclui pessoal
     assert POR_ID["kiro_mcp_ativo"].padrao is True and POR_ID["contexto_memoria_ampla"].padrao is True
     assert client.app.state.servico.provedor is not None
 

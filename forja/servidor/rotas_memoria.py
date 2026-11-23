@@ -69,6 +69,77 @@ class AvaliarNotaIn(BaseModel):
     tags: list[Annotated[str, Field(max_length=50)]] = Field(default_factory=list, max_length=30)
 
 
+# ------------------------------------------------------------------ pastas do segundo cerebro (ADR-029)
+Ns = Annotated[str, Field(min_length=1, max_length=200)]
+
+
+class PastaIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    namespace: Ns
+    descricao: Annotated[str, Field(max_length=300)] = ""
+
+
+class MoverIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ids: list[Annotated[str, Field(max_length=64)]] = Field(min_length=1, max_length=500)
+    destino: Ns
+
+
+class RenomearIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    origem: Ns
+    destino: Ns
+
+
+class ProporPastaIn(BaseModel):
+    """Pedido de um AGENTE (MCP): vira sugestao na fila de revisao; so o usuario aplica."""
+    model_config = ConfigDict(extra="forbid")
+    acao: Literal["criar", "mover", "renomear"]
+    destino: Ns
+    origem: Annotated[str, Field(max_length=200)] = ""
+    ids: list[Annotated[str, Field(max_length=64)]] = Field(default_factory=list, max_length=500)
+    descricao: Annotated[str, Field(max_length=300)] = ""
+    motivo: Annotated[str, Field(max_length=500)] = ""
+
+
+@rm.get("/memorias/pastas")
+def pastas(request: Request, p: Pr) -> dict[str, Any]:
+    return request.app.state.pastas.arvore(p)
+
+
+@rm.get("/memorias/pastas/notas")
+def notas_da_pasta(request: Request, p: Pr, namespace: Annotated[str, Query(min_length=1, max_length=200)],
+                   subpastas: bool = False, limite: Annotated[int, Query(ge=1, le=1000)] = 500) -> dict[str, Any]:
+    return request.app.state.pastas.notas(p, namespace, subpastas, limite)
+
+
+@rm.post("/memorias/pastas", status_code=201)
+def criar_pasta(d: PastaIn, request: Request, p: Pr) -> dict[str, Any]:
+    return request.app.state.pastas.criar(p, d.namespace, d.descricao, ATOR)
+
+
+@rm.delete("/memorias/pastas", status_code=204)
+def remover_pasta(request: Request, p: Pr, namespace: Annotated[str, Query(min_length=1, max_length=200)]) -> Response:
+    request.app.state.pastas.remover(p, namespace)
+    return Response(status_code=204)
+
+
+@rm.post("/memorias/pastas/mover")
+def mover_notas(d: MoverIn, request: Request, p: Pr) -> dict[str, Any]:
+    return request.app.state.pastas.mover(p, d.ids, d.destino, ATOR)
+
+
+@rm.post("/memorias/pastas/renomear")
+def renomear_pasta(d: RenomearIn, request: Request, p: Pr) -> dict[str, Any]:
+    return request.app.state.pastas.renomear(p, d.origem, d.destino, ATOR)
+
+
+@rm.post("/memorias/pastas/propor", status_code=201)
+def propor_pasta(d: ProporPastaIn, request: Request, p: Pr) -> dict[str, Any]:
+    return request.app.state.pastas.propor(p, d.acao, {"destino": d.destino, "origem": d.origem, "ids": d.ids, "descricao": d.descricao},
+                                           d.motivo, "agente:mcp")
+
+
 @rm.get("/memorias/saude")
 def saude(request: Request, p: Pr, namespace: Annotated[list[str] | None, Query(max_length=10)] = None,
           min_notas: Annotated[int, Query(ge=2, le=20)] = 2, base: bool = False) -> dict[str, Any]:
@@ -145,8 +216,10 @@ def buscar(
     incluir_inativas: bool = False,
     todos: bool = False,
 ) -> dict[str, Any]:
-    """todos=true: todos os namespaces que esta instancia permite (usado pelo MCP dos agentes: acesso livre ao segundo cerebro)."""
-    alvo = sorted(p.namespaces) if todos and not namespace else (namespace or ["publico"])
+    """Sem `namespace`: todos os namespaces que esta instancia permite (o segundo cerebro do usuario fica em `pessoal`; `publico`
+    e o framework inicial). `todos` e mantido por compatibilidade (MCP dos agentes) e hoje equivale ao padrao (ADR-029)."""
+    _ = todos
+    alvo = namespace or sorted(p.namespaces)
     return s.buscar(p, q, alvo, tuple(fonte or ("memoria", "codigo")),
                     [x.value for x in tipo] if tipo else None, limite,
                     apenas_validadas, incluir_inativas)

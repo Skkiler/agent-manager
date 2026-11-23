@@ -22,6 +22,7 @@ import * as integracoes from "./views/integracoes.js";
 import * as master from "./views/master.js";
 import { aprender, organizar } from "./views/conhecimento.js";
 import * as memoria from "./views/memoria.js";
+import { pastas } from "./views/pastas.js";
 import * as revisaoVista from "./views/revisao.js";
 import * as quadro from "./views/quadro.js";
 import * as tarefas from "./views/tarefas.js";
@@ -40,6 +41,7 @@ const ATIVIDADES = [
   { id: "quadro", rotulo: "Quadro de mensagens", curto: "Quadro", icone: "quadro", tipo: "vista", modulo: quadro },
   { id: "memoria", rotulo: "Memória", aba: "Grafo e notas", curto: "Memória", icone: "memoria", tipo: "vista", modulo: memoria },
   { id: "aprender", rotulo: "Buscar e aprender", curto: "Aprender", icone: "lampada", tipo: "vista", modulo: aprender },
+  { id: "pastas", rotulo: "Pastas do segundo cérebro", aba: "Pastas", curto: "Pastas", icone: "pasta", tipo: "vista", modulo: pastas },
   { id: "organizar", rotulo: "Organizar e deduplicar", aba: "Organizar", curto: "Organizar", icone: "memoria", tipo: "vista", modulo: organizar },
   { id: "revisao", rotulo: "Revisão do segundo cérebro", aba: "Revisão", curto: "Revisão", icone: "tarefas", tipo: "vista", modulo: revisaoVista },
   { id: "ferramentas", rotulo: "Ferramentas", curto: "Ferram.", icone: "ferramentas", tipo: "vista", modulo: ferramentas },
@@ -57,7 +59,7 @@ const GRUPOS = [
   { id: "dev", rotulo: "Desenvolvimento: requisições HTTP, comandos e receitas", curto: "Dev", icone: "http", tipo: "vista", membros: ["http", "comandos"] },
   { id: "orquestracao", rotulo: "Orquestração: master, tarefas e quadro", curto: "Agentes", icone: "master", tipo: "vista", membros: ["master", "tarefas", "quadro"] },
   { id: "conhecimento", rotulo: "Conhecimento: segundo cérebro, grafo, aprender, organizar e ferramentas", curto: "Saber", icone: "memoria", tipo: "vista",
-    membros: ["memoria", "aprender", "organizar", "revisao", "ferramentas"] },
+    membros: ["memoria", "aprender", "pastas", "organizar", "revisao", "ferramentas"] },
   { id: "conexoes", rotulo: "Conexões: integrações e custo", curto: "Conexões", icone: "integracoes", tipo: "vista", membros: ["integracoes", "custos"] },
 ];
 const REAIS = ATIVIDADES.filter((a) => a.id);

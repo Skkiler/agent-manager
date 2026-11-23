@@ -7,6 +7,7 @@ O consumo de tokens nao e exposto pelo ACP: registrado como 'indisponivel' (nunc
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -133,10 +134,14 @@ PROTOCOLO_ESTUDO = (
     "Divida o assunto em SUBTOPICOS modulares: uma ideia por nota, 60 a 350 palavras, titulo especifico ('Entidade: assunto'), "
     "primeira linha = resumo. O que vale para a entidade inteira (sistema, biblioteca, conceito) fica numa nota so, e as outras "
     "apenas citam [[Titulo]] em vez de repetir. Tags: entidade, tipo e assunto. Antes, busque no segundo cerebro (forja_buscar_memoria) "
-    "e nao recrie o que ja existe: cite-o com [[Titulo]]. Responda com:\n"
+    "e nao recrie o que ja existe: cite-o com [[Titulo]]. NAO use forja_propor_nota: as notas vao na resposta, no formato abaixo. "
+    "Estudo nao pede decisoes ao usuario: duvidas vao em Premissas. Responda com:\n"
     "## Resposta (2 a 4 frases: o que foi estudado e como as notas se organizam)\n"
     "## Notas\n### Nota: <titulo curto e unico>\nTopico pai: <titulo de outra nota desta lista, ou vazio para o topico do estudo>\n"
+    "Escopo: <projeto | entidade | generico>\nEntidade: <so se Escopo=entidade: nome do sistema/orgao/regra, ex.: Sistema Funcao>\n"
     "Tags: <ate 5>\nFontes: <URLs ou caminhos relativos; obrigatorio em pesquisa web>\n<corpo da nota>\n"
+    "Escopo: 'projeto' = so deste projeto; 'entidade' = sistema externo, orgao ou regra de negocio que outros projetos tambem usam "
+    "(fica UMA nota, ligada a cada projeto); 'generico' = tecnica ou biblioteca reutilizavel em qualquer automacao.\n"
     "(repita '### Nota:' para cada subtopico; ate 20 notas)\n"
     "## Premissas (incertezas e o que nao foi verificado)\n"
 )
@@ -647,7 +652,13 @@ class ProvedorKiroAcp:
                         seguranca_parada.append(True)
                         ctl.evento("agente.bloqueio_seguranca", {"agente": self.id, "motivo": bloqueio_vigia[:200]})
                     bruto0 = upd.get("rawInput") if isinstance(upd.get("rawInput"), dict) else {}
-                    sequencia.append(f"{upd.get('title')}|{(caminhos_do_tool_call(upd) or [''])[0]}|{bruto0.get('command') or ''}")
+                    # assinatura da chamada: titulo + caminho + ARGUMENTOS (carregar 6 ferramentas MCP diferentes nao e laco; achado
+                    # no estudo em lote real: "Tool Load" x6 com argumentos distintos derrubava o estudo)
+                    args = json.dumps(bruto0, sort_keys=True, default=str, ensure_ascii=False)[:400] if bruto0 else ""
+                    titulo_tc = str(upd.get("title") or "")
+                    meta = titulo_tc.casefold().startswith(("tool load", "tool search", "load tool"))  # carga de esquema, nao trabalho
+                    sequencia.append(f"{titulo_tc}|{(caminhos_do_tool_call(upd) or [''])[0]}|{bruto0.get('command') or ''}|{args}"
+                                     + (f"|{tid}" if meta else ""))
                     if len(sequencia) > self.max_ferramentas:
                         motivo_parada.append(f"orcamento_ferramentas_excedido: mais de {self.max_ferramentas} chamadas de ferramenta nesta execucao")
                     elif len(sequencia) >= self.repeticoes_laco and len(set(sequencia[-self.repeticoes_laco:])) == 1:
@@ -677,6 +688,9 @@ class ProvedorKiroAcp:
         mediador = MediadorPermissoes(ctl, cwd, janela=self.janela_agrupamento, perfil=perfil, trabalho=trabalho[1:], consulta=consulta)
         mediador.pasta_com_segredos = bool(segredos_pastas[0]) or not segredos_pastas[1]
         mediador.fora_da_pasta, mediador.citados = self.fora_da_pasta, citados
+        ignorar = ((tarefa.get("entrada") or {}).get("estudo") or {}).get("ignorar") or []
+        mediador.ignorar_dirs = frozenset(str(x).casefold()[:60] for x in ignorar[:40])  # estudo em lote: logs, dados... (ADR-029)
+        mediador.leitura_consulta_livre = tarefa.get("modo") == "estudo"
         cliente: ClienteAcp | None = None
         saudavel = True  # o processo pode voltar para o pool (pool.py)? Falha de transporte/tempo => encerra
         sid: str | None = None
@@ -865,6 +879,7 @@ class ProvedorKiroAcp:
             if alegacoes:
                 ctl.evento("kiro.alegacoes", {"total": len(alegacoes), "nao_verificadas": sum(not a.verificada for a in alegacoes),
                                               "tipos": sorted({a.tipo for a in alegacoes if not a.verificada})})
+            extras["estudo_lote"] = tarefa.get("modo") == "estudo" and bool(((tarefa.get("entrada") or {}).get("estudo") or {}).get("lote"))
             r = self._concluir(parada, texto, cliente, n_tools, t0, mediador, chamadas, tokens_in, alegacoes, extras)
             if r.estado == "concluida":
                 self._verificar_criterios(r, tarefa, cwd, extras)
@@ -1193,8 +1208,9 @@ class ProvedorKiroAcp:
         if testes is not None:  # o resultado REAL dos testes aparece na conversa, nao so nas evidencias
             mensagens.append(MensagemSaida(tipo="verificacao", conteudo=testes.resumo,
                                            dados={"testes_ok": extras.get("testes_ok"), "artefato": "testes_forja.txt"}))
+        estudo_lote = bool(extras.get("estudo_lote"))
         if (
-            briefing.precisa_do_usuario
+            briefing.precisa_do_usuario and not estudo_lote  # estudo em lote nao para por pergunta: as notas valem, a duvida fica na conversa
         ):  # UMA pergunta consolidada, com recomendacao: o desenvolvedor responde de uma vez
             r = self._res(
                 "bloqueada",

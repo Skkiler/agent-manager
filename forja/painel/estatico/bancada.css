@@ -452,3 +452,21 @@ dialog.janela, #dlg-geral { border-radius: var(--raio-g); }
 .conhecimento-aba section.card { margin-top: var(--e4); }
 .conhecimento-aba section.card .linha { flex-wrap: wrap; margin-top: var(--e2); }
 .conhecimento-aba section.card input[type="text"] { flex: 1 1 260px; }
+/* pastas do segundo cerebro e alimentacao em lote (ADR-029) */
+.grade-pastas { display: grid; grid-template-columns: minmax(240px, 340px) 1fr; gap: var(--e4); align-items: start; margin-top: var(--e3); }
+.grade-pastas > nav { max-height: 70vh; overflow-y: auto; overflow-x: hidden; padding: var(--e2); min-width: 0; }
+.arvore-pastas { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.arvore-pastas li { padding-left: calc(var(--nivel, 0) * 14px); }
+.arvore-pastas .pasta-botao { width: 100%; justify-content: flex-start; text-align: left; border: 0; background: transparent; padding: 4px var(--e2);
+  border-radius: var(--raio); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arvore-pastas li { min-width: 0; }
+.arvore-pastas li.ativo .pasta-botao { background: color-mix(in srgb, var(--acento) 16%, transparent); font-weight: 600; }
+.pasta-detalhe { margin-top: 0 !important; min-width: 0; }
+.pasta-detalhe h2 { overflow-wrap: anywhere; }
+.lista-notas-pasta { list-style: none; padding: 0; margin: var(--e2) 0; display: grid; gap: 4px; max-height: 46vh; overflow: auto; }
+.lista-notas-pasta li { display: flex; gap: var(--e2); align-items: center; flex-wrap: wrap; }
+.tabela-lote { width: 100%; border-collapse: collapse; margin-top: var(--e2); font-size: var(--fs-s); }
+.tabela-lote th, .tabela-lote td { text-align: left; padding: 4px var(--e2); border-bottom: 1px solid var(--borda); overflow-wrap: anywhere; }
+.mover-nota { margin: var(--e2) 0; }
+.mover-nota .linha input { flex: 1 1 240px; }
+@media (max-width: 760px) { .grade-pastas { grid-template-columns: 1fr; } }

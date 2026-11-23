@@ -42,6 +42,7 @@ from forja.memoria.rotulagem import RotulagemServico
 from forja.observabilidade.logs import configurar_logging, correlation_id_var
 from forja.observabilidade.telemetria import Telemetria
 from forja.orquestracao.acoes_externas import AcoesExternasServico
+from forja.orquestracao.alimentacao import AlimentacaoLote
 from forja.orquestracao.aprendizado_rotas import AprendizadoRotas
 from forja.orquestracao.area_trabalho import AreaTrabalho, ambiente_usuario
 from forja.orquestracao.caderno import Caderno
@@ -58,6 +59,7 @@ from forja.orquestracao.memoria_servico import ServicoMemoria
 from forja.orquestracao.modularidade import Modularidade
 from forja.orquestracao.oficina import OficinaServico
 from forja.orquestracao.organizacao import OrganizadorMemoria
+from forja.orquestracao.pastas_memoria import PastasMemoria
 from forja.orquestracao.projetos_servico import ProjetosServico
 from forja.orquestracao.propostas import PropostasMemoria
 from forja.orquestracao.quadro_servico import QuadroServico
@@ -263,6 +265,11 @@ def _conhecimento_e_editor(app: FastAPI, cfg: Configuracoes, servico: Servico) -
     app.state.modularidade = Modularidade(repo, app.state.memoria, app.state.grafo, servico, principal=principal)
     app.state.organizador.modularidade = app.state.modularidade
     servico.ao_finalizar.append(app.state.modularidade.ao_finalizar)
+    # pastas do segundo cerebro e alimentacao em lote de uma pasta de projetos (ADR-029)
+    app.state.pastas = PastasMemoria(repo)
+    app.state.organizador.pastas = app.state.pastas
+    app.state.alimentacao = AlimentacaoLote(servico, app.state.memoria, app.state.grafo, app.state.estudos, prefs.politica_pastas,
+                                            Principal("alimentacao", cfg.memoria_namespaces))
     # editor do painel: catalogo de codigo (padrao + usuario/IA) e LSP (sob demanda, ambiente do usuario sem APP_*/FORJA_*)
     app.state.codigo = CodigoServico(CatalogoCodigo(cfg.dados_dir), servico)
     app.state.area.gerente_lsp = GerenteLsp(cfg.dados_dir, ambiente_usuario)

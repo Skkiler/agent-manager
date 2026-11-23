@@ -31,6 +31,13 @@ IGNORAR_DIRS = frozenset(
         ".ruff_cache",
         ".mypy_cache",
         "data",
+        "dados",  # dados de entrada/saida de automacoes (podem ter dados de clientes): nunca entram no indice (ADR-029)
+        "entrada",
+        "saida",
+        "output",
+        "downloads",
+        "uploads",
+        ".obsidian",
         "logs",
         "models",
         "cache",

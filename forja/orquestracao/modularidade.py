@@ -24,9 +24,9 @@ from forja.dominio.erros import ErroDominio, ValidacaoDominio
 from forja.dominio.estados import EstadoTarefa
 from forja.dominio.tempo import Relogio, RelogioSistema, iso
 from forja.memoria.contratos import FonteIn, MemoriaAtualizaIn, MemoriaIn
-from forja.memoria.modelo import ARESTAS, INATIVOS, Principal, eh_base
-from forja.memoria.wikilinks import extrair_wikilinks
-from forja.orquestracao.organizacao import TAGS_GENERICAS, jaccard, termos
+from forja.memoria.modelo import ARESTAS, INATIVOS, Principal, eh_base, normalizar_tag
+from forja.memoria.wikilinks import chave_titulo, extrair_wikilinks
+from forja.orquestracao.organizacao import TAGS_GENERICAS, OrganizadorMemoria, jaccard, termos
 
 PROJETO = "forja-conhecimento"
 PALAVRAS_IDEAL = (60, 350)
@@ -37,10 +37,13 @@ LIMIAR_FRASE = 0.8
 MAX_NOTAS_ANALISE = 3000
 MAX_AGLOMERADOS = 25
 MAX_NOTAS_NO_PEDIDO = 200
+MAX_PEDIDO = 3990  # TarefaIn.descricao aceita ate 4000 caracteres
 _FRASE = re.compile(r"(?<=[.!?])\s+|\n+")
 _JSON = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
 _CAPITALIZADA = re.compile(r"\b([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ]{2,}(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÀ-ÿ]{2,})*)")
-_INICIO_FRASE = frozenset({"O", "A", "Os", "As", "Use", "Para", "Se", "Em", "No", "Na", "Com", "Ver", "Este", "Esta", "Cada"})
+_INICIO_FRASE = frozenset({"O", "A", "Os", "As", "Use", "Para", "Se", "Em", "No", "Na", "Com", "Ver", "Este", "Esta", "Cada", "Como", "Fontes",
+                           "Topico", "Tópico", "Tags", "Escopo"})
+METADADOS = ("fontes:", "topico pai:", "tópico pai:", "tags:", "escopo:", "entidade:", "classificacao:", "classificação:")
 
 # Regras de nota eficiente (mesmo texto para agentes de estudo, de organizacao e para o MCP): o agente absorve so o que precisa.
 REGRAS_NOTA = (
@@ -119,7 +122,11 @@ class Modularidade:
         """Frases (>= 6 termos) que aparecem em `min_notas`+ notas, agrupadas pelo mesmo conjunto de notas. Mais economia primeiro."""
         ocorrencias: dict[frozenset[str], dict[str, Any]] = {}
         for m in notas:
+            if eh_hub(m):  # texto padrao das notas-hub da Forja (projeto, grupo, entidade) nao e repeticao de conhecimento
+                continue
             for f in _frases(m["conteudo"]):
+                if f.lstrip(" -*").casefold().startswith(METADADOS):  # "Fontes: ...", "Topico pai: ...": metadado, nao conhecimento
+                    continue
                 tf = frozenset(termos(f))
                 if len(tf) < MIN_TERMOS_FRASE:
                     continue
@@ -170,8 +177,9 @@ class Modularidade:
 
     @staticmethod
     def _entidade(ids: list[str], texto: str, por_id: dict[str, dict[str, Any]]) -> str:
-        tags = Counter(t for i in ids for t in (por_id[i]["tags"] or []) if t not in TAGS_GENERICAS
-                       and t not in ("reciclada", "agente", "automatica", "proposta", "modulo"))
+        uteis = {i: OrganizadorMemoria.tags_uteis(por_id[i]["tags"]) for i in ids}
+        tags = Counter(t for i in ids for t in (str(x).casefold() for x in (por_id[i]["tags"] or []))  # ordem da nota: desempate estavel
+                       if t in uteis[i] and t not in ("reciclada", "automatica", "proposta", "estudado"))
         comum = [t for t, n in tags.most_common(3) if n >= max(2, len(ids) // 2)]
         if comum:
             return comum[0]
@@ -184,12 +192,12 @@ class Modularidade:
         if not notas:
             return {"notas": 0, "pontuacao": 100, "problemas": {}, "repeticoes": [], "ideal_palavras": list(PALAVRAS_IDEAL)}
         ids = {m["id"] for m in notas}
-        titulos = {m["titulo"].casefold(): m["id"] for m in notas}
+        titulos = {chave_titulo(m["titulo"]): m["id"] for m in notas}
         ligadas: set[str] = set()
         fantasmas: list[dict[str, Any]] = []
         for m in notas:
             for alvo in extrair_wikilinks(f"{m['resumo']}\n{m['conteudo']}"):
-                destino = titulos.get(alvo.casefold())
+                destino = titulos.get(chave_titulo(alvo))
                 if destino:
                     ligadas |= {m["id"], destino}
                 else:
@@ -232,30 +240,14 @@ class Modularidade:
         if len(notas) < 2:
             raise ValidacaoDominio("poucas notas para organizar (precisa de 2 ou mais)")
         s = self.saude(p, namespaces)
-        lista = sorted(notas, key=lambda m: m["atualizado_em"], reverse=True)[:MAX_NOTAS_NO_PEDIDO]
-        linhas = [f"{m['id']} | {m['namespace']} | {m['titulo'][:90]} | tags: {', '.join((m['tags'] or [])[:6])} | {palavras(m['conteudo'])} palavras"
-                  for m in lista]
-        aglomerados = [f"- notas {', '.join(r['notas'][:12])} (entidade provavel: {r['entidade'] or '?'}): \"{r['trecho'][:300]}\""
-                       for r in s["repeticoes"]]
-        longas = [f"- {x['id']} {x['titulo']} ({x['palavras']} palavras)" for x in s["problemas"]["longas"][:10]]
-        orfas = [f"- {x['id']} {x['titulo']}" for x in s["problemas"]["orfas"][:20]]
-        descricao = (
-            "Organize e deduplique o segundo cerebro da Forja, como se fosse refatorar codigo repetido em funcoes reutilizaveis.\n"
-            + (f"Foco pedido pelo usuario: {' '.join(foco.split())[:400]}\n" if foco.strip() else "")
-            + f"\nSaude atual: nota {s['pontuacao']}/100, {s['notas']} notas, {s['percentual_repetido']}% do texto repetido, "
-            f"{s['contagem']['orfas']} orfas, {s['contagem']['longas']} longas, {s['contagem']['sem_tags']} sem tags.\n"
-            + ("\nTrechos REPETIDOS em varias notas (candidatos a nota-modulo):\n" + "\n".join(aglomerados) + "\n" if aglomerados else "")
-            + ("\nNotas longas (candidatas a dividir):\n" + "\n".join(longas) + "\n" if longas else "")
-            + ("\nNotas sem nenhuma ligacao:\n" + "\n".join(orfas) + "\n" if orfas else "")
-            + "\nNotas (id | namespace | titulo | tags | tamanho):\n" + "\n".join(linhas)
-            + "\n\nUse forja_navegar_memoria (conteudo=true) so nas notas que precisar ler. " + REGRAS_NOTA + "\n\n" + FORMATO)
+        descricao = self._pedido(s, notas, foco)
         projeto = next(iter(self.servico.listar(T.Projeto, nome=PROJETO)), None)
         if projeto is None:
             projeto, _ = self.servico.criar_projeto(ProjetoIn(nome=PROJETO, descricao="Organizacao e deduplicacao do segundo cerebro"))
         objetivo, _ = self.servico.criar_objetivo(ObjetivoIn(projeto_id=projeto["id"], titulo="Organizar e deduplicar o segundo cerebro",
                                                              prioridade=4, criterios_sucesso=["Plano de organizacao valido"]))
         tarefa, _ = self.servico.criar_tarefa(TarefaIn(
-            objetivo_id=objetivo["id"], titulo="Organizar e deduplicar o segundo cérebro", descricao=descricao[:60_000],
+            objetivo_id=objetivo["id"], titulo="Organizar e deduplicar o segundo cérebro", descricao=descricao[:MAX_PEDIDO],
             criterios_aceite=["Um bloco ```json``` no formato pedido", "Cada modulo cita as notas que passam a apontar para ele"],
             especialidade="conhecimento", modo="analise",
             entrada={"organizacao_grafo": {"namespaces": namespaces or sorted(p.namespaces)}}))
@@ -266,6 +258,48 @@ class Modularidade:
             execucao = self.servico.criar_execucao(tarefa["id"])
             self.servico.iniciar_execucao(execucao["id"], "operador")
         return {"tarefa_id": tarefa["id"], "execucao_id": execucao["id"] if execucao else None, "saude": {"pontuacao": s["pontuacao"]}}
+
+    @staticmethod
+    def _pedido(s: dict[str, Any], notas: list[dict[str, Any]], foco: str, limite: int = MAX_PEDIDO) -> str:
+        """Pedido dentro do limite da tarefa (TarefaIn.descricao): primeiro os maiores trechos repetidos e as notas deles, depois
+        longas e orfas, depois o resto das notas por recencia, ate caber. Com centenas de notas (achado no lote real: 611) o
+        agente organiza o mais valioso agora e busca o resto com forja_buscar_memoria; a proxima rodada pega o que sobrou."""
+        cabeca = ("Organize e deduplique o segundo cerebro da Forja, como se fosse refatorar codigo repetido em funcoes reutilizaveis.\n"
+                  + (f"Foco pedido pelo usuario: {' '.join(foco.split())[:300]}\n" if foco.strip() else "")
+                  + f"Saude atual: nota {s['pontuacao']}/100, {s['notas']} notas, {s['percentual_repetido']}% do texto repetido, "
+                  f"{len(s['repeticoes'])} grupos repetidos, {s['contagem']['orfas']} orfas, {s['contagem']['longas']} longas.\n")
+        fim = ("\nAs listas acima sao parciais (limite do pedido): busque o resto com forja_buscar_memoria e leia com "
+               "forja_navegar_memoria (conteudo=true) so o que precisar. " + REGRAS_NOTA + "\n\n" + FORMATO)
+        por_id = {m["id"]: m for m in notas}
+        partes: list[str] = []
+        usados: list[str] = []
+        sobra = limite - len(cabeca) - len(fim)
+
+        def caber(linha: str) -> bool:
+            nonlocal sobra
+            if len(linha) + 1 > sobra:
+                return False
+            partes.append(linha)
+            sobra -= len(linha) + 1
+            return True
+
+        if s["repeticoes"] and caber("Trechos REPETIDOS em varias notas (candidatos a nota-modulo):"):
+            for r in s["repeticoes"]:
+                if not caber(f"- {', '.join(r['notas'][:8])} (entidade: {r['entidade'] or '?'}): \"{r['trecho'][:160]}\""):
+                    break
+                usados += r["notas"][:8]
+        for rotulo, itens in (("Notas longas (dividir):", s["problemas"]["longas"][:6]), ("Notas sem ligacao:", s["problemas"]["orfas"][:10])):
+            if itens and caber(rotulo):
+                for x in itens:
+                    if not caber(f"- {x['id']} {x['titulo'][:70]}"):
+                        break
+        recentes = [m["id"] for m in sorted(notas, key=lambda m: m["atualizado_em"], reverse=True)]
+        if caber("Notas (id | pasta | titulo | tags):"):
+            for mid in dict.fromkeys([*usados, *recentes]):
+                m = por_id.get(mid)
+                if m and not caber(f"{m['id']} | {m['namespace'].removeprefix('pessoal/')} | {m['titulo'][:70]} | {','.join((m['tags'] or [])[:4])}"):
+                    break
+        return cabeca + "\n".join(partes) + fim
 
     def importar_plano(self, p: Principal, tarefa_id: str, texto: str | None = None) -> dict[str, Any]:
         """Plano JSON do agente -> sugestoes pendentes na fila de revisao (nada e aplicado aqui)."""
@@ -303,8 +337,10 @@ class Modularidade:
             if len(ids) < 2 or not titulo or palavras(conteudo) < 5:
                 recusados.append(f"modulo '{titulo[:60]}': precisa de titulo, conteudo e 2+ notas validas")
                 continue
-            ns = notas[ids[0]]["namespace"]
-            ids = [i for i in ids if notas[i]["namespace"] == ns]
+            ns = pasta_do_modulo([notas[i]["namespace"] for i in ids])
+            if ns is None:  # notas de raizes diferentes (publico x pessoal): o modulo nao tem um lugar comum
+                recusados.append(f"modulo '{titulo[:60]}': notas em raizes diferentes")
+                continue
             novas.append({"tipo": "modularizar", "memorias": ids, "namespace": ns,
                           "motivo": f"{len(ids)} notas repetem o mesmo conteúdo: vira a nota-módulo '{titulo}' e elas passam a apontar para ela.",
                           "dados": {"titulo": titulo, "conteudo": conteudo, "entidade": str(m.get("entidade") or "")[:120],
@@ -338,7 +374,7 @@ class Modularidade:
                                     "titulos": {ids[0]: notas[ids[0]]["titulo"][:120]}}})
         for tg in (plano.get("tags") or [])[:100]:
             ids = validas([tg.get("nota")])
-            tags = [re.sub(r"[^\w-]", "-", str(x).casefold())[:50].strip("-") for x in (tg.get("tags") or [])][:8]
+            tags = list(dict.fromkeys(x for x in (normalizar_tag(str(x)) for x in (tg.get("tags") or [])) if x))[:8]
             if ids and [x for x in tags if x]:
                 novas.append({"tipo": "tags", "memorias": ids, "namespace": notas[ids[0]]["namespace"], "motivo": f"Tags para achar a nota: {', '.join(tags)}",
                               "dados": {"tags": [x for x in tags if x], "titulos": {ids[0]: notas[ids[0]]["titulo"][:120]}}})
@@ -387,7 +423,7 @@ class Modularidade:
             hub = self._nota_por_titulo(ns, entidade) or self.memoria.criar(p, MemoriaIn(
                 tipo="estrutural", titulo=entidade[:200], resumo=f"Tudo sobre {entidade}: fatos e regras que valem para todos os projetos.",
                 conteudo=f"Tudo sobre {entidade}. Os subtópicos ficam ligados a esta nota.", namespace=ns,
-                tags=["entidade", re.sub(r"[^\w-]+", "-", entidade.casefold()).strip("-")[:50]]), ator)
+                tags=["entidade", normalizar_tag(entidade)]), ator)
             try:
                 self.grafo.ligar(p, modulo["id"], hub["id"], "SUBTOPICO_DE", "módulo da entidade", ator)
             except ErroDominio:
@@ -436,6 +472,30 @@ class Modularidade:
             indice = (m["resumo"] or m["titulo"]) + "\n\nPartes:\n" + "\n".join(f"- [[{x['titulo']}]]" for x in partes)
             self.memoria.atualizar(p, mid, MemoriaAtualizaIn(expected_version=m["versao"], conteudo=indice, motivo="dividida em subtópicos"), ator)
         return {"nota": mid, "partes": [x["id"] for x in partes]}
+
+
+def eh_hub(m: dict[str, Any]) -> bool:
+    """Nota-hub criada pela Forja (indice de projeto, grupo, entidade ou topico): so organiza, o texto e padrao."""
+    tags = {str(x).casefold() for x in (m.get("tags") or [])}
+    return "topico" in tags or "indice" in tags or str(m.get("titulo") or "").startswith(("Projeto: ", "Grupo: ", "Projetos: "))
+
+
+def pasta_do_modulo(namespaces: list[str]) -> str | None:
+    """Onde a nota-modulo fica: a pasta comum das notas; se elas sao de projetos diferentes (.../projetos/a e .../projetos/b),
+    a pasta 'entidades' ao lado de 'projetos' (achado no lote real: o modulo de notas de 2 projetos caia para 1 nota so)."""
+    partes = [ns.split("/") for ns in namespaces if ns]
+    if not partes or len({p[0] for p in partes}) > 1:
+        return None
+    comum: list[str] = []
+    for nivel in zip(*partes, strict=False):
+        if len(set(nivel)) != 1:
+            break
+        comum.append(nivel[0])
+    if len(set(namespaces)) > 1 and "projetos" in comum:
+        comum = [*comum[: comum.index("projetos")], "entidades"]
+    elif len(set(namespaces)) > 1 and comum and comum[-1] == "projetos":
+        comum[-1] = "entidades"
+    return "/".join(comum)
 
 
 def remover_trecho(conteudo: str, alvo: list[frozenset[str]], limiar: float = 0.75) -> str:

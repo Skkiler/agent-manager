@@ -17,6 +17,15 @@ def extrair_wikilinks(texto: str) -> list[str]:
     return [t for t in vistos if t]
 
 
+def chave_titulo(titulo: str) -> str:
+    """Forma de comparar titulos de [[links]]: sem acento, sem caixa e com espacos simples. Agentes escrevem 'Tecnica' e
+    'Técnica' para a mesma nota (achado no lote real: links quebrados so pelo acento)."""
+    import unicodedata
+
+    sem = "".join(c for c in unicodedata.normalize("NFKD", (titulo or "").casefold()) if not unicodedata.combining(c))
+    return " ".join(sem.split())
+
+
 def extrair_tags(texto: str) -> list[str]:
     """#tags do corpo (ignora blocos de codigo e cabecalhos Markdown como '# Titulo')."""
     limpo = _CODIGO.sub(" ", texto or "")

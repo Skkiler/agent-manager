@@ -36,6 +36,13 @@ MAX_LIGACOES_POR_RODADA = 50
 INTERVALO_S = 30 * 60
 MIN_TOPICO, MAX_TOPICO, MAX_TOPICOS_POR_RODADA = 4, 25, 5
 TAGS_GENERICAS = frozenset({"estudo", "base", "topico", "registro", "projeto", "pessoal", "nota", "geral"})
+# texto padrao das notas-hub de entidade (EstudoServico): nao conta como semelhanca entre duas entidades diferentes
+TEXTO_HUB_ENTIDADE = "o que vale para todos os projetos que a usam"
+TAGS_ESTRUTURA = frozenset({"entidade", "generico", "indice", "grupo", "estudado", "agente", "modulo", "python", "javascript",
+                            "typescript", "html", "css",
+                            # TIPO da nota (nao o assunto): agrupar por elas daria topicos como "todas as tecnicas"
+                            "tecnica", "sistema", "sistema-externo", "regra-de-negocio", "regra", "integracao", "api", "visao-geral",
+                            "arquitetura", "fluxo", "procedimento", "decisao", "armadilha", "biblioteca", "conceito"})
 _RANK = {"validado": 5, "verificado": 4, "observado": 3, "candidato": 2, "contestado": 1}
 _PALAVRA = re.compile(r"[a-z0-9_]{3,}")
 _VAZIAS = frozenset("que para com uma por dos das nos nas como mais sem sobre entre quando onde este esta isso essa the and for with".split())
@@ -60,6 +67,7 @@ class OrganizadorMemoria:
         self.modo = "sugerir"  # desligada | sugerir (preferencia 'organizacao_memoria')
         self.resumir: Any | None = None  # EstudoServico.solicitar_resumo: o Kiro escreve a nota-topico (9.12)
         self.modularidade: Any | None = None  # Modularidade: aplica modulos, divisoes e tags do plano de organizacao (ADR-028)
+        self.pastas: Any | None = None  # PastasMemoria: propostas de pasta dos agentes (criar, mover, renomear; ADR-029)
         self._parar = threading.Event()
         self._thread: threading.Thread | None = None
         self._mu = threading.Lock()
@@ -83,7 +91,7 @@ class OrganizadorMemoria:
             for ns, lista in por_ns.items():
                 lista = sorted(lista, key=lambda m: m["atualizado_em"], reverse=True)[:MAX_POR_NAMESPACE]
                 novas += self._duplicatas(ns, lista)
-                novas += self._ligacoes(ns, lista, ligadas)
+                novas += self._ligacoes(ns, lista, ligadas, pais)
                 novas += self._topicos(ns, lista, pais)
             novas += self._desatualizadas(ativas, agora)
             criadas: dict[str, int] = {}
@@ -110,7 +118,8 @@ class OrganizadorMemoria:
         grupos = [g for g in por_hash.values() if len(g) > 1]
         # quase iguais: so compara pares que dividem um termo do TITULO (indice invertido evita O(n^2) cego)
         tt = {m["id"]: termos(m["titulo"]) for m in lista}
-        tx = {m["id"]: termos(f"{m['titulo']} {m['resumo']} {(m['conteudo'] or '')[:3000]}") for m in lista}
+        padrao = termos(TEXTO_HUB_ENTIDADE) | {"entidade"}  # hubs de entidade: so o NOME diferencia (achado no lote real)
+        tx = {m["id"]: termos(f"{m['titulo']} {m['resumo']} {(m['conteudo'] or '')[:3000]}") - padrao for m in lista}
         indice: dict[str, list[str]] = {}
         for m in lista:
             for termo in tt[m["id"]]:
@@ -159,11 +168,23 @@ class OrganizadorMemoria:
                               "dados": {"destino": destino, "titulos": {m["id"]: m["titulo"][:120]}}})
         return saida
 
-    def _ligacoes(self, ns: str, lista: list[dict], ligadas: set[tuple[str, str]]) -> list[dict[str, Any]]:
+    @staticmethod
+    def tags_uteis(tags: list[str] | None) -> set[str]:
+        """Tags que dizem o ASSUNTO (as de estrutura, como estudo/entidade/escopo-empresa, nao aproximam duas notas)."""
+        return {str(x).casefold() for x in (tags or [])} - TAGS_GENERICAS - TAGS_ESTRUTURA - {"", None} - {
+            t for t in {str(x).casefold() for x in (tags or [])} if t.startswith("escopo-")}
+
+    def _ligacoes(self, ns: str, lista: list[dict], ligadas: set[tuple[str, str]],
+                  pais: set[tuple[str, str]] | None = None) -> list[dict[str, Any]]:
+        """Duas notas soltas uma da outra que compartilham 2+ tags de assunto. Irmas sob o mesmo topico ja estao ligadas pelo
+        topico (achado no lote real: 700 sugestoes de 'ligar' notas do mesmo projeto so por terem as tags do estudo)."""
         saida: list[dict[str, Any]] = []
         por_tag: dict[str, list[dict]] = {}
+        pai_de: dict[str, set[str]] = {}
+        for origem, destino in pais or set():
+            pai_de.setdefault(origem, set()).add(destino)
         for m in lista:
-            for tag in {str(x).casefold() for x in (m["tags"] or [])}:
+            for tag in self.tags_uteis(m["tags"]):
                 por_tag.setdefault(tag, []).append(m)
         comuns: dict[tuple[str, str], set[str]] = {}
         for tag, ms in por_tag.items():
@@ -173,7 +194,7 @@ class OrganizadorMemoria:
                 comuns.setdefault((a["id"], b["id"]), set()).add(tag)
         titulos = {m["id"]: m["titulo"][:120] for m in lista}
         for (a, b), tags in sorted(comuns.items(), key=lambda kv: -len(kv[1])):
-            if len(tags) < 2 or (a, b) in ligadas or (b, a) in ligadas:
+            if len(tags) < 2 or (a, b) in ligadas or (b, a) in ligadas or pai_de.get(a, set()) & pai_de.get(b, set()):
                 continue
             saida.append({"tipo": "ligacao", "chave": self._chave("ligacao", [a, b]), "memorias": [a, b], "namespace": ns,
                           "motivo": f"Compartilham as tags {', '.join(sorted(tags)[:5])} e nao estao ligadas.",
@@ -186,8 +207,12 @@ class OrganizadorMemoria:
         """Grupos de notas com a mesma tag e SEM um topico que ja organize a maioria delas: candidatos a resumo pelo Kiro."""
         saida: list[dict[str, Any]] = []
         por_tag: dict[str, list[dict]] = {}
+        # tag que ja tem uma nota-hub (projeto, grupo, entidade, topico): o hub ja organiza o grupo (achado no lote real)
+        com_hub = {t for m in lista if {"projeto", "topico", "grupo", "indice", "entidade"} & {str(x).casefold() for x in (m["tags"] or [])}
+                   and (m["titulo"].startswith(("Projeto: ", "Grupo: ", "Projetos: ")) or "topico" in (m["tags"] or []))
+                   for t in self.tags_uteis(m["tags"])}
         for m in lista:
-            for tag in {str(x).casefold() for x in (m["tags"] or [])} - TAGS_GENERICAS:
+            for tag in self.tags_uteis(m["tags"]) - com_hub:
                 por_tag.setdefault(tag, []).append(m)
         titulos_ns = {m["titulo"].casefold() for m in lista}
         for tag, ms in sorted(por_tag.items(), key=lambda kv: -len(kv[1])):
@@ -271,6 +296,8 @@ class OrganizadorMemoria:
             return self.resumir(p, s["namespace"], dados.get("tag") or "tema", list(s["memorias"]))
         if s["tipo"] in ("modularizar", "dividir", "tags") and self.modularidade is not None:  # plano de organizacao (ADR-028)
             return self.modularidade.aplicar(p, s, ator)
+        if s["tipo"] == "pasta" and self.pastas is not None:
+            return self.pastas.aplicar(p, s, ator)
         raise ValidacaoDominio(f"tipo de sugestao desconhecido: {s['tipo']}")
 
     # ------------------------------------------------------------------ segundo plano

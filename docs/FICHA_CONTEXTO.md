@@ -119,13 +119,19 @@ Atualizada em 2026-11-18. Esta ficha substitui o histórico do chat anterior: le
   `avaliar_nota`, 60–350 palavras) nos prompts do Kiro e no MCP; menu em 6 grupos (`GRUPOS` em `js/main.js`, abas por grupo em
   `js/bancada.js`; `views/conhecimento.js` com Buscar e aprender e Organizar). Banco real auditado: 63 notas da base, nota 100.
 
+- **Rodada 7 (ADR-029)**: pastas do segundo cérebro (`orquestracao/pastas_memoria.py`, `/memorias/pastas*`, aba Pastas, MCP
+  `forja_pasta_propor` só propõe); alimentação em lote (`orquestracao/alimentacao.py`, `/estudos/lote*`); notas por escopo
+  projeto/entidade/genérico em `EstudoServico`; busca padrão em todo o segundo cérebro e MCP com notas antes do código;
+  `normalizar_tag`, `chave_titulo`, `pasta_do_modulo`; ferramentas do MCP da Forja livres em qualquer nível (`FORJA_LIVRES`).
+  Banco real: 47 projetos alimentados, 632 notas, saúde 100, 42 créditos.
+
 ## 5 Testes e verificações (último estado)
 
-- `python -m pytest -p no:cacheprovider -q` -> **1290 passed** (~4,6 min).
+- `python -m pytest -p no:cacheprovider -q` -> **1309 passed** (~5 min).
 - LSP real: Pyright, TypeScript, HTML e CSS instalados pela API e testados (`%TEMP%\forja_sonda\sonda_lsp.py`, `sonda_lsp_ui.py`).
 - Testes reais desta etapa com Kiro e Codex: scripts e resultados em `%TEMP%\forja_sonda\` (fora do Git, dados fictícios).
 - `python -m ruff check .` -> ok; `node --check` em todos os módulos JS -> ok.
-- Navegador real: `inspecionar_painel.py --interagir --a11y` -> 144 OK, 0 falhas (axe sem violação, inclui Aprender/Organizar/Revisão); `--login --a11y` -> 0 problemas.
+- Navegador real: `inspecionar_painel.py --interagir --a11y` -> 147 OK, 0 falhas (axe sem violação, inclui Aprender/Pastas/Organizar/Revisão); `--login --a11y` -> 0 problemas.
 - Acessibilidade: árvore do Chromium + volta de Tab em 9 vistas limpa (NVDA não instalado; teste com leitor real pendente).
 - Codex real com o perfil nativo: sessão aceita, deny aplicado pelo sandbox, sem vazamento (`c_rapida`, `c_fora`, `c_env_proc`).
 - `benchmark_busca.py` global 0.94/0.87/0.89 (recall@5/MRR/nDCG@5).

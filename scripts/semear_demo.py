@@ -63,7 +63,7 @@ def main() -> int:
         c("POST", "/memorias", {"tipo": "procedimental", "titulo": "Checklist de deploy", "namespace": "pessoal", "tags": ["deploy", "operacao"],
                                 "conteudo": "Rodar testes, migrar o banco, publicar a imagem e conferir a saúde do serviço." + sufixo})
 
-    def nota(titulo: str, conteudo: str, ns: str = "publico", tags: list[str] | None = None) -> dict:
+    def nota(titulo: str, conteudo: str, ns: str = "pessoal", tags: list[str] | None = None) -> dict:  # segundo cerebro do usuario (ADR-029)
         return c("POST", "/memorias", {"tipo": "procedimental", "titulo": titulo, "conteudo": conteudo, "namespace": ns, "tags": tags or []})
 
     nota("Autenticação Bearer", "# Autenticação\nUsar **Bearer** com [[Tokens JWT]]. Ver [[Rotação de chaves]] e [[Política de sessão]].", tags=["seguranca"])

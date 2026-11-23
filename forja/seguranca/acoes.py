@@ -55,7 +55,11 @@ _FORJA_MCP = {
     "forja_propor_nota": "propor uma nota candidata para você revisar",
     "forja_caderno_salvar": "anotar no caderno desta tarefa o que já resolveu",
     "forja_caderno_consultar": "consultar o caderno desta tarefa",
+    "forja_pasta_propor": "propor uma mudança nas pastas do segundo cérebro (você decide na Revisão)",
 }
+# Passam pela API da Forja (ACL, redacao, so candidatas/propostas): acesso LIVRE dos agentes ao segundo cerebro, ao caderno e ao
+# quadro em qualquer nivel de autonomia (ADR-028/029). `forja_executar_ferramenta` le arquivos: continua seguindo o nivel.
+FORJA_LIVRES = frozenset(_FORJA_MCP) - {"forja_executar_ferramenta"}
 
 
 def _ferramenta_forja(tc: dict[str, Any]) -> str | None:
@@ -305,6 +309,8 @@ def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None, tra
         fora = bool(no_comando)
     varredura = bool(cmd) and _VARREDURA.search(cmd) is not None
     em_consulta = categoria in ESCRITA and any(_dentro_de_alguma(a, list(consulta or [])) and not _dentro_de_alguma(a, raizes_escrita) for a in alvos)
+    # leitura so dentro das pastas de CONSULTA (avaliado antes de relativizar): o estudo le a pasta estudada sem perguntar (ADR-029)
+    so_consulta = categoria == "ler" and bool(alvos) and bool(consulta) and all(_dentro_de_alguma(a, list(consulta or [])) for a in alvos)
     alvos = _normalizar(alvos, workspace)
     if sensivel:
         risco = "critico"
@@ -336,6 +342,8 @@ def descrever_acao(tool_call: dict[str, Any], workspace: Path | None = None, tra
         "sensivel": sensivel,
         "fora_do_workspace": fora,
         "em_consulta": em_consulta,
+        "so_consulta": so_consulta and not sensivel,
+        "forja": forja or "",
         "usa_env": usa_env and not sensivel,
         "varredura": varredura,  # le/copia muitos arquivos de uma vez: numa pasta com segredos, nunca e automatico
         "ofuscado": ofuscado,
