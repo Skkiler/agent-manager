@@ -74,21 +74,31 @@ async function encerrar(c) {
 let prefsCache = null;
 function chipsComposer() {
   const caixa = el("div", { className: "chips-composer", "aria-label": "Como o pedido será executado" });
-  const chip = (texto, titulo) => el("button", { type: "button", className: "chip-info", title: titulo, textContent: texto, onclick: () => emitir("ir", "config") });
+  const chip = (texto, titulo, aoClicar = () => emitir("ir", "config")) => el("button", { type: "button", className: "chip-info", title: titulo, textContent: texto, onclick: aoClicar });
   caixa.append(chip("Este computador", "Tudo roda no seu computador (servidor local)."));
   prefsCache ||= api("GET", "/preferencias").catch(() => null);
   prefsCache.then((p) => {
     const item = p?.categorias.flatMap((c) => c.itens).find((i) => i.id === "nivel_autonomia");
     const rotulo = item ? (item.opcoes.find((o) => o[0] === item.valor) || [item.valor, item.valor])[1] : null;
-    if (rotulo) caixa.append(chip(`Autonomia: ${rotulo}`, "Nível de autonomia dos agentes (Configurações > Agentes)."));
+    if (rotulo) {
+      const c = chip(`Autonomia: ${rotulo}`, "Nível de autonomia dos agentes: clique para mudar aqui mesmo (Ctrl+Alt+S).", () => emitir("ajustes", "autonomia"));
+      c.dataset.autonomia = "1"; caixa.append(c);
+    }
     const modelo = document.getElementById("st-modelo")?.textContent.replace(/^modelo:?\s*/, "").trim();
     if (modelo && modelo !== "—") caixa.append(chip(`Modelo: ${modelo}`, "Modelo da execução (Configurações > Consumo)."));
   });
   return caixa;
 }
 ouvir("evento", (e) => { if (String(e.tipo).startsWith("preferencias.")) prefsCache = null; });
+// Troca feita nos ajustes rapidos ou nas Configuracoes: o chip ja desenhado acompanha, sem esperar o proximo desenho da tela.
+ouvir("preferencias", (p) => {
+  prefsCache = Promise.resolve(p);
+  const item = p?.categorias.flatMap((c) => c.itens).find((i) => i.id === "nivel_autonomia");
+  const rotulo = item ? (item.opcoes.find((o) => o[0] === item.valor) || [item.valor, item.valor])[1] : null;
+  if (rotulo) for (const b of document.querySelectorAll(".chip-info[data-autonomia]")) b.textContent = `Autonomia: ${rotulo}`;
+});
 
-export function montar(raiz, { compacto = false } = {}) {
+export function montar(raiz, { compacto = false, rascunho = "" } = {}) {
   limpar(raiz);
   const titulo = el("h1", { textContent: "Master" });
   const encerrar = el("button", { type: "button", textContent: "Encerrar conversa", hidden: true });
@@ -107,6 +117,7 @@ export function montar(raiz, { compacto = false } = {}) {
     } catch (e) { toast(e.message, "erro"); } finally { enviar.disabled = false; }
   } }, texto, el("div", { className: "linha" }, enviar,
     el("span", { className: "mudo", textContent: "O master não executa nada sozinho: cria tarefas dentro da sua autonomia e dos limites da Forja." })));
+  if (rascunho) texto.value = rascunho; // pergunta vinda do editor (arquivo e linhas): o usuario completa e envia
   texto.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) form.requestSubmit(); });
   raiz.append(el("div", { className: "titulo-vista" }, titulo, el("div", { className: "linha" }, el("button", { type: "button", textContent: "Atualizar", onclick: atualizar }), encerrar)),
     el("div", { className: `master-grade${compacto ? " compacto" : ""}` }, el("section", { className: "master-chat" }, conversa, form, chipsComposer()), arvoreNo));

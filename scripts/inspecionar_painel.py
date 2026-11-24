@@ -444,7 +444,10 @@ def bancada(pagina, base: str, saida: Path, expect, passo) -> None:
     pagina.goto(base + "#/memoria")
     pagina.reload()
     expect(pagina.locator("#vista .grupo-abas [role=tab]").first).to_be_visible(timeout=8000)
-    passo("barra de atividades com no maximo 8 itens (6 grupos + conta e configuracoes)", pagina.locator("#atividades button").count() <= 8)
+    # 6 grupos de navegacao (no maximo 7) em secoes; o rodape tem os atalhos (novo projeto, ajustes rapidos, conta, configuracoes)
+    passo("barra de atividades: no maximo 7 grupos de navegacao, atalhos e conta no rodape",
+          pagina.locator("#atividades .ativ-secao:not(.rodape) button").count() <= 7
+          and pagina.locator("#atividades .ativ-secao.rodape button").count() <= 4)
     passo("Conhecimento junta grafo, aprender, pastas, organizar, revisao e ferramentas em abas",
           pagina.locator("#vista .grupo-abas [role=tab]").count() == 6 and pagina.locator("#atividades button[data-id=conhecimento][aria-current=page]").count() == 1)
     pagina.locator("#vista .grupo-abas [role=tab]", has_text="Organizar").click()

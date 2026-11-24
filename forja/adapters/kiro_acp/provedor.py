@@ -623,10 +623,18 @@ class ProvedorKiroAcp:
                         mcp_estado[str(s["name"])] = {"status": str(s.get("status") or ""), "ferramentas": len(s.get("tools") or [])}
 
         ultima_atividade = [time.monotonic()]  # relogio de inatividade do turno (_aguardar)
+        # ferramentas em andamento (ex.: a suite de testes rodando 5 min sem mensagem): turno vivo. Achado no uso real: o agente
+        # rodou `pytest` completo e o turno caiu por "inatividade" no meio do comando
+        em_andamento: set[str] = set()
 
         def on_update(_sid: str, upd: dict[str, Any]) -> None:
             nonlocal n_tools
             ultima_atividade[0] = time.monotonic()
+            if upd.get("sessionUpdate") in ("tool_call", "tool_call_update") and upd.get("toolCallId"):
+                if str(upd.get("status") or "") in ("completed", "failed", "cancelled", "rejected"):
+                    em_andamento.discard(str(upd["toolCallId"]))
+                elif upd.get("sessionUpdate") == "tool_call" or upd.get("status") in ("pending", "in_progress"):
+                    em_andamento.add(str(upd["toolCallId"]))
             if upd.get("sessionUpdate") == "session_info_update":
                 registrar_creditos(medicao, _sid, upd)
                 quebra = ((upd.get("_meta") or {}).get("kiro") or {}).get("breakdown") or {}
@@ -703,7 +711,8 @@ class ProvedorKiroAcp:
             cliente = self._abrir_cliente(cwd, self._decisor or mediador.decidir, on_update, on_notificacao)
             # agente mandando mensagens OU pedido de aprovacao esperando o usuario = turno vivo (nao conta como inatividade)
             try:
-                cliente.forja_atividade = lambda: time.monotonic() if mediador.aguardando else ultima_atividade[0]  # type: ignore[attr-defined]
+                cliente.forja_atividade = (  # type: ignore[attr-defined]
+                    lambda: time.monotonic() if (mediador.aguardando or em_andamento) else ultima_atividade[0])
             except AttributeError:  # cliente sem atributos livres (testes): fica o limite fixo
                 pass
             ctl.evento(

@@ -39,42 +39,69 @@ export function toast(mensagem, tipo = "") {
 // ---------------------------------------------------------------- janelas flutuantes
 function cabecalho(dlg, titulo, idTitulo, aoFechar) {
   const fechar = el("button", { type: "button", className: "fechar", "aria-label": "Fechar janela", title: "Fechar (Esc)", textContent: "✕", onclick: () => aoFechar() });
-  const cab = el("div", { className: "janela-cabeca" }, el("h2", { id: idTitulo, textContent: titulo }), fechar);
+  const cab = el("div", { className: "janela-cabeca", tabIndex: 0, title: "Arraste para mover (ou Alt+setas) · duplo clique centraliza" },
+    el("h2", { id: idTitulo, textContent: titulo }), fechar);
   arrastavel(dlg, cab);
   return cab;
 }
 
-/** Arrastar a janela pelo cabecalho (ponteiro). Usa CSSOM (style.translate), permitido pela CSP. */
+/** Arrastar a janela pelo cabecalho (ponteiro) ou, com o foco nele, com Alt+setas. Usa CSSOM (style.translate), permitido pela CSP.
+ *  Os limites valem para qualquer posicao inicial (centralizada ou encostada no canto): o cabecalho nunca sai da tela. */
 function arrastavel(dlg, alca) {
   let x = 0, y = 0, ini = null;
+  const mover = (nx, ny) => {
+    const r = dlg.getBoundingClientRect(), baseEsq = r.left - x, baseTopo = r.top - y;
+    x = Math.max(120 - r.width - baseEsq, Math.min(innerWidth - 120 - baseEsq, nx));
+    y = Math.max(-baseTopo, Math.min(innerHeight - 44 - baseTopo, ny));
+    dlg.style.translate = `${x}px ${y}px`;
+  };
   alca.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0 || ev.target.closest("button")) return;
     ini = { px: ev.clientX - x, py: ev.clientY - y }; alca.setPointerCapture(ev.pointerId);
   });
-  alca.addEventListener("pointermove", (ev) => {
-    if (!ini) return;
-    const r = dlg.getBoundingClientRect(), mx = innerWidth / 2 - 40, my = innerHeight / 2 - 30;
-    x = Math.max(-mx - r.width / 2 + 120, Math.min(mx + r.width / 2 - 120, ev.clientX - ini.px));
-    y = Math.max(-my, Math.min(my, ev.clientY - ini.py));
-    dlg.style.translate = `${x}px ${y}px`;
+  alca.addEventListener("pointermove", (ev) => { if (ini) mover(ev.clientX - ini.px, ev.clientY - ini.py); });
+  alca.addEventListener("keydown", (ev) => { // teclado: o cabecalho recebe foco (tabindex 0) e Alt+setas movem a janela
+    const d = { ArrowLeft: [-24, 0], ArrowRight: [24, 0], ArrowUp: [0, -24], ArrowDown: [0, 24] }[ev.key];
+    if (!d || !ev.altKey || ev.target !== alca) return;
+    ev.preventDefault(); mover(x + d[0], y + d[1]);
   });
   const soltar = () => { ini = null; };
   alca.addEventListener("pointerup", soltar); alca.addEventListener("pointercancel", soltar);
   alca.addEventListener("dblclick", () => { x = 0; y = 0; dlg.style.translate = ""; });
 }
 
-let seqJanela = 0;
-/** Janela flutuante independente (empilhavel). `antesDeFechar` pode devolver false para manter aberta. */
-export function janela(titulo, conteudo, { classe = "", id = "", antesDeFechar = null, aoFechar = null } = {}) {
+let seqJanela = 0, zJanela = 45; // 45: acima dos paineis (30) e menus (40), abaixo dos avisos (60)
+const ENTRADA_FOCAVEL = 'input:not([type=hidden]):not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled):not(.fechar), [tabindex="0"]';
+/** Janela flutuante independente (empilhavel). `antesDeFechar` pode devolver false para manter aberta.
+ *  `modal: false` abre uma janela NAO BLOQUEANTE: a tela de fundo continua clicavel e navegavel (Tab, F6), Esc fecha a janela com o foco
+ *  e o foco volta a quem a abriu. Com `id`, abrir de novo traz a janela ja aberta para a frente em vez de duplicar. */
+export function janela(titulo, conteudo, { classe = "", id = "", antesDeFechar = null, aoFechar = null, modal = true } = {}) {
+  const existente = id ? document.getElementById(id) : null;
+  if (existente?.open && existente.dataset.janela) { existente.janelaFlutuante.trazer(); return existente.janelaFlutuante; }
   const idTitulo = `janela-t-${++seqJanela}`;
-  const dlg = el("dialog", { className: `janela ${classe}`.trim(), id: id || undefined, "aria-labelledby": idTitulo });
+  const dlg = el("dialog", { className: `janela ${modal ? "" : "flutuante"} ${classe}`.trim(), id: id || undefined, "aria-labelledby": idTitulo, dataset: { janela: "1" } });
+  const origem = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const fechar = () => { if (antesDeFechar && antesDeFechar() === false) return; if (dlg.open) dlg.close(); };
   dlg.append(cabecalho(dlg, titulo, idTitulo, fechar), el("div", { className: "janela-corpo" }, conteudo));
   dlg.addEventListener("cancel", (ev) => { if (antesDeFechar && antesDeFechar() === false) ev.preventDefault(); });
-  dlg.addEventListener("close", () => { dlg.remove(); aoFechar?.(); });
+  dlg.addEventListener("close", () => {
+    const tinhaFoco = dlg.contains(document.activeElement) || document.activeElement === document.body;
+    dlg.remove(); aoFechar?.();
+    if (tinhaFoco && origem?.isConnected) origem.focus({ preventScroll: true }); // devolve o foco a quem abriu (teclado)
+  });
+  const primeiroFoco = () => (dlg.querySelector(".janela-corpo")?.querySelector(ENTRADA_FOCAVEL) || dlg.querySelector(".janela-cabeca") || dlg).focus({ preventScroll: true });
+  const trazer = () => { dlg.style.zIndex = String(++zJanela); if (!dlg.querySelector(".janela-corpo")?.contains(document.activeElement)) primeiroFoco(); };
+  if (!modal) { // nao modal: o <dialog> nao trata Esc nem fica por cima sozinho
+    dlg.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !ev.defaultPrevented) { ev.preventDefault(); ev.stopPropagation(); fechar(); } });
+    dlg.addEventListener("pointerdown", () => { dlg.style.zIndex = String(++zJanela); }, { capture: true });
+    dlg.style.zIndex = String(++zJanela);
+  }
   document.body.append(dlg);
-  dlg.showModal();
-  return { no: dlg, fechar, titulo: (t) => { dlg.querySelector(`#${idTitulo}`).textContent = t; } };
+  if (modal) dlg.showModal(); else dlg.show();
+  const resultado = { no: dlg, fechar, trazer, titulo: (t) => { dlg.querySelector(`#${idTitulo}`).textContent = t; } };
+  dlg.janelaFlutuante = resultado;
+  requestAnimationFrame(() => { if (dlg.open && !dlg.querySelector(".janela-corpo")?.contains(document.activeElement)) primeiroFoco(); });
+  return resultado;
 }
 
 /** Janela unica de formularios curtos (#dlg-geral): mesma aparencia das outras janelas. */
@@ -117,7 +144,7 @@ function prepararRecolhivel(no) {
 
 /** Texto cortado com reticencias ganha dica com o texto inteiro (botoes, titulos, celulas, .trunc). */
 function dicaSeCortado(ev) {
-  const alvo = ev.target instanceof Element ? ev.target.closest("button, h1, h2, h3, .trunc, .tag, .pill, th, td, summary, .chip-anexo > span, #eventos li") : null;
+  const alvo = ev.target instanceof Element ? ev.target.closest("button, h1, h2, h3, .trunc, .tag, .pill, th, td, summary, .chip-anexo > span, #eventos li, #barra-status > span, label.chip-rotulo, .fio, .bloco") : null;
   if (!alvo || (alvo.title && !alvo.dataset.dicaAuto)) return;
   const cortado = alvo.scrollWidth > alvo.clientWidth + 1 || alvo.scrollHeight > alvo.clientHeight + 2;
   const texto = alvo.textContent.trim();

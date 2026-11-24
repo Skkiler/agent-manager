@@ -1,7 +1,7 @@
 // Modo chat (estilo app do Codex): lista de conversas a esquerda (master, o que precisa de voce e as tarefas por projeto) e a
 // conversa escolhida ocupando o resto da tela. Usa as mesmas telas da barra da direita (conversa/decisoes/master).
 import { api } from "./api.js";
-import { estado, selecionarTarefa } from "./estado.js";
+import { emitir, estado, selecionarTarefa } from "./estado.js";
 import { el, limpar, tag } from "./ui.js";
 
 const ROTULO_ESTADO = { bloqueada: "precisa de você", aguardando_aprovacao: "aprovação", executando: "executando", validando: "validando",
@@ -23,7 +23,10 @@ export async function montarChat(raiz, { conversa, decisoes, master }) {
     if (fio.tipo === "master") { master.montar(painel, { compacto: false }); return; }
     const c = cartoes.find((x) => x.id === fio.id);
     painel.append(el("div", { className: "titulo-vista" }, el("h1", { className: "trunc", textContent: c?.titulo || fio.id }),
-      c ? tag(ROTULO_ESTADO[c.estado] || c.estado, c.precisa_de_voce ? "aviso" : "") : null, c?.projeto_id ? el("span", { className: "mudo", textContent: nomes.get(c.projeto_id) || "" }) : null));
+      c ? tag(ROTULO_ESTADO[c.estado] || c.estado, c.precisa_de_voce ? "aviso" : "") : null, c?.projeto_id ? el("span", { className: "mudo trunc", textContent: nomes.get(c.projeto_id) || "" }) : null,
+      el("span", { className: "espaco" }),
+      el("button", { type: "button", className: "pequeno", title: "Abrir esta conversa numa janela flutuante e continuar usando a tela", onclick: () => emitir("destacar", fio.id) }, "⧉ Janela"),
+      el("button", { type: "button", className: "pequeno", title: "Ver o agente desta tarefa na oficina", onclick: () => emitir("ir", "agentes") }, "Ver na oficina")));
     const corpo = el("div", { className: "chat-conversa" });
     painel.append(corpo);
     const recarregar = async () => { limpar(corpo); await decisoes(corpo, fio.id, recarregar); await conversa(corpo, fio.id, recarregar); };
@@ -51,7 +54,8 @@ export async function montarChat(raiz, { conversa, decisoes, master }) {
     el("h3", { textContent: "Master" }), botaoFio({ tipo: "master" }, "Conversa com o master", null, "O master cria e acompanha as tarefas"),
     precisa.length ? el("h3", { textContent: `Precisa de você (${precisa.length})` }) : null,
     ...precisa.map((c) => botaoFio({ tipo: "tarefa", id: c.id }, c.titulo, tag(ROTULO_ESTADO[c.estado] || c.estado, "aviso"))),
-    el("h3", { textContent: "Projetos" }),
+    el("div", { className: "linha" }, el("h3", { textContent: "Projetos" }), el("span", { className: "espaco" }),
+      el("button", { type: "button", className: "pequeno", title: "Criar projeto (Ctrl+Alt+N)", "aria-label": "Novo projeto", onclick: () => emitir("novo-projeto") }, "+ Projeto")),
     ...[...porProjeto.entries()].map(([pid, cs]) => {
       cs.sort((a, b) => String(b.atualizado_em).localeCompare(String(a.atualizado_em)));
       return el("details", { open: cs.some((c) => chave({ tipo: "tarefa", id: c.id }) === chave(fio)) || porProjeto.size <= 3 },

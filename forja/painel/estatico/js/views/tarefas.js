@@ -115,6 +115,8 @@ function cartao(c, multiplos) {
     "aria-label": `${c.titulo}, ${ESTADO_CURTO[c.estado] || c.estado}`,
     ondragstart: (ev) => { ev.dataTransfer.setData("text/plain", c.id); ev.dataTransfer.effectAllowed = "move"; },
     onclick: (ev) => { if (!ev.target.closest("button")) { selecionarTarefa(c.id); emitir("abrir-direita", "conversa"); } },
+    tabIndex: 0, // teclado: Tab chega ao cartao e Enter/Espaco o seleciona (abre a conversa), como o clique
+    onkeydown: (ev) => { if (ev.target === ev.currentTarget && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); selecionarTarefa(c.id); emitir("abrir-direita", "conversa"); } },
   },
     el("h3", { textContent: c.titulo }),
     el("div", { className: "meta" }, tag(`P${c.prioridade}`), multiplos ? tag(ESTADO_CURTO[c.estado] || c.estado, c.precisa_de_voce ? "aviso" : "") : null,

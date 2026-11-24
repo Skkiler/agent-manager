@@ -86,6 +86,7 @@ export function criarEditor(op) {
   const barra = el("div", { className: "editor-barra" }, el("span", { className: "tag", textContent: linguagem }),
     op.somenteLeitura ? el("span", { className: "tag aviso", textContent: "somente leitura" }) : null, estadoSalvo, el("span", { className: "espaco" }),
     el("button", { type: "button", className: "pequeno", title: "Buscar (Ctrl+F)", onclick: () => abrirBusca(false) }, icone("busca", 16), "Buscar"),
+    op.aoPerguntar ? el("button", { type: "button", className: "pequeno", title: "Perguntar ao agente sobre a seleção ou o arquivo (Ctrl+I)", onclick: () => op.aoPerguntar() }, icone("master", 16), "Perguntar") : null,
     botaoOrto, botaoPrevia, botaoSalvar);
 
   const corpo = el("div", { className: "editor-corpo" }, calha, camada);
@@ -392,6 +393,11 @@ export function criarEditor(op) {
     salvar,
     abrirBusca,
     alternarPrevia,
+    /** Trecho selecionado (vazio se nao ha selecao) e as linhas (1-based) onde ele comeca e termina. */
+    selecao: () => {
+      const ini = area.selectionStart, fim = area.selectionEnd;
+      return { texto: area.value.slice(ini, fim), linhaIni: linhaColuna(area.value, ini)[0], linhaFim: linhaColuna(area.value, fim)[0] };
+    },
     marcarSalvo: (texto) => { salvo = lf(texto ?? area.value); atualizarSujo(); },
     definirTexto: (texto) => { salvo = lf(texto); area.value = salvo; agendar(); atualizarSujo(); },
     irPara: (linha, coluna = 1) => {

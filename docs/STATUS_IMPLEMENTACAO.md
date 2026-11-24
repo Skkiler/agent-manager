@@ -534,6 +534,24 @@ Relatorio completo: `docs/RELATORIO_AVALIACAO_2026-11-18.md`. Somente avaliacao;
 - **Rodado de verdade:** o mesmo pedido, com o complemento do usuario (integracao chat/editor/agentes, redundancia, janelas
   flutuantes nao bloqueantes, atalhos por convencao), foi enviado ao master. Ele criou 1 tarefa `alteracao_codigo` complexa no
   projeto "Forja", com a pasta do repositorio como pasta de trabalho, copia sem segredos e ponto de restauracao.
+- **Mais duas causas achadas ao rodar:**
+  1. a tarefa caiu em "session/prompt excedeu 300s": o limite contava os 2 min de espera pela aprovacao de uma busca na web;
+  2. na 2a tentativa, o turno caiu durante a suite completa de testes que o agente rodava (5 min sem mensagem).
+  - Correcao (com teste): o limite virou de INATIVIDADE; mensagens do agente, aprovacao em aberto ou ferramenta em andamento
+    mantem o turno vivo; o teto absoluto e 12x o limite.
+- **Trabalho do agente** (17 arquivos do painel, copiados de volta da copia sem segredos):
+  - ajustes rapidos (`js/ajustes.js`, Ctrl+Alt+S): tema, paleta, autonomia (aumentar pede confirmacao), interface e atalhos,
+    sincronizados com Configuracoes;
+  - chip de autonomia e botao de tema no cabecalho;
+  - barra de atividades em secoes (codigo, agentes e conhecimento, rodape com Novo projeto, Ajustes, Conta e Config);
+  - conversa em janela flutuante nao bloqueante (Ctrl+Alt+D);
+  - "perguntar ao agente sobre o arquivo/selecao" a partir do editor (Ctrl+I);
+  - tarefa selecionada na barra de status;
+  - F6/Shift+F6 entre regioes; Ctrl+K Ctrl+T (tema); Ctrl+Alt+N (novo projeto);
+  - 70 linhas novas em `tests/test_painel_estatico.py`.
+  - O turno caiu antes da resposta final (2a causa acima), entao a tarefa ficou como `falhou`, mas o trabalho foi verificado:
+    suite completa sem falhas, `ruff` ok, 41 modulos JS ok, inspetor 147 OK e 0 falhas (axe sem violacao), login 0
+    problemas. O inspetor passou a contar ate 7 grupos de navegacao mais o rodape de atalhos.
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.

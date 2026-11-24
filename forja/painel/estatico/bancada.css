@@ -235,7 +235,9 @@ button.fio[aria-current="true"] { background: var(--sel); color: var(--titulo); 
   .centro-comandos { flex: 0 1 auto; min-width: 32px; width: 32px; margin: 0; padding: 0 !important; justify-content: center; }
   .centro-comandos .trunc { display: none; }
   .modos button { padding: 0 6px !important; font-size: var(--fs-xs) !important; }
-  #atalho-precisa { max-width: 96px; }
+  #barra-titulo #atalho-precisa { max-width: 96px; }
+  .chip-autonomia { max-width: 32px; padding: 0 !important; justify-content: center; } .chip-autonomia .trunc { display: none; }
+  #barra-status #st-tarefa { display: none; }
   .chip-conta { max-width: 32px; } .chip-conta .trunc { display: none; }
   .faixa-abas .aba-editor { max-width: 140px; }
   #barra-status #st-config, #barra-status #st-tokens, #barra-status #st-cursor { display: none; }

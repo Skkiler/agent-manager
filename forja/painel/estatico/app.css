@@ -108,11 +108,16 @@ button.chip:hover:not(:disabled) { background: var(--aviso); filter: brightness(
 #area[data-direita="on"] { --col-dir: var(--w-direita, 420px); }
 #area[data-inferior="on"] { --lin-inf: var(--w-inferior, 260px); }
 #area[data-inferior="on"][data-inferior-max="on"] { grid-template-rows: 0 minmax(0, 1fr); }
-#atividades { grid-area: ativ; background: var(--ativ); border-right: 1px solid var(--borda); display: flex; flex-direction: column; align-items: center;
-  padding: 4px 0; gap: 2px; position: relative; z-index: calc(var(--z-painel) + 1); overflow-y: auto; scrollbar-width: none; }
-#atividades button { width: 48px; height: 46px; flex: none; display: grid; place-items: center; align-content: center; gap: 1px; padding: 2px;
-  border: 0; border-left: 2px solid transparent; border-radius: 0; background: transparent; color: var(--mudo); font-size: 9.5px; line-height: 1.1; }
-#atividades button > span:last-child { max-width: 44px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#atividades { grid-area: ativ; background: var(--ativ); border-right: 1px solid var(--borda); display: flex; flex-direction: column; align-items: stretch;
+  padding: 0; gap: 0; position: relative; z-index: calc(var(--z-painel) + 1); overflow-y: auto; scrollbar-width: none; }
+/* tres blocos distribuidos na altura: codigo (topo), agentes e conhecimento (centro) e atalhos/conta (base); divisorias entre eles */
+.ativ-secao { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; flex: none; }
+.ativ-secao + .ativ-secao { border-top: 1px solid var(--borda); }
+.ativ-secao.meio { margin-block: auto; }
+#atividades button { width: calc(var(--larg-ativ) - 4px); height: 52px; flex: none; display: grid; place-items: center; align-content: center; gap: 2px; padding: 2px;
+  border: 0; border-left: 2px solid transparent; border-radius: 0; background: transparent; color: var(--mudo); font-size: 10.5px; line-height: 1.15; }
+#atividades button > .rotulo-ativ { max-width: calc(var(--larg-ativ) - 6px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#atividades button:focus-visible { outline-offset: -2px; }
 #atividades button:hover:not(:disabled) { color: var(--titulo); background: var(--hover); }
 #atividades button[aria-current="page"] { color: var(--titulo); border-left-color: var(--acento); background: color-mix(in srgb, var(--acento) 10%, transparent); }
 #atividades .sep-ativ { width: 28px; border: 0; border-top: 1px solid var(--borda); margin: 4px 0; }
@@ -441,3 +446,37 @@ button.link { background: none; border: 0; padding: 2px 0; color: var(--acento);
   display: inline-flex; gap: var(--e1); align-items: center; min-width: 0; }
 button.link:hover .trunc, button.link:focus-visible .trunc { text-decoration: underline; }
 button.link .trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* ---------------------------------------------------------------- janelas NAO bloqueantes (modal: false), ajustes rapidos, textos longos */
+/* sem veu e sem inertizar o fundo: ficam no canto inferior direito, acima dos paineis e abaixo dos avisos; arrastaveis pelo titulo */
+dialog.flutuante[open] { position: fixed; inset: auto var(--e4) calc(var(--alt-status) + var(--e4)) auto; margin: 0; z-index: 45; box-shadow: var(--sombra-2); }
+dialog.flutuante:focus-within { border-color: var(--acento); }
+.janela-cabeca:focus-visible { outline-offset: -2px; }
+dialog.janela-ajustes { width: 400px; }
+dialog.janela-conversa { width: min(520px, calc(100vw - 24px)); height: min(620px, calc(100vh - 120px)); }
+.janela-corpo { overflow-wrap: anywhere; }
+.ajustes .ajuste h3 { margin: var(--e3) 0 var(--e1); font-size: var(--fs-s); color: var(--mudo); text-transform: uppercase; letter-spacing: .05em; }
+.ajustes .ajuste:first-child h3 { margin-top: 0; }
+.grupo-rapido { display: flex; flex-wrap: wrap; gap: var(--e2); margin: var(--e1) 0; }
+.ajustes button.rapida { flex: 1 1 96px; }
+.ajustes button.rapida[aria-checked="true"] { border-color: var(--acento); background: var(--acento-bg); color: var(--titulo); font-weight: 600; box-shadow: inset 0 0 0 1px var(--acento); }
+.ajustes .amostra.compacta { width: 92px; flex: 0 0 92px; }
+.chip-autonomia { display: inline-flex; align-items: center; gap: 4px; max-width: 160px; border: 1px solid var(--borda) !important; border-radius: 999px !important; }
+.chip-autonomia[data-nivel="liberado"] { border-color: var(--aviso) !important; }
+.chip-autonomia[data-nivel="total"] { border-color: var(--erro) !important; }
+#barra-titulo button.icone { width: 28px; padding: 0; }
+#barra-titulo #atalho-precisa { max-width: 190px; }
+#lateral-titulo, .cabeca-lateral h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cabeca-lateral { gap: var(--e1); min-width: 0; }
+#lateral-corpo > .grupo-abas { position: sticky; top: 0; z-index: 2; background: var(--lateral); }
+#lateral-corpo, #direita-corpo, .conversa-flutuante { overflow-wrap: anywhere; min-width: 0; }
+#barra-status #st-modelo { max-width: 36ch; } #barra-status #st-config { max-width: 18ch; } #barra-status #st-tarefa { max-width: 40ch; }
+.cartao h3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.cartao:focus-visible { outline-offset: -2px; }
+.arq-tarefa { flex-wrap: nowrap; gap: var(--e1); } .arq-tarefa code { flex: 1 1 0; min-width: 0; }
+.lista-simples { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.arquivos-tarefa { margin: var(--e2) 0; }
+.item-agente { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px; align-items: center; }
+.escritorio-lista button[aria-current="true"] { background: var(--sel); color: var(--titulo); }
+.chat-fios .linha { flex-wrap: nowrap; }
+@media (max-width: 600px) { dialog.flutuante[open] { inset: auto 0 var(--alt-status) 0; width: 100vw; max-width: 100vw; } }

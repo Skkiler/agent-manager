@@ -149,6 +149,7 @@ async function montarAba(a) {
       a.sha = r.sha; a.crlf = r.fim_de_linha === "crlf"; a.somente_leitura = r.somente_leitura; a.segredo = r.segredo; a.projetoNome = p?.nome; a.pastaNome = (p?.pastas?.[a.raiz]?.caminho || "").split(/[\\/]/).pop();
       a.editor = criarEditor({ texto: r.conteudo, linguagem: r.linguagem, somenteLeitura: r.somente_leitura, rotulo: `Editor: ${a.rel}`,
         aoSalvar: (texto) => salvarArquivo(a, texto), aoMudar: () => desenharAbas(), aoCursor: cursor, aoDefinicao: (nome) => irDefinicao(a, nome),
+        aoPerguntar: () => emitir("perguntar-agente"),
         lsp: (acao, corpo) => api("POST", `/area/lsp/${acao}`, { projeto: a.projeto, raiz: a.raiz, rel: a.rel, ...corpo }),
         aoDefinicaoLsp: (nome, defs) => irDefinicaoLsp(a, nome, defs),
         aoAlterarTexto: agrupar(() => verificarProblemas(a, a.editor.valor()), 1200) });

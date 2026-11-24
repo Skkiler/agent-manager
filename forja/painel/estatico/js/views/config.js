@@ -1,7 +1,7 @@
 // Menu de configuracoes: categorias, abas Gerais/Avancadas, cada opcao explicada com exemplos e consequencias.
 // O servidor descreve as opcoes (registro declarativo); aqui so se desenha e se envia o que mudou.
 import { api } from "../api.js";
-import { definirNivel, emitir, estado, selecionarTarefa } from "../estado.js";
+import { definirNivel, emitir, estado, ouvir, selecionarTarefa } from "../estado.js";
 import { el, janela, limpar, recolhivel, tag, toast } from "../ui.js";
 import { cartaoCatalogoCodigo, cartaoLsp, cartaoReciclagem } from "./config_editor.js";
 
@@ -25,7 +25,7 @@ const valorDe = (p) => (p.id in ctx.rascunho ? ctx.rascunho[p.id] : p.valor);
 const igual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // ---------------------------------------------------------------- tema e paletas (4 escuras + 4 claras, ver tema.css)
-const CORES_AMOSTRA = { // fundo, cartao, acento, texto: so para desenhar a amostra (os valores reais vivem em tema.css)
+export const CORES_AMOSTRA = { // fundo, cartao, acento, texto: so para desenhar a amostra (os valores reais vivem em tema.css)
   grafite: ["#1f1f1f", "#252526", "#0078d4", "#cccccc"], meia_noite: ["#0f172a", "#16213a", "#0369a1", "#cbd5e1"],
   floresta: ["#18201c", "#1f2a24", "#1f7a4d", "#cfd8d2"], brasa: ["#1c1917", "#26211d", "#c2410c", "#d6cfc7"],
   neve: ["#ffffff", "#f7f7f8", "#005fb8", "#2b2f36"], papel: ["#fbf8f1", "#f3eee3", "#9a4a16", "#3a3226"],
@@ -60,6 +60,7 @@ export function aplicarPreferencias(prefs) {
   if (v.nivel_detalhe) { definirNivel(v.nivel_detalhe); const s = document.getElementById("nivel"); if (s) s.value = v.nivel_detalhe; }
   if (typeof v.oficina_pixel === "boolean") { estado.oficina = v.oficina_pixel; localStorage.setItem("forja_oficina", v.oficina_pixel ? "on" : "off"); emitir("oficina", v.oficina_pixel); }
   dispatchEvent(new CustomEvent("forja:preferencias"));  // editor e terminal releem as preferencias (editorcfg.js)
+  emitir("preferencias", prefs);  // ajustes rapidos, chips e a janela de Configuracoes se redesenham a partir da MESMA fonte
 }
 
 export async function carregarPreferencias() {
@@ -67,6 +68,20 @@ export async function carregarPreferencias() {
   aplicarPreferencias(ctx.prefs);
   return ctx.prefs;
 }
+
+/** Preferencias ja carregadas (ou busca). Fonte unica para os ajustes rapidos fora da tela de Configuracoes. */
+export const obterPreferencias = () => (ctx.prefs ? Promise.resolve(ctx.prefs) : carregarPreferencias());
+/** Item (valor salvo, opcoes, risco...) de uma preferencia, a partir de `prefs`. */
+export const itemPreferencia = (prefs, id) => (prefs ? itensDe(prefs).find((p) => p.id === id) ?? null : null);
+
+// Uma troca feita FORA da janela (ajustes rapidos, botao de tema) vence o rascunho dela para o mesmo campo, e a janela se redesenha
+// com o rascunho dos outros campos intacto: as duas telas nunca mostram valores diferentes.
+const CAMPOS_RAPIDOS = new Set(["tema", "paleta_escura", "paleta_clara", "nivel_autonomia", "nivel_detalhe"]);
+ouvir("preferencias", () => {
+  if (!ctx.raiz?.isConnected) return;
+  for (const k of CAMPOS_RAPIDOS) if (k in ctx.rascunho) delete ctx.rascunho[k];
+  desenhar();
+});
 
 /** Salva UMA preferencia direto (atalhos fora do menu, como o botao da oficina). */
 // Gravacoes de atalho em FILA: duas trocas rapidas (ex.: detalhe Simples -> Avancado) saiam em paralelo com a mesma versao e a

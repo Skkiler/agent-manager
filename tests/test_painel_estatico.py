@@ -118,3 +118,73 @@ def test_todos_os_modulos_js_tem_sintaxe_valida_como_esm():
         if r.returncode != 0:
             ruins.append(f"{js.name}: {r.stderr.decode('utf-8', 'replace').splitlines()[:3]}")
     assert not ruins, ruins
+
+
+# ---------------------------------------------------------------- revisao de UX: ajustes rapidos, janelas nao bloqueantes, integracao
+def _js(rel: str) -> str:
+    return (RAIZ / "js" / rel).read_text(encoding="utf-8")
+
+
+def _todo_js() -> str:
+    return "\n".join(a.read_text(encoding="utf-8") for a in JS)
+
+
+def test_janela_aceita_modo_nao_bloqueante_com_foco_e_esc():
+    ui = _js("ui.js")
+    assert "modal = true" in ui and "dlg.show()" in ui and "dlg.showModal()" in ui
+    assert "key === \"Escape\"" in ui and "origem.focus" in ui  # Esc fecha a janela com o foco; o foco volta a quem abriu
+    assert "existente.janelaFlutuante.trazer()" in ui  # mesmo id: traz a janela para a frente em vez de duplicar
+    assert 'dialog[open]:modal' in _js("main.js")  # o Esc global ignora so as janelas MODAIS
+    assert "dialog.flutuante[open]" in (RAIZ / "app.css").read_text(encoding="utf-8")
+
+
+def test_ajustes_rapidos_usam_as_mesmas_preferencias_da_tela_de_config():
+    aj, cfg = _js("ajustes.js"), _js("views/config.js")
+    for pref in ("tema", "paleta_escura", "paleta_clara", "nivel_autonomia", "nivel_detalhe"):
+        assert f'"{pref}"' in cfg or pref in aj, pref
+    assert "definirPreferencia" in aj and "obterPreferencias" in aj and "modal: false" in aj
+    assert 'emitir("preferencias"' in cfg and 'ouvir("preferencias"' in cfg and 'ouvir("preferencias"' in aj  # um evento sincroniza as duas telas
+    assert "confirm(" in aj  # subir a autonomia (risco alto) pede confirmacao
+    ids = set(re.findall(r'\bid="([\w-]+)"', HTML))
+    assert {"tema-rapido", "ajustes-rapidos", "autonomia-chip", "st-tarefa", "destacar-conversa"} <= ids
+
+
+def test_barra_de_atividades_tem_secoes_e_texto_longo_e_truncado_com_dica():
+    main, css = _js("main.js"), (RAIZ / "app.css").read_text(encoding="utf-8")
+    assert "SECOES" in main and "RODAPE" in main and 'role: "group"' in main and "ativ-secao" in css
+    assert ".ativ-secao.meio { margin-block: auto; }" in css  # blocos distribuidos na altura, nao colados no topo
+    ui = _js("ui.js")
+    for seletor in ("#barra-status > span", ".fio", ".bloco", "label.chip-rotulo"):
+        assert seletor in ui, seletor  # dica com o texto inteiro quando o texto e cortado
+    for regra in ("#lateral-titulo", "#st-modelo", ".cartao h3"):
+        assert regra in css, regra
+
+
+def test_novo_projeto_tem_varios_caminhos_e_atalhos_novos_estao_listados():
+    todo = _todo_js()
+    assert "dialogoProjeto(" in _js("area.js") and "dialogoProjeto(" in _js("views/tarefas.js") and "dialogoProjeto(" in _js("ajustes.js")
+    assert 'emitir("novo-projeto")' in _js("chat.js") and 'ouvir("novo-projeto"' in _js("main.js")
+    assert 'id: "novoprojeto"' in _js("main.js")  # barra de atividades
+    main = _js("main.js")
+    for atalho in ("Ctrl+Alt+S", "Ctrl+Alt+N", "Ctrl+Alt+D", "Ctrl+K Ctrl+T", "Ctrl+I", "F6"):
+        assert atalho in main, atalho
+    assert 'comAlt && k === "s"' in main and 'ev.key === "F6"' in main and "acordeAte" in main
+    assert todo.count("novoProjeto") >= 4
+
+
+def test_chat_editor_e_agentes_estao_conectados():
+    dir_, ed, ban, esc = _js("direita.js"), _js("editor.js"), _js("bancada.js"), _js("escritorio.js")
+    # agentes/chat -> editor: arquivos que a tarefa mexeu abrem no editor (ou como diferencas)
+    assert "/restauracao" in dir_ and "abrirArquivo" in dir_ and "abrirDiff" in dir_ and 'definirModo("editor")' in dir_
+    # editor -> agentes: Ctrl+I / botao Perguntar monta o pedido ao master com arquivo e linhas (segredos nunca vao)
+    assert "selecao" in ed and "aoPerguntar" in ed and "aoPerguntar" in ban and "perguntarAoAgente" in dir_ and "segredo" in dir_
+    # selecao compartilhada: a oficina destaca a tarefa escolhida e abre a janela flutuante da conversa
+    assert 'ouvir("tarefa"' in esc and 'emitir("destacar"' in esc and 'ouvir("destacar"' in dir_
+    assert 'emitir("destacar"' in _js("chat.js") and "destacarConversa" in _js("main.js")
+
+
+def test_todo_evento_novo_tem_emissor_e_ouvinte():
+    todo = _todo_js()
+    for nome in ("destacar", "novo-projeto", "perguntar-agente", "ajustes", "atalhos", "projeto-criado", "preferencias"):
+        assert f'emitir("{nome}"' in todo, f"{nome}: ninguem emite"
+        assert f'ouvir("{nome}"' in todo, f"{nome}: ninguem ouve"

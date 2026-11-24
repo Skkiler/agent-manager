@@ -3,6 +3,7 @@
 import { api, lerToken } from "./api.js";
 import * as area from "./area.js";
 import { abaAtiva, abas, abrirInicio, abrirVista, ativar, fechar, iniciarBancada, lateralAtual, marcarAtividade, mostrarLateral, reexibir } from "./bancada.js";
+import { abrirAjustes, alternarTema, iniciarAjustes, novoProjeto } from "./ajustes.js";
 import "./receitas.js"; // ouvintes: abrir receitas a partir do Git, Docker, terminal e erros
 import { abrirPaleta, iniciarPaleta, registrarComandos } from "./comandos.js";
 import * as direita from "./direita.js";
@@ -48,6 +49,8 @@ const ATIVIDADES = [
   { id: "integracoes", rotulo: "Integrações", curto: "Integr.", icone: "integracoes", tipo: "vista", modulo: integracoes },
   { id: "custos", rotulo: "Custo", curto: "Custo", icone: "custos", tipo: "vista", modulo: custos },
   { espaco: true },
+  { id: "novoprojeto", rotulo: "Novo projeto", curto: "Projeto", icone: "mais", tipo: "acao", fazer: () => novoProjeto(), atalho: "Ctrl+Alt+N" },
+  { id: "ajustes", rotulo: "Ajustes rápidos: tema, paleta e autonomia", curto: "Ajustes", icone: "ajustes", tipo: "acao", fazer: () => abrirAjustes(), atalho: "Ctrl+Alt+S" },
   { id: "conta", rotulo: "Sua conta", curto: "Conta", icone: "conta", tipo: "acao", fazer: () => dialogoConta($("#usuario-atual").textContent) },
   { id: "config", rotulo: "Configurações", curto: "Config", icone: "config", tipo: "acao", fazer: () => config.abrirJanela(), atalho: "Ctrl+," },
 ];
@@ -62,6 +65,14 @@ const GRUPOS = [
     membros: ["memoria", "aprender", "pastas", "organizar", "revisao", "ferramentas"] },
   { id: "conexoes", rotulo: "Conexões: integrações e custo", curto: "Conexões", icone: "integracoes", tipo: "vista", membros: ["integracoes", "custos"] },
 ];
+// Barra de atividades em TRES blocos distribuidos na altura (nao tudo no topo): trabalho com codigo (topo), agentes e conhecimento (meio)
+// e atalhos/conta (base). Cada bloco e um role="group" com nome; Tab e as setas seguem a ordem visual de cima para baixo.
+const SECOES = [
+  { rotulo: "Arquivos e código", grupos: ["arquivos", "codigo", "dev"] },
+  { rotulo: "Agentes e conhecimento", grupos: ["orquestracao", "conhecimento", "conexoes"] },
+];
+const RODAPE = ["novoprojeto", "ajustes", "conta", "config"];
+const RODAPE_PROPRIO = new Set(["novoprojeto", "ajustes"]); // tem comando proprio na paleta (abaixo)
 const REAIS = ATIVIDADES.filter((a) => a.id);
 const atividade = (id) => REAIS.find((a) => a.id === id);
 const grupoDe = (id) => GRUPOS.find((g) => g.membros.includes(id));
@@ -116,16 +127,16 @@ function clicarAtividade(id) {
 
 function montarAtividades() {
   const nav = $("#atividades");
-  for (const g of GRUPOS) {
+  const botaoGrupo = (g) => {
     const atalhos = g.membros.map(atividade).filter((a) => a?.atalho).map((a) => `${a.rotulo.split(" (")[0]}: ${a.atalho}`);
-    nav.append(el("button", { type: "button", dataset: { id: g.id, membros: g.membros.join(" ") }, title: atalhos.length ? `${g.rotulo} (${atalhos.join("; ")})` : g.rotulo,
-      "aria-label": g.rotulo, onclick: () => clicarGrupo(g) }, icone(g.icone, 22), el("span", { textContent: g.curto })));
-  }
-  nav.append(el("span", { className: "espaco" }));
-  for (const a of ATIVIDADES.filter((x) => x.tipo === "acao")) {
-    nav.append(el("button", { type: "button", dataset: { id: a.id }, title: a.atalho ? `${a.rotulo} (${a.atalho})` : a.rotulo, "aria-label": a.rotulo,
-      onclick: () => clicarAtividade(a.id) }, icone(a.icone, 22), el("span", { textContent: a.curto })));
-  }
+    return el("button", { type: "button", dataset: { id: g.id, membros: g.membros.join(" ") }, title: atalhos.length ? `${g.rotulo} (${atalhos.join("; ")})` : g.rotulo,
+      "aria-label": g.rotulo, onclick: () => clicarGrupo(g) }, icone(g.icone, 22), el("span", { className: "rotulo-ativ", textContent: g.curto }));
+  };
+  const botaoAcao = (a) => el("button", { type: "button", dataset: { id: a.id }, title: a.atalho ? `${a.rotulo} (${a.atalho})` : a.rotulo, "aria-label": a.rotulo,
+    onclick: () => clicarAtividade(a.id) }, icone(a.icone, 22), el("span", { className: "rotulo-ativ", textContent: a.curto }));
+  SECOES.forEach((s, i) => nav.append(el("div", { className: `ativ-secao${i === 1 ? " meio" : ""}`, role: "group", "aria-label": s.rotulo },
+    ...s.grupos.map((id) => botaoGrupo(GRUPOS.find((g) => g.id === id))))));
+  nav.append(el("div", { className: "ativ-secao rodape", role: "group", "aria-label": "Atalhos e conta" }, ...RODAPE.map((id) => botaoAcao(atividade(id)))));
   // setas ↑/↓ entre as areas (padrao das barras de atividade das IDEs)
   nav.addEventListener("keydown", (ev) => {
     if (ev.key !== "ArrowDown" && ev.key !== "ArrowUp") return;
@@ -143,11 +154,20 @@ function proximaAba(passo) {
 function comandos() {
   const c = (rotulo, executar, atalho = "") => ({ rotulo, executar, atalho });
   return [
-    ...REAIS.map((a) => c(`Ir para: ${a.rotulo}`, () => (a.tipo === "acao" ? a.fazer() : ir(a.id)), a.atalho || "")),
+    ...REAIS.filter((a) => !RODAPE_PROPRIO.has(a.id)).map((a) => c(`Ir para: ${a.rotulo}`, () => (a.tipo === "acao" ? a.fazer() : ir(a.id)), a.atalho || "")),
     c("Visualização: Editor", () => definirModo("editor"), "Ctrl+Alt+1"),
     c("Visualização: Chat de agentes", () => definirModo("chat"), "Ctrl+Alt+2"),
     c("Visualização: Agentes (oficina)", () => definirModo("agentes"), "Ctrl+Alt+3"),
     c("Novo pedido ao master", novoPedido),
+    c("Novo projeto…", novoProjeto, "Ctrl+Alt+N"),
+    c("Ajustes rápidos: tema, paleta e autonomia", () => abrirAjustes(), "Ctrl+Alt+S"),
+    c("Tema e paleta…", () => abrirAjustes({ foco: "tema" }), "Ctrl+K Ctrl+T"),
+    c("Tema: alternar automático, claro e escuro", alternarTema),
+    c("Autonomia dos agentes: mudar…", () => abrirAjustes({ foco: "autonomia" })),
+    c("Conversa em janela flutuante", () => direita.destacarConversa(), "Ctrl+Alt+D"),
+    c("Perguntar ao agente sobre o arquivo ou a seleção", perguntar, "Ctrl+I"),
+    c("Foco: próxima região da tela", () => proximaRegiao(1), "F6"),
+    c("Foco: região anterior da tela", () => proximaRegiao(-1), "Shift+F6"),
     c("Alternar barra lateral", () => alternarPainel("lateral"), "Ctrl+B"),
     c("Alternar painel inferior", () => alternarPainel("inferior"), "Ctrl+J"),
     c("Alternar conversa (barra do agente)", () => alternarPainel("direita"), "Ctrl+Alt+B"),
@@ -174,9 +194,11 @@ function comandos() {
 }
 
 const ATALHOS = [["Geral", [["Ctrl+P", "Abrir arquivo"], ["Ctrl+Shift+P / F1", "Todos os comandos"], ["Ctrl+Shift+O", "Ir para símbolo do arquivo"], ["Ctrl+G", "Ir para a linha"],
-  ["Ctrl+,", "Configurações"], ["Ctrl+/", "Esta lista"]]],
+  ["Ctrl+,", "Configurações"], ["Ctrl+Alt+S", "Ajustes rápidos (tema, paleta, autonomia)"], ["Ctrl+K Ctrl+T", "Tema e paleta"], ["Ctrl+Alt+N", "Novo projeto"], ["Ctrl+/", "Esta lista"]]],
 ["Visualização", [["Ctrl+Alt+1 / 2 / 3", "Editor / Chat / Agentes"], ["Ctrl+B", "Barra lateral"], ["Ctrl+J", "Painel inferior"], ["Ctrl+Alt+B", "Conversa (barra do agente)"],
-  ["Ctrl+Alt+I", "Abrir o chat"], ["Ctrl+`", "Terminal"], ["Ctrl+Shift+E / F / G", "Explorador / Busca / Git"]]],
+  ["Ctrl+Alt+I", "Abrir o chat"], ["Ctrl+Alt+D", "Conversa em janela flutuante"], ["Ctrl+`", "Terminal"], ["Ctrl+Shift+E / F / G", "Explorador / Busca / Git"]]],
+["Foco e janelas", [["F6 / Shift+F6", "Próxima / anterior região (barra, lateral, editor, conversa, painel, janelas)"], ["Esc", "Fecha a janela com o foco ou o painel"],
+  ["Alt+setas (no título da janela)", "Mover a janela flutuante"], ["Ctrl+I", "Perguntar ao agente sobre o arquivo ou a seleção"]]],
 ["Editor", [["Ctrl+S", "Salvar"], ["Ctrl+F / Ctrl+H", "Buscar / substituir"], ["Ctrl+Espaço", "Sugestões"], ["F12 ou Ctrl+clique", "Ir para a definição"],
   ["Ctrl+Shift+V", "Prévia (Markdown/HTML)"], ["Tab / Shift+Tab", "Indentar"], ["Esc e Tab", "Sair do editor pelo teclado"], ["Ctrl+Alt+W", "Fechar aba"]]],
 ["Terminal", [["Tab", "Completar a sugestão"], ["↑ / ↓", "Sugestões (quando abertas) ou histórico"], ["Enter", "Executar"], ["Esc", "Fechar sugestões"]]],
@@ -193,6 +215,26 @@ function novoPedido() {
   requestAnimationFrame(() => setTimeout(() => $("#direita-corpo textarea")?.focus(), 200));
 }
 
+/** Editor -> agentes: pergunta ao master sobre o arquivo aberto (e o trecho selecionado) numa janela flutuante, sem sair do editor. */
+function perguntar() {
+  const a = abaAtiva();
+  if (a?.tipo === "arquivo" && a.editor) direita.perguntarAoAgente({ rel: a.rel, projetoNome: a.projetoNome || "", segredo: Boolean(a.segredo), ...a.editor.selecao() });
+  else direita.perguntarAoAgente({});
+}
+
+/** F6 / Shift+F6: percorre as regioes da tela (como VS Code e o Windows). Janelas flutuantes entram no ciclo. */
+function proximaRegiao(passo) {
+  const visivel = (r) => r && !r.inert && getComputedStyle(r).visibility !== "hidden" && r.getClientRects().length > 0;
+  const regioes = [$("#atividades"), $("#lateral"), $("#principal"), $("#direita"), $("#inferior"), ...document.querySelectorAll("dialog.flutuante[open]")].filter(visivel);
+  if (!regioes.length) return;
+  const i = regioes.findIndex((r) => r.contains(document.activeElement));
+  const alvo = regioes[(i + passo + regioes.length) % regioes.length];
+  if (alvo.janelaFlutuante) return alvo.janelaFlutuante.trazer();
+  const foco = alvo.id === "principal" ? alvo.querySelector("#vista .fonte, #vista button, #vista [tabindex='0']") : alvo.querySelector('button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), select, textarea, [tabindex="0"]');
+  (foco || alvo).focus();
+}
+
+let acordeAte = 0; // Ctrl+K aguarda a segunda tecla (Ctrl+T) por 1,5 s, como no VS Code
 function atalhos() {
   $("#alternar-lateral").addEventListener("click", () => alternarPainel("lateral"));
   $("#alternar-direita").addEventListener("click", () => alternarPainel("direita"));
@@ -212,19 +254,28 @@ function atalhos() {
   // Em tela estreita os paineis viram gavetas: clicar no conteudo recolhe o menu lateral.
   $("#principal").addEventListener("pointerdown", () => { if (estreita.matches && painelAberto("lateral")) definirPainel("lateral", false, { lembrar: false }); });
   document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape" && !document.querySelector("dialog[open]")) {
+    if (ev.key === "Escape" && !document.querySelector("dialog[open]:modal")) { // janelas nao bloqueantes tratam o proprio Esc (ui.js)
       const emFoco = ["lateral", "direita", "inferior"].find((n) => $(`#${n}`).contains(document.activeElement));
       const alvo = emFoco && painelAberto(emFoco) ? emFoco : estreita.matches && painelAberto("lateral") ? "lateral" : null;
       if (alvo && !(alvo === "direita" && estado.modo === "chat")) { ev.preventDefault(); definirPainel(alvo, false); }
       return;
     }
     if (ev.key === "F1") { ev.preventDefault(); abrirPaleta(">"); return; }
+    if (ev.key === "F6") { ev.preventDefault(); proximaRegiao(ev.shiftKey ? -1 : 1); return; }
+    if (acordeAte > Date.now() && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "t" && !ev.altKey) { // segunda parte do acorde Ctrl+K Ctrl+T
+      ev.preventDefault(); acordeAte = 0; abrirAjustes({ foco: "tema" }); return;
+    }
     if (!(ev.ctrlKey || ev.metaKey)) return;
     const k = ev.key.toLowerCase();
     const comAlt = ev.altKey;
     if (comAlt && ev.target instanceof Element && ev.target.matches("textarea, input, [contenteditable]")) return; // AltGr (= Ctrl+Alt) digita caracteres
     if (comAlt && ["1", "2", "3"].includes(ev.key)) { ev.preventDefault(); definirModo(["editor", "chat", "agentes"][Number(ev.key) - 1]); }
     else if (comAlt && k === "b") { ev.preventDefault(); alternarPainel("direita"); }
+    else if (comAlt && k === "s") { ev.preventDefault(); abrirAjustes(); }
+    else if (comAlt && k === "n") { ev.preventDefault(); novoProjeto(); }
+    else if (comAlt && k === "d") { ev.preventDefault(); direita.destacarConversa(); }
+    else if (!comAlt && !ev.shiftKey && k === "k") { ev.preventDefault(); acordeAte = Date.now() + 1500; }
+    else if (!comAlt && !ev.shiftKey && k === "i") { ev.preventDefault(); perguntar(); }
     else if (comAlt && k === "i") { ev.preventDefault(); definirPainel("direita", true); requestAnimationFrame(() => $("#direita-corpo textarea")?.focus()); }
     else if (comAlt && k === "w") { ev.preventDefault(); if (abaAtiva()) fechar(abaAtiva().chave); }
     else if (comAlt && ev.key === "ArrowRight") { ev.preventDefault(); proximaAba(1); }
@@ -300,6 +351,19 @@ function aoMudarModo(m) {
 
 async function iniciar() {
   montarAtividades(); atalhos(); iniciarTexto(); iniciarPaleta(); iniciarDicas(); iniciarTransicoes();
+  iniciarAjustes();
+  $("#tema-rapido").append(icone("sol", 16)); $("#ajustes-rapidos").append(icone("ajustes", 16)); // tema-rapido troca sol/lua quando as preferencias chegam
+  ouvir("novo-projeto", novoProjeto); ouvir("atalhos", mostrarAtalhos); ouvir("perguntar-agente", perguntar);
+  const stTarefa = $("#st-tarefa"), titulosTarefa = new Map();
+  const mostrarTarefa = () => {
+    const id = estado.tarefaId; stTarefa.hidden = !id;
+    if (!id) return;
+    const t = titulosTarefa.get(id) || id;
+    stTarefa.textContent = `Tarefa: ${t}`; stTarefa.setAttribute("aria-label", `Tarefa selecionada: ${t}. Abrir a conversa numa janela flutuante`);
+  };
+  ouvir("tarefa", mostrarTarefa);
+  ouvir("kanban", (q) => { titulosTarefa.clear(); for (const c of (q?.colunas || []).flatMap((x) => x.cartoes)) titulosTarefa.set(c.id, c.titulo); mostrarTarefa(); });
+  stTarefa.addEventListener("click", () => emitir("destacar", estado.tarefaId));
   registrarComandos(comandos());
   ouvir("janela-fechada", () => { marcarAtividade(); const a = abaAtiva(); history.replaceState(null, "", a?.tipo === "vista" ? `#/${a.id}` : estado.modo === "editor" ? "#/editor" : `#/${estado.modo}`); });
   const nivel = $("#nivel");

@@ -10,7 +10,7 @@
   /* espacamento e forma */
   --e1: 4px; --e2: 8px; --e3: 12px; --e4: 16px; --e5: 24px;
   --raio: 6px; --raio-p: 4px; --raio-g: 10px;
-  --alt-ctl: 28px; --alt-ctl-p: 22px; --larg-ativ: 52px; --alt-titulo: 36px; --alt-status: 24px;
+  --alt-ctl: 28px; --alt-ctl-p: 22px; --larg-ativ: 60px; --alt-titulo: 36px; --alt-status: 24px;
   --w-lateral: min(300px, calc(100vw - var(--larg-ativ) - 24px));
   --w-direita: min(440px, calc(100vw - var(--larg-ativ)));
   --h-inferior: min(280px, 45vh);

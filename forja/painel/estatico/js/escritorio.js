@@ -3,7 +3,7 @@
 // (GET /oficina). So PROJETA o estado; nada aqui decide ou executa. Arte propria, desenhada em codigo. A lista ao lado e o
 // equivalente acessivel (teclado e leitor de tela); com "reduzir movimento" a cena fica parada.
 import { api } from "./api.js";
-import { agrupar, emitir, ouvir, selecionarTarefa } from "./estado.js";
+import { agrupar, emitir, estado, ouvir, selecionarTarefa } from "./estado.js";
 import { el, limpar, tag } from "./ui.js";
 
 const SALA = { l: 104, a: 70 }; // em "pixels de arte"
@@ -178,10 +178,14 @@ function desenharLista() {
   const ag = st.cena?.agentes || [];
   st.lista.append(el("li", {}, el("button", { type: "button", className: "bloco", onclick: () => emitir("abrir-direita", "master") }, "★ Master — conversar")));
   for (const a of ag) {
-    st.lista.append(el("li", {}, el("button", { type: "button", className: `bloco${a.aguardando ? " precisa" : ""}`, title: a.descricao, onclick: () => abrir(a) },
-      el("span", { className: `ponto agente-${a.agente}`, "aria-hidden": "true" }),
-      el("span", { className: "trunc", textContent: `${a.titulo}` }), tag(a.aguardando ? "aguardando você" : a.acao_rotulo, a.aguardando ? "aviso" : ""),
-      el("span", { className: "sr-only", textContent: `${nomeAgente(a)}, ${a.papel_rotulo}` }))));
+    const selecionado = a.tarefa_id === estado.tarefaId; // a selecao vale em todas as telas (quadro, chat, conversa)
+    st.lista.append(el("li", { className: "item-agente" },
+      el("button", { type: "button", className: `bloco${a.aguardando ? " precisa" : ""}`, title: a.descricao || a.titulo, "aria-current": selecionado ? "true" : "false", onclick: () => abrir(a) },
+        el("span", { className: `ponto agente-${a.agente}`, "aria-hidden": "true" }),
+        el("span", { className: "trunc", textContent: `${a.titulo}` }), tag(a.aguardando ? "aguardando você" : a.acao_rotulo, a.aguardando ? "aviso" : ""),
+        el("span", { className: "sr-only", textContent: `${nomeAgente(a)}, ${a.papel_rotulo}` })),
+      el("button", { type: "button", className: "icone pequeno", "aria-label": `Abrir a conversa de ${a.titulo} em janela flutuante`, title: "Janela flutuante (a oficina continua visível)", textContent: "⧉",
+        onclick: () => { selecionarTarefa(a.tarefa_id); emitir("destacar", a.tarefa_id); } })));
   }
   if (!ag.length) st.lista.append(el("li", { className: "mudo", textContent: "Nenhum agente trabalhando agora. Execute uma tarefa ou faça um pedido ao master." }));
 }
@@ -230,4 +234,5 @@ export function montar(raiz) {
 }
 
 ouvir("evento", (e) => { if (/^(execucao|kiro|codex|aprovacao|tarefa|coordenacao)\./.test(String(e.tipo))) recarregar(); });
+ouvir("tarefa", () => { if (st.lista?.isConnected) desenharLista(); }); // tarefa escolhida no quadro/chat: a oficina destaca o agente dela
 reduzir.addEventListener?.("change", () => desenhar());
