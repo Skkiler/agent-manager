@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 MAX_ALEGACOES = 12
+_BLOCO = re.compile(r"```.*?(?:```|\Z)", re.DOTALL)
 _NEGACAO = re.compile(r"\b(n[aã]o|nunca|sem|nem|ainda n[aã]o|faltou|falta)\b[^.\n]{0,25}$", re.IGNORECASE)
 _TESTES = re.compile(
     r"\b(testes?|pytest|su[ií]te|vitest|jest|unittest|cobertura)\b[^.\n]{0,60}?\b(passa(m|ram|ndo)?|passou|verdes?|ok|sucesso|aprovad[oa]s?)\b",
@@ -64,6 +65,9 @@ def _existe(cwd: Path | None, rel: str) -> bool | None:
 
 def verificar(texto: str, ferramentas: list[dict[str, Any]], cwd: Path | None = None) -> list[Alegacao]:
     """`ferramentas`: tool_calls observados [{tipo: read|edit|delete|execute|..., status, titulo, comando}]."""
+    # blocos ``` (plano JSON do master, criterios de aceite, codigo de exemplo) nao sao afirmacoes do que foi FEITO: o criterio
+    # "testes passam" dentro do plano virava alarme falso em toda resposta do master (achado no uso real)
+    texto = _BLOCO.sub(" ", texto or "")
     saida: list[Alegacao] = []
     execucoes = _concluidas(ferramentas, "execute")
     escritas = _concluidas(ferramentas, "edit", "delete", "move")

@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import threading
 from datetime import timedelta
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -48,7 +50,7 @@ PROTOCOLO = (
     "## Resposta\n(para o usuario, em portugues, curto: o que entendeu e o que vai acontecer; pergunte so se faltar algo essencial)\n"
     "## Ações\n```json\n{{\"acoes\": [ ... ]}}\n```\n"
     "Acoes possiveis (ate 6; lista vazia se nao houver o que criar):\n"
-    "- {{\"tipo\": \"criar_tarefa\", \"projeto\": \"<nome>\", \"titulo\": \"...\", \"descricao\": \"...\", \"modo\": \"analise|documentacao|"
+    "- {{\"tipo\": \"criar_tarefa\", \"projeto\": \"<nome de um projeto existente OU o caminho completo da pasta citada>\", \"titulo\": \"...\", \"descricao\": \"...\", \"modo\": \"analise|documentacao|"
     "alteracao_codigo|verificacao\", \"criterios\": [\"criterio verificavel\", ...], \"complexidade\": \"simples|normal|complexa\" (opcional), "
     "\"depende_de\": [indices de acoes anteriores desta lista] (opcional)}}\n"
     "{submaster}"
@@ -178,7 +180,7 @@ class CoordenacaoServico:
             tarefas = t.tarefas_por_entrada("coordenacao_id", c["id"])
             filhos = [x for x in t.listar(T.Coordenacao, pai_id=c["id"], limite=50)]
         if c["tipo"] == "master":
-            nomes = [p["nome"] for p in projetos.values()][:30]
+            nomes = [p["nome"] + (f" (pasta {p['pastas'][0]['caminho']})" if p.get("pastas") else "") for p in projetos.values()][:30]
             linhas.append("Projetos existentes: " + (", ".join(nomes) if nomes else "nenhum (crie pelo nome)"))
             for f in filhos:
                 linhas.append(f"Sub-master '{f['titulo']}' ({f['estado']})")
@@ -248,6 +250,9 @@ class CoordenacaoServico:
                       tarefa_id=tarefa["id"])
             return
         resposta, brutas, avisos = extrair(texto)
+        perguntas = [m.conteudo.strip() for m in res.mensagens if m.tipo == "decisoes" and m.conteudo.strip()]
+        if perguntas and "Decis" not in resposta:  # a pergunta aparece na conversa do master, nao so na tarefa interna
+            resposta = f"{resposta}\n\n**Para você decidir (o trabalho já começou com a recomendação):**\n{perguntas[0][:1500]}".strip()
         criadas, recusadas = self._aplicar(c, brutas)
         papel = "master" if c["tipo"] == "master" else "submaster"
         self._msg(c["id"], papel, resposta or "(sem resposta)", {"criadas": criadas, "recusadas": recusadas + avisos, "simulado": res.mock},
@@ -288,9 +293,7 @@ class CoordenacaoServico:
                 a = AcaoTarefa.model_validate(bruta)
                 if c["tipo"] == "submaster":  # sub-master so age no proprio projeto
                     a.projeto = self._nome_projeto(c["projeto_id"]) or a.projeto
-                if a.modo not in permitidos:
-                    recusadas.append(f"acao {i}: modo '{a.modo}' nao permitido no nivel de autonomia atual")
-                    continue
+                espera_nivel = a.modo not in permitidos
                 if abertas >= MAX_ABERTAS:
                     recusadas.append(f"acao {i}: limite de {MAX_ABERTAS} tarefas abertas deste coordenador")
                     continue
@@ -298,11 +301,14 @@ class CoordenacaoServico:
                 tarefa = self._criar_tarefa(c, a, deps)
                 ids_por_indice[i] = tarefa["id"]
                 abertas += 1
-                criadas.append({"tipo": "tarefa", "id": tarefa["id"], "titulo": tarefa["titulo"]})
+                criadas.append({"tipo": "tarefa", "id": tarefa["id"], "titulo": tarefa["titulo"], "espera_nivel": espera_nivel})
+                if espera_nivel:  # criada e preparada; so roda quando o usuario liberar o nivel (seletor no topo ou Configuracoes)
+                    recusadas.append(f"acao {i}: tarefa criada, mas o modo '{a.modo}' pede um nivel de autonomia maior; ajuste o "
+                                     "nivel e execute a tarefa no quadro")
             except (ValidationError, ErroDominio) as e:
                 recusadas.append(f"acao {i}: {getattr(e, 'mensagem', None) or 'formato invalido'}"[:200])
         for item in criadas:
-            if item["tipo"] == "tarefa" and self.executar:
+            if item["tipo"] == "tarefa" and self.executar and not item.get("espera_nivel"):
                 self._executar_se_pronta(item["id"])
         return criadas, recusadas
 
@@ -314,11 +320,32 @@ class CoordenacaoServico:
         return p["nome"] if p else None
 
     def _projeto(self, nome: str) -> dict[str, Any]:
+        """Projeto pelo nome OU pelo caminho da pasta. Caminho (achado no uso real: o master passou o caminho e a Forja criou um
+        projeto sem pasta, entao o agente trabalharia numa pasta isolada vazia): usa o projeto que ja tem essa pasta ou cria um
+        com o nome da pasta e ela como pasta de TRABALHO (as regras de pastas proibidas/protegidas continuam valendo)."""
         s = self.servico
         nome = nome.strip()[:200]
         if nome.casefold() in (PROJETO_INTERNO, "forja-estudos"):
             raise ValidacaoDominio("projeto reservado")
-        existente = next((p for p in s.listar(T.Projeto, limite=500) if p["nome"].casefold() == nome.casefold()), None)
+        projetos = s.listar(T.Projeto, limite=500)
+        if re.match(r"^(?:[A-Za-z]:[\\/]|/|~)", nome):
+            from forja.seguranca.pastas import validar_pasta
+
+            pasta = validar_pasta(nome, "Pasta do projeto")
+            alvo = os.path.normcase(str(pasta))
+            for p in projetos:
+                if any(os.path.normcase(str(Path(x["caminho"]).resolve())) == alvo for x in p.get("pastas") or []):
+                    return p
+            base = re.sub(r"^\s*[\d.]+\s*(?:cod|area|código|codigo)?\s*-\s*", "", pasta.name, flags=re.IGNORECASE).strip() or pasta.name
+            existente = next((p for p in projetos if p["nome"].casefold() == base.casefold()), None)
+            p = existente or s.criar_projeto(ProjetoIn(nome=base[:200], descricao="criado pelo master a partir da pasta citada"))[0]
+            projetos_srv = getattr(s, "projetos", None)
+            if projetos_srv is None:
+                raise ValidacaoDominio("projetos com pastas indisponiveis neste servidor")
+            atual = projetos_srv.obter(p["id"])
+            return projetos_srv.definir_pastas(p["id"], [*(atual.get("pastas") or []), {"caminho": str(pasta), "papel": "trabalho"}],
+                                             atual.get("versao") or 1, ator="sistema:coordenacao")
+        existente = next((p for p in projetos if p["nome"].casefold() == nome.casefold()), None)
         return existente or s.criar_projeto(ProjetoIn(nome=nome, descricao="criado pelo master"))[0]
 
     def _criar_tarefa(self, c: dict[str, Any], a: AcaoTarefa, deps: list[str]) -> dict[str, Any]:

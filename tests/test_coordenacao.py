@@ -104,7 +104,10 @@ def test_limites_e_modos(cli):
     criadas, _ = svc._aplicar(m, brutas)
     assert len(criadas) == MAX_ACOES  # o excedente e ignorado
     _, recusadas = svc._aplicar(m, [{"tipo": "criar_tarefa", "projeto": "eps", "titulo": "mudar codigo", "modo": "alteracao_codigo"}])
-    assert recusadas and "nao permitido" in recusadas[0]  # autonomia padrao nao permite alterar codigo
+    assert recusadas and "nivel de autonomia maior" in recusadas[0]  # autonomia padrao nao permite alterar codigo...
+    criada = next(x for x in svc._aplicar(m, [{"tipo": "criar_tarefa", "projeto": "eps", "titulo": "mudar codigo 2",
+                                                "modo": "alteracao_codigo"}])[0])
+    assert criada["espera_nivel"] and cli.get(f"/api/v1/tarefas/{criada['id']}").json()["estado"] == "pronta"  # ...criada e esperando
     _, recusadas = svc._aplicar(m, [{"tipo": "criar_tarefa", "projeto": "forja-coordenacao", "titulo": "reservado"}])
     assert recusadas and "reservado" in recusadas[0]
     _, recusadas = svc._aplicar(m, [{"tipo": "criar_tarefa", "projeto": "eps", "titulo": "x"}])  # titulo curto demais
@@ -168,3 +171,43 @@ def test_rotas_do_caderno_e_do_status(cli):
     st = cli.get(f"/api/v1/execucoes/{ex['id']}/status").json()
     assert st["tarefa_id"] == t["id"] and st["estado"] == "concluida" and isinstance(st["linha"], list)
     assert cli.get("/api/v1/execucoes/EX-nada/status").status_code == 404
+
+
+def test_master_com_caminho_de_pasta_usa_projeto_com_essa_pasta(cli, tmp_path):
+    """Uso real: o master passou o CAMINHO da pasta como projeto e a Forja criou um projeto sem pasta (agente numa pasta vazia)."""
+    pasta = tmp_path / "1.7. Cod - Meu App"
+    pasta.mkdir()
+    svc = cli.app.state.coordenacao
+    svc.executar = False
+    m = svc.master()
+    criadas, recusadas = svc._aplicar(m, [{"tipo": "criar_tarefa", "projeto": str(pasta), "titulo": "revisar a interface", "modo": "analise"}])
+    assert not recusadas
+    tarefa = cli.get(f"/api/v1/tarefas/{criadas[0]['id']}").json()
+    projeto = next(p for p in cli.get("/api/v1/projetos").json() if p["id"] == tarefa["projeto_id"])
+    assert projeto["nome"] == "Meu App" and projeto["pastas"][0]["papel"] == "trabalho"
+    assert Path(projeto["pastas"][0]["caminho"]) == pasta.resolve()
+    de_novo, _ = svc._aplicar(m, [{"tipo": "criar_tarefa", "projeto": str(pasta), "titulo": "outra coisa", "modo": "analise"}])
+    assert cli.get(f"/api/v1/tarefas/{de_novo[0]['id']}").json()["projeto_id"] == projeto["id"]  # mesma pasta, mesmo projeto
+
+
+def test_turno_do_master_com_pergunta_cria_as_tarefas_e_leva_a_pergunta_para_a_conversa(cli):
+    from forja.dominio.contratos import MensagemSaida, ResultadoAgente
+
+    svc = cli.app.state.coordenacao
+    svc.executar = False
+    m = svc.master()
+    texto = ("## Resposta\nVou criar a tarefa de revisao.\n## Ações\n```json\n{\"acoes\": [{\"tipo\": \"criar_tarefa\", \"projeto\": \"zeta\", "
+             "\"titulo\": \"Revisar a interface\", \"modo\": \"analise\", \"criterios\": [\"testes passam\"]}]}\n```")
+    res = ResultadoAgente(estado="concluida", resumo="ok", agente_id="kiro", mensagens=[
+        MensagemSaida(tipo="resposta", conteudo=texto), MensagemSaida(tipo="decisoes", conteudo="1. Atalhos preferidos? Recomendo Ctrl+,")])
+    svc._processar_turno({"id": m["id"], "turno": "pedido"}, {"id": "T-x"}, res)
+    ultima = svc.conversa(m["id"])[-1]
+    assert ultima["papel"] == "master" and ultima["dados"]["criadas"] and "Atalhos preferidos" in ultima["conteudo"]
+
+
+def test_criterio_dentro_do_plano_nao_vira_alegacao_falsa():
+    from forja.conversa.alegacoes import verificar
+
+    plano = "Vou criar a tarefa.\n```json\n{\"criterios\": [\"Testes existentes do projeto passam\"]}\n```"
+    assert verificar(plano, []) == []
+    assert verificar("Os testes passaram.", [])[0].verificada is False  # fora do bloco continua sendo conferido

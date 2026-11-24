@@ -879,7 +879,11 @@ class ProvedorKiroAcp:
             if alegacoes:
                 ctl.evento("kiro.alegacoes", {"total": len(alegacoes), "nao_verificadas": sum(not a.verificada for a in alegacoes),
                                               "tipos": sorted({a.tipo for a in alegacoes if not a.verificada})})
-            extras["estudo_lote"] = tarefa.get("modo") == "estudo" and bool(((tarefa.get("entrada") or {}).get("estudo") or {}).get("lote"))
+            entrada_t = tarefa.get("entrada") or {}
+            # estudo em lote e turno do master/sub-master nao param por pergunta: a duvida vai para a conversa e o resto segue
+            # (achado no uso real: o master perguntava "atalhos preferidos?", ficava bloqueado e as acoes nunca eram criadas)
+            extras["estudo_lote"] = (tarefa.get("modo") == "estudo" and bool((entrada_t.get("estudo") or {}).get("lote"))) \
+                or bool(entrada_t.get("coordenacao"))
             r = self._concluir(parada, texto, cliente, n_tools, t0, mediador, chamadas, tokens_in, alegacoes, extras)
             if r.estado == "concluida":
                 self._verificar_criterios(r, tarefa, cwd, extras)
