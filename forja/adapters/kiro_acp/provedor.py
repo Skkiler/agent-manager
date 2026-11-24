@@ -622,8 +622,11 @@ class ProvedorKiroAcp:
                     if isinstance(s, dict) and s.get("name"):
                         mcp_estado[str(s["name"])] = {"status": str(s.get("status") or ""), "ferramentas": len(s.get("tools") or [])}
 
+        ultima_atividade = [time.monotonic()]  # relogio de inatividade do turno (_aguardar)
+
         def on_update(_sid: str, upd: dict[str, Any]) -> None:
             nonlocal n_tools
+            ultima_atividade[0] = time.monotonic()
             if upd.get("sessionUpdate") == "session_info_update":
                 registrar_creditos(medicao, _sid, upd)
                 quebra = ((upd.get("_meta") or {}).get("kiro") or {}).get("breakdown") or {}
@@ -698,6 +701,11 @@ class ProvedorKiroAcp:
         try:
             t_con = time.monotonic()
             cliente = self._abrir_cliente(cwd, self._decisor or mediador.decidir, on_update, on_notificacao)
+            # agente mandando mensagens OU pedido de aprovacao esperando o usuario = turno vivo (nao conta como inatividade)
+            try:
+                cliente.forja_atividade = lambda: time.monotonic() if mediador.aguardando else ultima_atividade[0]  # type: ignore[attr-defined]
+            except AttributeError:  # cliente sem atributos livres (testes): fica o limite fixo
+                pass
             ctl.evento(
                 "kiro.conectado",
                 {"agente": cliente.agent_info.get("name"), "versao": cliente.agent_info.get("version"), "mcp": self.usar_mcp and bool(self.mcp_servers),
@@ -990,10 +998,20 @@ class ProvedorKiroAcp:
         return False, "sem_sinal"
 
     def _aguardar(self, cliente: ClienteAcp, fut, sid: str, ctl: ControleExecucao, parar: Callable[[], str | None] | None = None) -> str:
-        """Espera o prompt sem bloquear cancelamento/pausa. Retorna stopReason, 'interrompido' ou 'orcamento' (laco/limite)."""
-        limite = time.monotonic() + self.timeout_prompt
+        """Espera o prompt sem bloquear cancelamento/pausa. Retorna stopReason, 'interrompido' ou 'orcamento' (laco/limite).
+
+        O tempo limite e de INATIVIDADE quando ha `self._atividade` (ultima mensagem do agente ou pedido de aprovacao em aberto):
+        um turno longo que continua trabalhando, ou que espera o usuario aprovar algo, nao e derrubado (achado no uso real: o
+        planejamento de uma tarefa complexa caiu em 300 s, 2 min deles esperando a aprovacao de uma busca na web). Teto absoluto:
+        12x o limite. A atividade fica em `cliente.forja_atividade` (por execucao)."""
+        inicio = time.monotonic()
+        limite = inicio + self.timeout_prompt
+        teto = inicio + self.timeout_prompt * 12
         cancelou, por_orcamento = False, False
         while True:
+            atividade = getattr(cliente, "forja_atividade", None)  # por execucao (o provedor e compartilhado entre execucoes)
+            if atividade is not None and not cancelou:
+                limite = min(teto, max(limite, atividade() + self.timeout_prompt))
             if (ctl.cancelado() or ctl.pausado()) and not cancelou:
                 cancelou = True
                 cliente.cancelar(sid)  # ACP nao tem 'pausa': cancela o turno; checkpoint permite reenviar

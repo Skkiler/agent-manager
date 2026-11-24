@@ -517,6 +517,23 @@ Relatorio completo: `docs/RELATORIO_AVALIACAO_2026-11-18.md`. Somente avaliacao;
   - validar as notas candidatas (todas nascem candidatas);
   - a heuristica empresa/proprio e por caminho: o usuario corrige movendo ou renomeando a pasta;
   - C# com servidor real; NVDA real.
+## Correcao: pedido ao master que nao virava tarefa (2026-11-24) — resultados reais
+- **Sintoma:** o pedido de revisao visual ao master voltava sempre com o mesmo plano, a tarefa nunca era criada e cada resposta
+  mostrava "Testes existentes do projeto passam: nenhum comando foi executado".
+- **Causas, achadas no banco real** (eventos da coordenacao `COORD-fcbcb9a2b233`):
+  1. o turno do master terminava `bloqueada` porque a resposta tinha "Decisoes para voce" (atalhos preferidos); turno nao
+     concluido descartava as acoes; cada resposta do usuario retomava o turno, que perguntava de novo;
+  2. o master passou o CAMINHO da pasta como projeto, e a Forja criaria um projeto sem pasta (agente numa pasta isolada vazia);
+  3. a verificacao de alegacoes lia o criterio "testes passam" dentro do bloco JSON do plano como afirmacao.
+- **Correcoes (com teste):**
+  - turno do master/sub-master nao bloqueia por pergunta: as acoes sao criadas e a pergunta aparece na conversa do master;
+  - projeto por caminho reutiliza o projeto que ja tem a pasta ou cria um com o nome da pasta e ela como pasta de trabalho;
+  - tarefa acima do nivel de autonomia fica criada e esperando, com aviso, em vez de recusada;
+  - blocos ``` nao contam como alegacao.
+- **Testes executados:** `tests/test_coordenacao.py` (3 novos), suite completa sem falhas, `ruff` ok.
+- **Rodado de verdade:** o mesmo pedido, com o complemento do usuario (integracao chat/editor/agentes, redundancia, janelas
+  flutuantes nao bloqueantes, atalhos por convencao), foi enviado ao master. Ele criou 1 tarefa `alteracao_codigo` complexa no
+  projeto "Forja", com a pasta do repositorio como pasta de trabalho, copia sem segredos e ponto de restauracao.
 ## Limites da Fase 4 (honestos)
 - Busca lexical; sem embeddings. Stemmer PT aproximado. **Precisao em linguagem natural sobre o corpus real nao foi medida** (exige rotulagem manual).
 - Prompt de retomada tem tamanho parecido com o inicial; a economia e frente ao reenvio ingenuo, nao absoluta.

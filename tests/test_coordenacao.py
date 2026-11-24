@@ -211,3 +211,27 @@ def test_criterio_dentro_do_plano_nao_vira_alegacao_falsa():
     plano = "Vou criar a tarefa.\n```json\n{\"criterios\": [\"Testes existentes do projeto passam\"]}\n```"
     assert verificar(plano, []) == []
     assert verificar("Os testes passaram.", [])[0].verificada is False  # fora do bloco continua sendo conferido
+
+
+def test_turno_vivo_ou_esperando_aprovacao_nao_cai_por_tempo():
+    """Uso real: o planejamento de uma tarefa complexa caiu em 300 s, 2 min deles esperando o usuario aprovar uma busca."""
+    import threading
+    from types import SimpleNamespace
+
+    from forja.adapters.kiro_acp.cliente import AcpTimeout
+    from forja.adapters.kiro_acp.provedor import ProvedorKiroAcp
+
+    prov = object.__new__(ProvedorKiroAcp)
+    prov.timeout_prompt = 0.3
+    ctl = SimpleNamespace(cancelado=lambda: False, pausado=lambda: False)
+
+    def fut_em(segundos):
+        pronto = threading.Event()
+        threading.Timer(segundos, pronto.set).start()
+        return SimpleNamespace(done=pronto.is_set, result=lambda: {"stopReason": "end_turn"})
+
+    vivo = SimpleNamespace(cancelar=lambda _s: None, forja_atividade=time.monotonic)  # agente mandando mensagens o tempo todo
+    assert prov._aguardar(vivo, fut_em(0.8), "s", ctl) == "end_turn"
+    parado = SimpleNamespace(cancelar=lambda _s: None)  # sem sinal de atividade: limite fixo continua valendo
+    with pytest.raises(AcpTimeout):
+        prov._aguardar(parado, fut_em(2.0), "s", ctl)

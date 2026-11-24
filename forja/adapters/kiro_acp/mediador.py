@@ -79,6 +79,7 @@ class MediadorPermissoes:
         # Tarefa de ESTUDO: a pasta de consulta e exatamente o que o usuario mandou estudar; ler dentro dela dispensa pergunta
         # em qualquer nivel (so leitura simples: varredura em pasta com segredo continua perguntando)
         self.leitura_consulta_livre = False
+        self.aguardando = 0  # pedidos ao operador em aberto (o provedor nao conta esse tempo como inatividade do turno)
 
     def _leitura_em_consulta(self, item: dict[str, Any]) -> bool:
         if item.get("categoria") != "ler" or item.get("sensivel") or item.get("varredura") or not self.consulta:
@@ -172,7 +173,13 @@ class MediadorPermissoes:
         if not perguntar_sempre and self._chave(item) in self._lembradas:
             self.ctl.evento("kiro.permissao_reutilizada", {"descricao": item["descricao"]})
             return permitir
-        return permitir if self._perguntar(item) else rejeitar
+        with self._mu:
+            self.aguardando += 1
+        try:
+            return permitir if self._perguntar(item) else rejeitar
+        finally:
+            with self._mu:
+                self.aguardando -= 1
 
     def _perguntar(self, item: dict[str, Any]) -> bool:
         with self._mu:
